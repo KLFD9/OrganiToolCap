@@ -1,0 +1,157 @@
+@import "tailwindcss";
+@import "@xyflow/react/dist/style.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-editor-bg-light: #faf9f6;
+  --color-editor-bg-dark: #09090b;
+  --color-panel-bg-light: #ffffff;
+  --color-panel-bg-dark: #121214;
+  --color-border-light: #e6e4de;
+  --color-border-dark: #27272a;
+  --color-text-light: #18181b;
+  --color-text-dark: #f4f4f5;
+  --color-accent-gold: #c4956a;
+}
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    margin: 0;
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  /* Focus visible accessibility outline */
+  *:focus-visible {
+    outline: 2px solid var(--color-accent-gold) !important;
+    outline-offset: 2px !important;
+  }
+}
+
+/* Scrollbars minimalistes */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.25);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.45);
+}
+
+/* Sombres scrollbars */
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+}
+.dark .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Overrides React Flow Controls (Zoom) */
+.react-flow__controls {
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.08) !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+  border: 1px solid #e6e4de !important;
+  background: #ffffff !important;
+  padding: 2px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 2px !important;
+}
+
+.dark .react-flow__controls {
+  background: #121214 !important;
+  border-color: #27272a !important;
+}
+
+.react-flow__controls-button {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 6px !important;
+  color: #555555 !important;
+  width: 24px !important;
+  height: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: all 0.2s ease !important;
+}
+
+.dark .react-flow__controls-button {
+  color: #a1a1aa !important;
+}
+
+.react-flow__controls-button:hover {
+  background: rgba(0, 0, 0, 0.05) !important;
+  color: #111111 !important;
+}
+
+.dark .react-flow__controls-button:hover {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #ffffff !important;
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor !important;
+  width: 12px !important;
+  height: 12px !important;
+}
+
+/* Overrides React Flow MiniMap */
+.react-flow__minimap {
+  background-color: #ffffff !important;
+  border-radius: 12px !important;
+  border: 1px solid #e6e4de !important;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.1) !important;
+  overflow: hidden;
+  transition: all 0.3s ease !important;
+}
+
+.dark .react-flow__minimap {
+  background-color: #121214 !important;
+  border-color: #27272a !important;
+}
+
+.react-flow__minimap-mask {
+  fill: rgba(0, 0, 0, 0.02) !important;
+}
+
+.dark .react-flow__minimap-mask {
+  fill: rgba(0, 0, 0, 0.2) !important;
+}
+
+.react-flow__minimap-node {
+  fill: rgba(0, 0, 0, 0.05) !important;
+  stroke: none !important;
+}
+
+.dark .react-flow__minimap-node {
+  fill: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Edges transition */
+.react-flow__edge-path {
+  transition: stroke 0.3s ease, stroke-width 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

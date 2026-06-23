@@ -1,0 +1,453 @@
+import type { jsPDF } from "jspdf";
+import { getNodesBounds, getViewportForBounds, type Node } from "@xyflow/react";
+
+// html-to-image et jspdf ne servent qu'à l'export : chargés à la demande
+// pour alléger le bundle initial.
+const loadHtmlToImage = () => import("html-to-image");
+const loadJsPdf = () => import("jspdf");
+
+export type PdfFormat = "a4" | "a3";
+export type PdfOrientation = "portrait" | "landscape";
+
+export interface PdfExportOptions {
+  format: PdfFormat;
+  orientation: PdfOrientation;
+  margin: number; // mm
+  title?: string;
+  subtitle?: string;
+  footer?: string;
+  logoUrl?: string;
+  secondaryLogoUrl?: string;
+  /** Si vrai, répartit l'organigramme sur plusieurs pages (grand format / affiche). Sinon, ajustement dynamique sur une seule page. */
+  multiPage?: boolean;
+}
+
+const PNG_DPI_SCALE = 2.5;
+const PDF_DPI_SCALE = 3; // jsPDF n'embarque pas le SVG (pas de plugin svg2pdf) : on rasterise en haute densité
+const CONTENT_PADDING_RATIO = 0.06; // marge proportionnelle autour de l'organigramme
+
+// Garde-fous navigateur : au-delà, `canvas.toDataURL` renvoie une image vide (blanche).
+// WebKit/Safari plafonne l'aire d'un canvas à 16 777 216 px² et chaque côté à ~8192 px.
+const MAX_CANVAS_AREA = 14_000_000; // marge de sécurité sous la limite WebKit
+const MAX_CANVAS_SIDE = 8192;
+
+/** Densité (px image / mm de page) ciblée pour le découpage multi-pages. */
+export const PDF_TILE_PX_PER_MM = 4;
+
+export interface PdfTileGrid {
+  cols: number;
+  rows: number;
+  tileWidthPx: number;
+  tileHeightPx: number;
+}
+
+export interface PdfTile {
+  row: number;
+  col: number;
+  sx: number;
+  sy: number;
+  sWidth: number;
+  sHeight: number;
+}
+
+/**
+ * Calcule le plus grand `pixelRatio` réalisable sans dépasser les limites de canvas du
+ * navigateur (aire maximale et côté maximal), borné par la densité souhaitée. Évite
+ * les exports vides (image blanche) sur les grands organigrammes.
+ */
+export function safePixelRatio(width: number, height: number, desired: number): number {
+  if (width <= 0 || height <= 0) return desired;
+
+  // Borne par côté maximal
+  const sideLimited = Math.min(desired, MAX_CANVAS_SIDE / width, MAX_CANVAS_SIDE / height);
+  // Borne par aire maximale
+  const areaLimited = Math.sqrt(MAX_CANVAS_AREA / (width * height));
+
+  const ratio = Math.min(sideLimited, areaLimited, desired);
+  // On autorise un ratio < 1 pour les très grands graphes, avec un plancher raisonnable.
+  return Math.max(0.3, ratio);
+}
+
+/**
+ * Détermine le nombre de colonnes/lignes de pages nécessaires pour imprimer un contenu
+ * de `contentWidth` x `contentHeight` px CSS sans descendre sous la densité `pxPerMm`
+ * sur une page dont la zone utile mesure `pageAvailWidthMm` x `pageAvailHeightMm`.
+ */
+export function computeMultiPageGrid(
+  contentWidth: number,
+  contentHeight: number,
+  pageAvailWidthMm: number,
+  pageAvailHeightMm: number,
+  pxPerMm = PDF_TILE_PX_PER_MM
+): PdfTileGrid {
+  const tileWidthPx = pageAvailWidthMm * pxPerMm;
+  const tileHeightPx = pageAvailHeightMm * pxPerMm;
+  const cols = Math.max(1, Math.ceil(contentWidth / tileWidthPx));
+  const rows = Math.max(1, Math.ceil(contentHeight / tileHeightPx));
+  return { cols, rows, tileWidthPx, tileHeightPx };
+}
+
+/** Découpe une image de `imageWidth` x `imageHeight` px en une grille `cols` x `rows` de tuiles égales. */
+export function computePdfTiles(imageWidth: number, imageHeight: number, cols: number, rows: number): PdfTile[] {
+  const tileWidth = imageWidth / cols;
+  const tileHeight = imageHeight / rows;
+  const tiles: PdfTile[] = [];
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      tiles.push({
+        row,
+        col,
+        sx: col * tileWidth,
+        sy: row * tileHeight,
+        sWidth: tileWidth,
+        sHeight: tileHeight,
+      });
+    }
+  }
+  return tiles;
+}
+
+/**
+ * Calcule le placement (mm) d'une image dans une zone, en préservant le ratio d'aspect
+ * et en centrant. Renvoie les coordonnées et dimensions pour `pdf.addImage`.
+ */
+export function fitContain(
+  imageWidth: number,
+  imageHeight: number,
+  areaX: number,
+  areaY: number,
+  areaWidth: number,
+  areaHeight: number
+): { x: number; y: number; width: number; height: number } {
+  const ratio = Math.min(areaWidth / imageWidth, areaHeight / imageHeight);
+  const width = imageWidth * ratio;
+  const height = imageHeight * ratio;
+  return {
+    x: areaX + (areaWidth - width) / 2,
+    y: areaY + (areaHeight - height) / 2,
+    width,
+    height,
+  };
+}
+
+function loadImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+function cropToDataUrl(img: HTMLImageElement, tile: PdfTile): string {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(tile.sWidth);
+  canvas.height = Math.round(tile.sHeight);
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, tile.sx, tile.sy, tile.sWidth, tile.sHeight, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.92);
+}
+
+const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+// `html-to-image` n'intègre les polices de façon fiable qu'après un premier rendu « à blanc ».
+let fontsWarmed = false;
+
+export interface CaptureResult {
+  dataUrl: string;
+  /** Dimensions du contenu en px CSS (avant `pixelRatio`). */
+  width: number;
+  height: number;
+  /** Dimensions réelles de l'image rasterisée en px. */
+  pixelWidth: number;
+  pixelHeight: number;
+}
+
+/**
+ * Recadre temporairement le viewport React Flow pour que tous les nœuds tiennent dans la
+ * capture, attend le chargement des polices/images, rasterise, puis restaure l'état d'origine.
+ */
+export async function captureFlow(
+  viewportEl: HTMLElement,
+  nodes: Node[],
+  type: "svg" | "png" | "jpeg",
+  desiredRatio: number
+): Promise<CaptureResult> {
+  const bounds = getNodesBounds(nodes);
+  const width = Math.max(1, Math.ceil(bounds.width * (1 + CONTENT_PADDING_RATIO * 2)));
+  const height = Math.max(1, Math.ceil(bounds.height * (1 + CONTENT_PADDING_RATIO * 2)));
+  const viewport = getViewportForBounds(bounds, width, height, 0.1, 2, CONTENT_PADDING_RATIO);
+
+  const pixelRatio = type === "svg" ? 1 : safePixelRatio(width, height, desiredRatio);
+
+  // Garantit que les polices web sont prêtes : sinon le rendu utilise une police de
+  // secours (largeurs différentes) et le résultat n'est pas fidèle à l'écran.
+  if (typeof document !== "undefined" && document.fonts?.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // ignore : on capture quand même
+    }
+  }
+
+  const prevTransform = viewportEl.style.transform;
+  const prevWidth = viewportEl.style.width;
+  const prevHeight = viewportEl.style.height;
+
+  viewportEl.style.width = `${width}px`;
+  viewportEl.style.height = `${height}px`;
+  viewportEl.style.transform = `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})`;
+
+  await nextFrame();
+
+  try {
+    const options = {
+      backgroundColor: "#ffffff",
+      pixelRatio,
+      width,
+      height,
+      quality: 0.95,
+      cacheBust: true,
+    };
+
+    const { toSvg, toPng, toJpeg } = await loadHtmlToImage();
+    const render = () =>
+      type === "svg"
+        ? toSvg(viewportEl, options)
+        : type === "jpeg"
+        ? toJpeg(viewportEl, options)
+        : toPng(viewportEl, options);
+
+    // Rendu « à blanc » la première fois pour fiabiliser l'intégration des polices.
+    if (!fontsWarmed && type !== "svg") {
+      try {
+        await render();
+      } catch {
+        // ignore : le rendu réel suit
+      }
+      fontsWarmed = true;
+    }
+
+    const dataUrl = await render();
+
+    return {
+      dataUrl,
+      width,
+      height,
+      pixelWidth: Math.round(width * pixelRatio),
+      pixelHeight: Math.round(height * pixelRatio),
+    };
+  } finally {
+    viewportEl.style.transform = prevTransform;
+    viewportEl.style.width = prevWidth;
+    viewportEl.style.height = prevHeight;
+  }
+}
+
+/**
+ * Prépare un logo pour insertion dans un document Office (PDF / PPTX).
+ * jsPDF et PowerPoint ne savent pas insérer de SVG : on le rasterise en PNG
+ * haute résolution via canvas. Les formats bitmap passent tels quels.
+ */
+export async function loadLogoForExport(url: string): Promise<{ dataUrl: string; width: number; height: number }> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = url;
+  });
+
+  // Certains SVG sans attributs width/height ont des dimensions naturelles nulles
+  const width = img.naturalWidth || img.width || 256;
+  const height = img.naturalHeight || img.height || 256;
+
+  const isSvg = url.startsWith("data:image/svg") || /\.svg($|\?)/i.test(url);
+  if (!isSvg) return { dataUrl: url, width, height };
+
+  const scale = 512 / Math.max(width, height);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(width * scale));
+  canvas.height = Math.max(1, Math.round(height * scale));
+  canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return { dataUrl: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height };
+}
+
+const HEADER_HEIGHT_MM = 16;
+
+/** Calcule les marges hautes/basses occupées par l'en-tête et le pied de page, sans dessiner. */
+export function computeChromeOffsets(options: PdfExportOptions, margin: number): { topOffset: number; bottomOffset: number } {
+  const hasHeader = Boolean(options.logoUrl || options.secondaryLogoUrl || options.title);
+  const hasFooter = Boolean(options.footer || options.multiPage);
+  return {
+    topOffset: hasHeader ? margin + HEADER_HEIGHT_MM + 4 : margin,
+    bottomOffset: hasFooter ? margin + 8 : margin,
+  };
+}
+
+/** Dessine l'en-tête (logos, titre, sous-titre) et le pied de page sur la page courante du PDF. */
+async function drawPageChrome(
+  pdf: jsPDF,
+  options: PdfExportOptions,
+  pageWidth: number,
+  pageHeight: number,
+  margin: number,
+  pageLabel?: string
+): Promise<{ topOffset: number; bottomOffset: number }> {
+  const { topOffset, bottomOffset } = computeChromeOffsets(options, margin);
+
+  if (options.logoUrl || options.secondaryLogoUrl || options.title) {
+    if (options.logoUrl) {
+      try {
+        const logo = await loadLogoForExport(options.logoUrl);
+        const logoW = (logo.width / logo.height) * HEADER_HEIGHT_MM;
+        pdf.addImage(logo.dataUrl, margin, margin, logoW, HEADER_HEIGHT_MM);
+      } catch {
+        // logo illisible : on ignore silencieusement
+      }
+    }
+    if (options.secondaryLogoUrl) {
+      try {
+        const logo = await loadLogoForExport(options.secondaryLogoUrl);
+        const logoW = (logo.width / logo.height) * HEADER_HEIGHT_MM;
+        pdf.addImage(logo.dataUrl, pageWidth - margin - logoW, margin, logoW, HEADER_HEIGHT_MM);
+      } catch {
+        // logo illisible : on ignore silencieusement
+      }
+    }
+    if (options.title) {
+      pdf.setFontSize(14);
+      pdf.text(options.title, pageWidth / 2, margin + HEADER_HEIGHT_MM / 2, { align: "center" });
+    }
+    if (options.subtitle) {
+      pdf.setFontSize(10);
+      pdf.setTextColor(120);
+      pdf.text(options.subtitle, pageWidth / 2, margin + HEADER_HEIGHT_MM / 2 + 5, { align: "center" });
+      pdf.setTextColor(0);
+    }
+  }
+
+  if (options.footer || pageLabel) {
+    pdf.setFontSize(9);
+    pdf.setTextColor(120);
+    if (options.footer) {
+      pdf.text(options.footer, pageWidth / 2, pageHeight - margin / 2, { align: "center" });
+    }
+    if (pageLabel) {
+      pdf.text(pageLabel, pageWidth - margin, pageHeight - margin / 2, { align: "right" });
+    }
+    pdf.setTextColor(0);
+  }
+
+  return { topOffset, bottomOffset };
+}
+
+function safeFileName(title: string | undefined, suffix = ""): string {
+  return `${(title || "organigramme").replace(/[^a-z0-9-_]+/gi, "-")}${suffix}.pdf`;
+}
+
+/** Exporte les nœuds React Flow (recadrés sur l'ensemble de l'organigramme) en PDF haute résolution. */
+export async function exportFlowToPdf(viewportEl: HTMLElement, nodes: Node[], options: PdfExportOptions): Promise<void> {
+  const capture = await captureFlow(viewportEl, nodes, "jpeg", PDF_DPI_SCALE);
+
+  const { jsPDF } = await loadJsPdf();
+  const pdf = new jsPDF({
+    orientation: options.orientation,
+    unit: "mm",
+    format: options.format,
+  });
+
+  const pageWidth = pdf.internal.pageSize.getWidth();
+  const pageHeight = pdf.internal.pageSize.getHeight();
+  const margin = options.margin;
+
+  if (options.multiPage) {
+    const chrome = computeChromeOffsets(options, margin);
+    const availableWidth = pageWidth - margin * 2;
+    const availableHeight = pageHeight - chrome.topOffset - chrome.bottomOffset;
+
+    // Le nombre de pages dépend du contenu (px CSS) ; le découpage opère sur l'image rasterisée.
+    const grid = computeMultiPageGrid(capture.width, capture.height, availableWidth, availableHeight);
+
+    // Une seule page suffit : on bascule sur l'ajustement dynamique (pas de découpage inutile).
+    if (grid.cols === 1 && grid.rows === 1) {
+      await drawSinglePage(pdf, options, capture.dataUrl, capture.pixelWidth, capture.pixelHeight, pageWidth, pageHeight, margin);
+      pdf.save(safeFileName(options.title));
+      return;
+    }
+
+    const tiles = computePdfTiles(capture.pixelWidth, capture.pixelHeight, grid.cols, grid.rows);
+    const img = await loadImage(capture.dataUrl);
+
+    for (let i = 0; i < tiles.length; i++) {
+      const tile = tiles[i];
+      if (i > 0) pdf.addPage(options.format, options.orientation);
+
+      const label = `Page ${i + 1}/${tiles.length} · col ${tile.col + 1}, ligne ${tile.row + 1}`;
+      const { topOffset, bottomOffset } = await drawPageChrome(pdf, options, pageWidth, pageHeight, margin, label);
+      const usableWidth = pageWidth - margin * 2;
+      const usableHeight = pageHeight - topOffset - bottomOffset;
+
+      const tileDataUrl = cropToDataUrl(img, tile);
+      const placement = fitContain(tile.sWidth, tile.sHeight, margin, topOffset, usableWidth, usableHeight);
+      pdf.addImage(tileDataUrl, "JPEG", placement.x, placement.y, placement.width, placement.height);
+    }
+
+    pdf.save(safeFileName(options.title, "-multipages"));
+    return;
+  }
+
+  await drawSinglePage(pdf, options, capture.dataUrl, capture.pixelWidth, capture.pixelHeight, pageWidth, pageHeight, margin);
+  pdf.save(safeFileName(options.title));
+}
+
+/** Dessine l'organigramme entier, ajusté dynamiquement, sur une page unique. */
+async function drawSinglePage(
+  pdf: jsPDF,
+  options: PdfExportOptions,
+  dataUrl: string,
+  imageWidth: number,
+  imageHeight: number,
+  pageWidth: number,
+  pageHeight: number,
+  margin: number
+): Promise<void> {
+  const { topOffset, bottomOffset } = await drawPageChrome(pdf, options, pageWidth, pageHeight, margin);
+  const availableWidth = pageWidth - margin * 2;
+  const availableHeight = pageHeight - topOffset - bottomOffset;
+  const placement = fitContain(imageWidth, imageHeight, margin, topOffset, availableWidth, availableHeight);
+  pdf.addImage(dataUrl, "JPEG", placement.x, placement.y, placement.width, placement.height);
+}
+
+/** Export PNG haute résolution, recadré sur l'ensemble de l'organigramme. */
+export async function exportFlowToPng(viewportEl: HTMLElement, nodes: Node[], filename = "organigramme.png"): Promise<void> {
+  const { dataUrl } = await captureFlow(viewportEl, nodes, "png", PNG_DPI_SCALE);
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = filename;
+  a.click();
+}
+
+/**
+ * Copie l'organigramme en PNG dans le presse-papiers (collage direct dans
+ * PowerPoint, Teams, un e-mail…). Nécessite un contexte sécurisé (https ou localhost).
+ */
+export async function copyFlowToClipboard(viewportEl: HTMLElement, nodes: Node[]): Promise<void> {
+  if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
+    throw new Error("Le presse-papiers n'est pas disponible dans ce navigateur ou ce contexte.");
+  }
+  const { dataUrl } = await captureFlow(viewportEl, nodes, "png", 2);
+  const blob = await (await fetch(dataUrl)).blob();
+  await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+}
+
+/** Export SVG, recadré sur l'ensemble de l'organigramme. */
+export async function exportFlowToSvg(viewportEl: HTMLElement, nodes: Node[], filename = "organigramme.svg"): Promise<void> {
+  const { dataUrl } = await captureFlow(viewportEl, nodes, "svg", 1);
+  const a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = filename;
+  a.click();
+}
