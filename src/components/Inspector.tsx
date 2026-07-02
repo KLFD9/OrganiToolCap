@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
-import { NodeStyleVariantSchema } from "../types/orgchart";
+import { NodeStyleVariantSchema, resolveDisplay, type OrgDisplayOptions } from "../types/orgchart";
+import { computeOrgStats, computeTeamSize } from "../lib/stats";
 
 const NODE_STYLE_LABELS: Record<string, string> = {
   glass: "Verre (glass)",
@@ -129,6 +130,39 @@ function ColorInput({
   );
 }
 
+// Interrupteur compact pour les options d'affichage des cartes
+function DisplayToggle({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <button
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="flex w-full items-center justify-between gap-3 py-1 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer group"
+    >
+      <span>{label}</span>
+      <span
+        className={`relative h-4.5 w-8 shrink-0 rounded-full transition-colors duration-200 ${
+          checked ? "bg-primary-600" : "bg-zinc-300 dark:bg-zinc-700 group-hover:bg-zinc-400 dark:group-hover:bg-zinc-600"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+            checked ? "translate-x-4" : "translate-x-0.5"
+          }`}
+        />
+      </span>
+    </button>
+  );
+}
+
 interface InspectorProps {
   themeMode?: "light" | "dark";
 }
@@ -155,6 +189,12 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
 
   const selected = selectedNodeIds.length === 1 ? nodes.find((n) => n.id === selectedNodeIds[0]) : undefined;
   const parentEdge = selected ? edges.find((e) => e.target === selected.id) : undefined;
+
+  const stats = computeOrgStats(nodes, edges);
+  const display = resolveDisplay(theme);
+  const setDisplay = (patch: Partial<OrgDisplayOptions>) =>
+    setTheme({ display: { ...theme.display, ...patch } });
+  const teamSize = selected ? computeTeamSize(edges, selected.id) : null;
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selected) return;
@@ -390,14 +430,89 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
           </div>
         </div>
 
+        <hr className="border-zinc-100 dark:border-zinc-900" />
+
+        {/* Champs affichés sur les cartes (persisté dans le fichier) */}
+        <div className="flex flex-col gap-1">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-1">
+            Affichage des cartes
+          </span>
+          <DisplayToggle
+            label="Photos / avatars"
+            checked={display.showPhotos}
+            onChange={(v) => setDisplay({ showPhotos: v })}
+          />
+          <DisplayToggle
+            label="Intitulés de poste"
+            checked={display.showRoles}
+            onChange={(v) => setDisplay({ showRoles: v })}
+          />
+          <DisplayToggle
+            label="Badges de pôle"
+            checked={display.showDepartments}
+            onChange={(v) => setDisplay({ showDepartments: v })}
+          />
+          <DisplayToggle
+            label="Adresses e-mail"
+            checked={display.showEmails}
+            onChange={(v) => setDisplay({ showEmails: v })}
+          />
+        </div>
+
+        <hr className="border-zinc-100 dark:border-zinc-900" />
+
+        {/* Statistiques d'effectifs dérivées de l'organigramme */}
+        <div className="flex flex-col gap-2.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            Effectifs
+          </span>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: "Membres", value: stats.total },
+              { label: "Encadrants", value: stats.managers },
+              { label: "Niveaux", value: stats.depth },
+            ].map((stat) => (
+              <div
+                key={stat.label}
+                className="flex flex-col items-center rounded-xl border border-zinc-100 dark:border-zinc-900 bg-zinc-50/50 dark:bg-zinc-900/30 px-2 py-2.5"
+              >
+                <span className="text-base font-bold tracking-tight text-zinc-800 dark:text-zinc-100 tabular-nums">
+                  {stat.value}
+                </span>
+                <span className="text-[9px] font-medium text-zinc-400 dark:text-zinc-500">{stat.label}</span>
+              </div>
+            ))}
+          </div>
+          {stats.byDepartment.length > 0 && (
+            <div className="flex flex-col gap-1.5 mt-1">
+              {stats.byDepartment.map((dept) => (
+                <div key={dept.department} className="flex items-center gap-2">
+                  <span className="w-28 truncate text-[10px] text-zinc-500 dark:text-zinc-400" title={dept.department}>
+                    {dept.department}
+                  </span>
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-900">
+                    <div
+                      className="h-full rounded-full bg-primary-500/70 dark:bg-primary-400/70"
+                      style={{ width: `${(dept.count / stats.total) * 100}%` }}
+                    />
+                  </div>
+                  <span className="w-5 text-right font-mono text-[10px] text-zinc-500 dark:text-zinc-400 tabular-nums">
+                    {dept.count}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Ajouter un nœud racine */}
         <div className="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-900">
           <button
             onClick={() => addNode()}
             className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold shadow-sm transition-all hover:scale-102 active:scale-98 ${
               themeMode === "dark"
-                ? "bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
-                : "bg-zinc-900 text-white hover:bg-zinc-800"
+                ? "bg-primary-600 text-white hover:bg-primary-500"
+                : "bg-primary-700 text-white hover:bg-primary-600"
             }`}
           >
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -420,6 +535,19 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
         <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1 leading-normal">
           Modifiez les informations personnelles et le style visuel de ce nœud.
         </p>
+        {teamSize && teamSize.total > 0 && (
+          <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-primary-600/10 dark:bg-primary-400/10 px-2.5 py-1 text-[10px] font-semibold text-primary-700 dark:text-primary-300">
+            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0 -.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
+            Équipe : {teamSize.direct} direct{teamSize.direct > 1 ? "s" : ""} · {teamSize.total} au total
+          </div>
+        )}
       </div>
 
       {/* Profil Avatar */}
@@ -573,7 +701,7 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
           className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold shadow-sm transition-all hover:scale-102 active:scale-98 ${
             themeMode === "dark"
               ? "bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
-              : "bg-[#472F74]/5 text-[#472F74] border border-[#472F74]/10 hover:bg-[#472F74]/10"
+              : "bg-primary-600/5 text-primary-700 border border-primary-600/10 hover:bg-primary-600/10"
           }`}
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

@@ -6,6 +6,7 @@ import { Inspector } from "./components/Inspector";
 import { ExportDialog } from "./components/ExportDialog";
 import { useOrgChartStore } from "./store/useOrgChartStore";
 import { saveDraft, loadDraft, clearDraft } from "./lib/db";
+import { computeHiddenNodeIds } from "./lib/hierarchy";
 import { TemplatePicker } from "./components/TemplatePicker";
 import { createBlankChart } from "./templates/blank";
 
@@ -39,6 +40,12 @@ function App() {
   const deleteNodes = useOrgChartStore((s) => s.deleteNodes);
   const nodes = useOrgChartStore((s) => s.nodes);
   const setNodePosition = useOrgChartStore((s) => s.setNodePosition);
+  const addNode = useOrgChartStore((s) => s.addNode);
+  const edges = useOrgChartStore((s) => s.edges);
+  const collapsedNodeIds = useOrgChartStore((s) => s.collapsedNodeIds);
+  const expandAll = useOrgChartStore((s) => s.expandAll);
+
+  const hiddenCount = collapsedNodeIds.length > 0 ? computeHiddenNodeIds(collapsedNodeIds, edges).size : 0;
 
   // Appliquer la classe dark sur le document root
   useEffect(() => {
@@ -58,8 +65,11 @@ function App() {
     });
   }, []);
 
-  // Autosave de confort dans IndexedDB (debounce)
+  // Autosave de confort dans IndexedDB (debounce) — uniquement si des
+  // modifications non enregistrées existent, pour ne pas réécrire le
+  // brouillon en boucle quand l'état est propre.
   useEffect(() => {
+    if (!isDirty) return;
     const timer = setTimeout(() => {
       saveDraft(toFile());
     }, AUTOSAVE_DEBOUNCE_MS);
@@ -120,6 +130,26 @@ function App() {
         return;
       }
 
+      // Ajout rapide façon Miro/FigJam : Tab = subordonné, Entrée = collègue.
+      // Uniquement quand le focus est sur le canvas (jamais sur la toolbar ou
+      // un champ), pour préserver la navigation clavier standard.
+      if (!isEditable && !mod && selectedNodeIds.length === 1 && (e.key === "Tab" || e.key === "Enter")) {
+        const active = document.activeElement;
+        const focusInCanvas =
+          !active || active === document.body || Boolean(active.closest(".react-flow"));
+        if (focusInCanvas) {
+          e.preventDefault();
+          const id = selectedNodeIds[0];
+          if (e.key === "Tab") {
+            addNode(id);
+          } else {
+            // Collègue : même responsable que le membre sélectionné (racine si aucun)
+            addNode(edges.find((ed) => ed.target === id)?.source);
+          }
+          return;
+        }
+      }
+
       // Déplacement clavier précis
       if (!isEditable && selectedNodeIds.length > 0) {
         const step = e.shiftKey ? 20 : 4;
@@ -141,7 +171,7 @@ function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [undo, redo, selectedNodeIds, deleteNodes, nodes, setNodePosition, presentationMode]);
+  }, [undo, redo, selectedNodeIds, deleteNodes, nodes, setNodePosition, presentationMode, addNode, edges]);
 
   const handleRestoreDraft = async () => {
     const draft = await loadDraft();
@@ -230,8 +260,8 @@ function App() {
                     onClick={handleRestoreDraft}
                     className={`rounded-lg px-3.5 py-2 font-bold transition-all shadow-sm cursor-pointer hover:scale-102 active:scale-98 ${
                       themeMode === "dark"
-                        ? "bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
-                        : "bg-zinc-900 text-white hover:bg-zinc-800"
+                        ? "bg-primary-600 text-white hover:bg-primary-500"
+                        : "bg-primary-700 text-white hover:bg-primary-600"
                     }`}
                   >
                     Restaurer le travail
@@ -246,6 +276,31 @@ function App() {
         <div className="flex min-h-0 flex-1 relative">
           <div className="relative min-w-0 flex-1 h-full">
             <Canvas ref={canvasRef} themeMode={themeMode} showGroups={showGroups} />
+
+            {/* Chip « branches repliées » : rappel + tout déplier en un clic */}
+            {hiddenCount > 0 && (
+              <button
+                onClick={expandAll}
+                title="Afficher à nouveau toutes les branches"
+                className={`absolute left-4 top-4 z-10 flex h-8 items-center gap-2 rounded-lg border px-3 text-xs font-medium shadow-sm transition-all duration-200 hover:scale-102 active:scale-98 ${
+                  themeMode === "dark"
+                    ? "border-primary-400/40 bg-panel-bg-dark/95 text-primary-300 hover:bg-zinc-800"
+                    : "border-primary-600/40 bg-panel-bg-light/95 text-primary-700 hover:bg-primary-50"
+                }`}
+              >
+                <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M8 9l4 4 4-4m-8 6l4 4 4-4"
+                  />
+                </svg>
+                <span>
+                  {hiddenCount} membre{hiddenCount > 1 ? "s" : ""} masqué{hiddenCount > 1 ? "s" : ""} — Tout déplier
+                </span>
+              </button>
+            )}
 
             {/* Toggle Sidebar Button */}
             {!presentationMode && (

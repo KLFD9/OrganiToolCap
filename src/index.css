@@ -12,10 +12,33 @@
   --color-border-dark: #27272a;
   --color-text-light: #18181b;
   --color-text-dark: #f4f4f5;
-  --color-accent-gold: #c4956a;
+
+  /*
+   * Primaire : violet CAP, dérivé de l'identité des templates de charts
+   * (#472F74 profond / #6D4AAE médian). Une seule teinte de marque pour
+   * l'UI de l'éditeur ; amber = avertissement, emerald = succès, red = erreur.
+   */
+  --color-primary-50: #f5f3fa;
+  --color-primary-100: #ebe6f6;
+  --color-primary-200: #d8cfec;
+  --color-primary-300: #bcabdd;
+  --color-primary-400: #9d83cb;
+  --color-primary-500: #8262ba;
+  --color-primary-600: #6d4aae;
+  --color-primary-700: #5c3d93;
+  --color-primary-800: #472f74;
+  --color-primary-900: #3b2a5e;
+  --color-primary-950: #251a3d;
 }
 
 @layer base {
+  :root {
+    --focus-ring: var(--color-primary-600);
+  }
+  .dark {
+    --focus-ring: var(--color-primary-400);
+  }
+
   html, body, #root {
     height: 100%;
     overflow: hidden;
@@ -26,12 +49,26 @@
     font-family: "Inter", system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     transition: background-color 0.3s ease, color 0.3s ease;
+    /* Fond peint avant l'hydratation React : évite le flash blanc en mode sombre */
+    background-color: var(--color-editor-bg-light);
+  }
+  .dark body {
+    background-color: var(--color-editor-bg-dark);
   }
 
   /* Focus visible accessibility outline */
   *:focus-visible {
-    outline: 2px solid var(--color-accent-gold) !important;
+    outline: 2px solid var(--focus-ring) !important;
     outline-offset: 2px !important;
+  }
+
+  ::selection {
+    background: var(--color-primary-200);
+    color: var(--color-primary-950);
+  }
+  .dark ::selection {
+    background: var(--color-primary-800);
+    color: var(--color-primary-100);
   }
 }
 

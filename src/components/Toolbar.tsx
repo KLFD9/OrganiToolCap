@@ -527,7 +527,9 @@ export function Toolbar({
             aria-pressed={layout.mode === "compact"}
             className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
               layout.mode === "compact"
-                ? "border-[#472F74]/40 bg-[#472F74]/10 text-[#472F74]"
+                ? themeMode === "dark"
+                  ? "border-primary-400/40 bg-primary-500/15 text-primary-300"
+                  : "border-primary-600/40 bg-primary-600/10 text-primary-700"
                 : themeMode === "dark"
                 ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
                 : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
@@ -579,7 +581,9 @@ export function Toolbar({
             aria-pressed={showGroups}
             className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
               showGroups
-                ? "border-[#472F74]/40 bg-[#472F74]/10 text-[#472F74]"
+                ? themeMode === "dark"
+                  ? "border-primary-400/40 bg-primary-500/15 text-primary-300"
+                  : "border-primary-600/40 bg-primary-600/10 text-primary-700"
                 : themeMode === "dark"
                 ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
                 : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
@@ -634,7 +638,7 @@ export function Toolbar({
             onClick={onToggleTheme}
             className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
               themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-amber-400 hover:bg-zinc-800 hover:text-amber-300"
+                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
                 : "border-border-light bg-zinc-50/60 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
             }`}
           >
@@ -675,8 +679,8 @@ export function Toolbar({
             onClick={handleSave}
             className={`flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm transition-all hover:scale-102 active:scale-98 ${
               themeMode === "dark"
-                ? "bg-amber-600 text-white hover:bg-amber-500 shadow-amber-900/10"
-                : "bg-zinc-900 text-white hover:bg-zinc-800 shadow-zinc-900/10"
+                ? "bg-primary-600 text-white hover:bg-primary-500 shadow-primary-950/30"
+                : "bg-primary-700 text-white hover:bg-primary-600 shadow-primary-900/10"
             }`}
           >
             <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

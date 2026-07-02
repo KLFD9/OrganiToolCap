@@ -3,6 +3,7 @@ import type { OrgChartFile, OrgEdge, OrgNode, OrgNodeData, OrgNodeStyle, OrgThem
 import { athanorDemo } from "../templates/athanorDemo";
 import { layoutWithElk } from "../lib/elkLayout";
 import { layoutCompact } from "../lib/compactLayout";
+import { computeHiddenNodeIds } from "../lib/hierarchy";
 
 let nodeCounter = 0;
 function generateId(prefix: string): string {
@@ -32,6 +33,8 @@ interface OrgChartState {
   fileHandle?: FileSystemFileHandle;
   isDirty: boolean;
   selectedNodeIds: string[];
+  /** Branches repliées (état de vue, non persisté dans le fichier). */
+  collapsedNodeIds: string[];
 
   past: HistorySnapshot[];
   future: HistorySnapshot[];
@@ -56,6 +59,8 @@ interface OrgChartState {
   updateNodeStyleOverride: (id: string, override: Partial<OrgNodeStyle> | undefined) => void;
   updateNodesStyleOverride: (ids: string[], override: Partial<OrgNodeStyle>) => void;
   addNode: (parentId?: string) => void;
+  /** Ajoute un membre à une position précise du canvas (edge-drop, clic droit). */
+  addNodeAt: (position: { x: number; y: number }, parentId?: string) => void;
   duplicateNode: (id: string) => void;
   deleteNode: (id: string) => void;
   deleteNodes: (ids: string[]) => void;
@@ -69,10 +74,22 @@ interface OrgChartState {
   setLayoutAuto: (auto: boolean) => void;
   applyAutoLayout: () => Promise<void>;
   applyCompactLayout: () => void;
+  /**
+   * Applique une disposition candidate (optimiseur d'export) : fusionne les
+   * positions par id — les nœuds absents (branches repliées) sont préservés.
+   */
+  applyLayoutCandidate: (
+    positionedNodes: OrgNode[],
+    layout: Pick<OrgChartFile["layout"], "direction" | "mode">
+  ) => void;
 
   // -- sélection --
   selectNode: (id: string | null) => void;
   selectNodes: (ids: string[]) => void;
+
+  // -- repli de branches --
+  toggleCollapsed: (id: string) => void;
+  expandAll: () => void;
 }
 
 function touch(state: { meta: OrgChartFile["meta"] }) {
@@ -119,6 +136,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
   fileHandle: undefined,
   isDirty: false,
   selectedNodeIds: [],
+  collapsedNodeIds: [],
 
   past: [],
   future: [],
@@ -176,6 +194,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       fileHandle: handle,
       isDirty: false,
       selectedNodeIds: [],
+      collapsedNodeIds: [],
       past: [],
       future: [],
     }),
@@ -303,6 +322,27 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       };
     }),
 
+  addNodeAt: (position, parentId) =>
+    set((s) => {
+      const id = generateId("node");
+      const newNode: OrgNode = {
+        id,
+        position,
+        data: { name: "Nouveau membre", role: "Poste" },
+      };
+      const newEdges = parentId
+        ? [...s.edges, { id: generateId("edge"), source: parentId, target: id }]
+        : s.edges;
+      return {
+        ...pushHistory(s),
+        nodes: [...s.nodes, newNode],
+        edges: newEdges,
+        selectedNodeIds: [id],
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+      };
+    }),
+
   duplicateNode: (id) =>
     set((s) => {
       const original = s.nodes.find((n) => n.id === id);
@@ -339,6 +379,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       nodes: s.nodes.filter((n) => n.id !== id),
       edges: s.edges.filter((e) => e.source !== id && e.target !== id),
       selectedNodeIds: s.selectedNodeIds.filter((sid) => sid !== id),
+      collapsedNodeIds: s.collapsedNodeIds.filter((cid) => cid !== id),
       isDirty: true,
       meta: { ...s.meta, updatedAt: new Date().toISOString() },
     })),
@@ -351,6 +392,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
         nodes: s.nodes.filter((n) => !idSet.has(n.id)),
         edges: s.edges.filter((e) => !idSet.has(e.source) && !idSet.has(e.target)),
         selectedNodeIds: s.selectedNodeIds.filter((sid) => !idSet.has(sid)),
+        collapsedNodeIds: s.collapsedNodeIds.filter((cid) => !idSet.has(cid)),
         isDirty: true,
         meta: { ...s.meta, updatedAt: new Date().toISOString() },
       };
@@ -401,6 +443,36 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
     });
   },
 
+  applyLayoutCandidate: (positionedNodes, layout) =>
+    set((s) => {
+      const posById = new Map(positionedNodes.map((n) => [n.id, n.position]));
+      return {
+        ...pushHistory(s),
+        nodes: s.nodes.map((n) => {
+          const position = posById.get(n.id);
+          return position ? { ...n, position } : n;
+        }),
+        layout: { ...s.layout, ...layout },
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+      };
+    }),
+
   selectNode: (id) => set({ selectedNodeIds: id ? [id] : [] }),
   selectNodes: (ids) => set({ selectedNodeIds: ids }),
+
+  toggleCollapsed: (id) =>
+    set((s) => {
+      const collapsedNodeIds = s.collapsedNodeIds.includes(id)
+        ? s.collapsedNodeIds.filter((cid) => cid !== id)
+        : [...s.collapsedNodeIds, id];
+      // Un nœud masqué ne doit pas rester sélectionné (il n'est plus manipulable)
+      const hidden = computeHiddenNodeIds(collapsedNodeIds, s.edges);
+      return {
+        collapsedNodeIds,
+        selectedNodeIds: s.selectedNodeIds.filter((sid) => !hidden.has(sid)),
+      };
+    }),
+
+  expandAll: () => set({ collapsedNodeIds: [] }),
 }));

@@ -8,10 +8,35 @@
       name="description"
       content="Éditeur d'organigrammes 100 % local : créez, personnalisez et exportez (PDF, PowerPoint, PNG, SVG) sans qu'aucune donnée ne quitte votre poste."
     />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#faf9f6" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#09090b" />
+    <meta property="og:title" content="OrganiTool CAP — Éditeur d'organigrammes" />
+    <meta
+      property="og:description"
+      content="Créez, personnalisez et exportez des organigrammes (PDF, PowerPoint, PNG, SVG) — 100 % local, aucune donnée ne quitte votre poste."
+    />
+    <meta property="og:type" content="website" />
     <title>OrganiTool CAP — Éditeur d'organigrammes</title>
+    <script>
+      // Applique le thème sombre avant le premier rendu pour éviter le flash
+      // blanc au chargement (la classe est ensuite gérée par React).
+      try {
+        var t = localStorage.getItem("editor-theme");
+        if (t === "dark" || (!t && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
+          document.documentElement.classList.add("dark");
+        }
+      } catch (e) {
+        /* stockage indisponible : thème clair par défaut */
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      OrganiTool CAP nécessite JavaScript : l'application fonctionne entièrement dans votre
+      navigateur, sans serveur.
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

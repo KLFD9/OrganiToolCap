@@ -71,4 +71,18 @@ describe("buildEditableSpec", () => {
     expect(spec.cards).toHaveLength(0);
     expect(spec.connectors).toHaveLength(0);
   });
+
+  it("respecte les options d'affichage du thème (postes et pôles masqués)", () => {
+    const { nodes, edges } = org();
+    const theme = { ...glassCapTheme, display: { showRoles: false, showDepartments: false } };
+    const spec = buildEditableSpec(nodes, edges, theme, AREA);
+    expect(spec.cards[0].role).toBeUndefined();
+    expect(spec.cards[0].department).toBeUndefined();
+    expect(spec.cards[0].name).toBe("Claire Dubois");
+
+    // par défaut (sans display), tout est affiché
+    const full = buildEditableSpec(nodes, edges, glassCapTheme, AREA);
+    expect(full.cards[0].role).toBe("DG");
+    expect(full.cards[0].department).toBe("Direction");
+  });
 });

@@ -34,8 +34,8 @@ export function TemplatePicker({ open, onClose, onSelect, themeMode = "light" }:
               onClick={() => onSelect(tpl.id)}
               className={`flex flex-col items-stretch gap-3 rounded-2xl border p-4 text-left transition-all duration-300 hover:scale-102 hover:shadow-md cursor-pointer ${
                 themeMode === "dark"
-                  ? "border-zinc-850 bg-zinc-900/10 hover:border-zinc-700 hover:bg-zinc-900/40"
-                  : "border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50/60"
+                  ? "border-zinc-800 bg-zinc-900/10 hover:border-primary-500/50 hover:bg-zinc-900/40"
+                  : "border-zinc-200 hover:border-primary-400/60 hover:bg-zinc-50/60"
               }`}
             >
               {/* Prévisualisation miniature vectorielle de la structure de l'organigramme */}

@@ -11,6 +11,17 @@ export const OrgNodeStyleSchema = z.object({
 });
 export type OrgNodeStyle = z.infer<typeof OrgNodeStyleSchema>;
 
+// Champs affichés sur les cartes. Optionnel et additif sur le format v1
+// (même pattern que layout.mode) : les fichiers antérieurs restent valides,
+// l'absence d'un champ vaut « affiché ».
+export const OrgDisplayOptionsSchema = z.object({
+  showPhotos: z.boolean().optional(),
+  showRoles: z.boolean().optional(),
+  showDepartments: z.boolean().optional(),
+  showEmails: z.boolean().optional(),
+});
+export type OrgDisplayOptions = z.infer<typeof OrgDisplayOptionsSchema>;
+
 export const OrgThemeSchema = z.object({
   accent: z.string(),
   palette: z.array(z.string()).min(1),
@@ -19,8 +30,19 @@ export const OrgThemeSchema = z.object({
   cornerRadius: z.number(),
   logoUrl: z.string().optional(),          // logo de l'entreprise / du groupe
   secondaryLogoUrl: z.string().optional(), // logo d'une entité partenaire, le cas échéant
+  display: OrgDisplayOptionsSchema.optional(),
 });
 export type OrgTheme = z.infer<typeof OrgThemeSchema>;
+
+/** Options d'affichage effectives : tout est affiché par défaut. */
+export function resolveDisplay(theme: Pick<OrgTheme, "display">): Required<OrgDisplayOptions> {
+  return {
+    showPhotos: theme.display?.showPhotos ?? true,
+    showRoles: theme.display?.showRoles ?? true,
+    showDepartments: theme.display?.showDepartments ?? true,
+    showEmails: theme.display?.showEmails ?? true,
+  };
+}
 
 export const OrgNodeDataSchema = z.object({
   name: z.string(),

@@ -13,6 +13,8 @@ import {
 } from "../lib/pdfExport";
 import { exportFlowToPptx } from "../lib/pptxExport";
 import { estimateReadability, pageAvailableArea } from "../lib/readability";
+import { computeHiddenNodeIds } from "../lib/hierarchy";
+import { optimizeLayoutForPage, rankCandidates } from "../lib/exportLayout";
 
 interface ExportDialogProps {
   open: boolean;
@@ -26,12 +28,13 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   const theme = useOrgChartStore((s) => s.theme);
   const selectedNodeIds = useOrgChartStore((s) => s.selectedNodeIds);
   const selectNodes = useOrgChartStore((s) => s.selectNodes);
-  const layoutMode = useOrgChartStore((s) => s.layout.mode);
-  const applyCompactLayout = useOrgChartStore((s) => s.applyCompactLayout);
+  const layoutState = useOrgChartStore((s) => s.layout);
+  const applyLayoutCandidate = useOrgChartStore((s) => s.applyLayoutCandidate);
   const storeNodes = useOrgChartStore((s) => s.nodes);
   const storeEdges = useOrgChartStore((s) => s.edges);
+  const collapsedNodeIds = useOrgChartStore((s) => s.collapsedNodeIds);
   const toFile = useOrgChartStore((s) => s.toFile);
-  const { getNodes } = useReactFlow();
+  const { getNodes, fitView } = useReactFlow();
   const [format, setFormat] = useState<PdfFormat>("a4");
   const [orientation, setOrientation] = useState<PdfOrientation>("landscape");
   const [margin, setMargin] = useState(10);
@@ -40,17 +43,37 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   const [includeLogos, setIncludeLogos] = useState(true);
   const [multiPage, setMultiPage] = useState(false);
   const [pptxEditable, setPptxEditable] = useState(true);
+  const [pdfVector, setPdfVector] = useState(true);
+  const [transparentBg, setTransparentBg] = useState(false);
+
+  // L'export est WYSIWYG : les branches repliées n'y figurent pas.
+  const hiddenIds = useMemo(
+    () => computeHiddenNodeIds(collapsedNodeIds, storeEdges),
+    [collapsedNodeIds, storeEdges]
+  );
+  const visibleNodes = useMemo(
+    () => (hiddenIds.size === 0 ? storeNodes : storeNodes.filter((n) => !hiddenIds.has(n.id))),
+    [storeNodes, hiddenIds]
+  );
+  const visibleEdges = useMemo(
+    () =>
+      hiddenIds.size === 0
+        ? storeEdges
+        : storeEdges.filter((e) => !hiddenIds.has(e.source) && !hiddenIds.has(e.target)),
+    [storeEdges, hiddenIds]
+  );
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [optimizeNotice, setOptimizeNotice] = useState<string | null>(null);
 
   // Lisibilité estimée du document : taille réelle du texte une fois
   // l'organigramme ajusté à la page (sans objet en multi-pages).
   const readability = useMemo(() => {
-    if (!open || multiPage || storeNodes.length === 0) return null;
-    // Bornes calculées depuis le store (réactif), cartes de 240×110 px
-    const xs = storeNodes.map((n) => n.position.x);
-    const ys = storeNodes.map((n) => n.position.y);
+    if (!open || multiPage || visibleNodes.length === 0) return null;
+    // Bornes calculées depuis les nœuds visibles (réactif), cartes de 240×110 px
+    const xs = visibleNodes.map((n) => n.position.x);
+    const ys = visibleNodes.map((n) => n.position.y);
     const bounds = {
       width: Math.max(...xs) - Math.min(...xs) + CARD_WIDTH,
       height: Math.max(...ys) - Math.min(...ys) + CARD_HEIGHT,
@@ -73,7 +96,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   }, [
     open,
     multiPage,
-    storeNodes,
+    visibleNodes,
     format,
     orientation,
     margin,
@@ -87,6 +110,69 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   ]);
 
   if (!open) return null;
+
+  /** Zone utile de la page (mm) pour l'orientation donnée, en-tête/pied déduits. */
+  const availFor = (o: PdfOrientation) => {
+    const chrome = computeChromeOffsets(
+      {
+        format,
+        orientation: o,
+        margin,
+        title: includeTitle ? meta.title : undefined,
+        footer: includeFooter ? meta.footer : undefined,
+        logoUrl: includeLogos ? theme.logoUrl : undefined,
+        secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
+      },
+      margin
+    );
+    return pageAvailableArea(format, o, margin, chrome.topOffset, chrome.bottomOffset);
+  };
+
+  /**
+   * Essaie plusieurs dispositions (actuelle, arbre vertical/horizontal,
+   * compacte), applique celle qui donne le plus grand texte imprimé sur ce
+   * format, et suggère l'autre orientation si elle ferait nettement mieux.
+   */
+  const handleOptimize = async () => {
+    setError(null);
+    setOptimizeNotice(null);
+    setBusy("optimize");
+    try {
+      const ranked = await optimizeLayoutForPage(visibleNodes, visibleEdges, layoutState, availFor(orientation));
+      const best = ranked[0];
+      const current = ranked.find((c) => c.id === "current") ?? best;
+
+      const other: PdfOrientation = orientation === "landscape" ? "portrait" : "landscape";
+      const otherArea = availFor(other);
+      const bestOther = rankCandidates(ranked, otherArea.width, otherArea.height)[0];
+      const orientationHint =
+        bestOther.estimate.fontPt > best.estimate.fontPt + 1
+          ? ` Astuce : en ${other === "portrait" ? "portrait" : "paysage"}, « ${bestOther.label} » atteindrait ${bestOther.estimate.fontPt} pt.`
+          : "";
+      const escalationHint =
+        best.estimate.rating === "good"
+          ? ""
+          : " Pour aller plus loin : format A3, marges réduites ou multi-pages.";
+
+      if (best.id === "current") {
+        setOptimizeNotice(
+          `La disposition actuelle est déjà la meilleure pour ce format (texte ≈ ${best.estimate.fontPt} pt).${escalationHint}${orientationHint}`
+        );
+      } else {
+        applyLayoutCandidate(best.nodes, best.layout);
+        const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+        requestAnimationFrame(() => fitView({ duration: reduceMotion ? 0 : 300, padding: 0.2 }));
+        setOptimizeNotice(
+          `« ${best.label} » appliquée : texte ${current.estimate.fontPt} pt → ${best.estimate.fontPt} pt. Ctrl+Z pour revenir en arrière.${escalationHint}${orientationHint}`
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      setError("L'optimisation de la disposition a échoué.");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const run = async (kind: "pdf" | "pptx" | "png" | "svg" | "clipboard") => {
     const el = getViewportElement();
@@ -111,7 +197,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
 
     try {
       if (kind === "pdf") {
-        await exportFlowToPdf(el, nodes, {
+        const pdfOptions = {
           format,
           orientation,
           margin,
@@ -121,7 +207,15 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
           logoUrl: includeLogos ? theme.logoUrl : undefined,
           secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
           multiPage,
-        });
+        };
+        // Vectoriel natif : cartes dessinées dans le PDF (texte net, fichier
+        // léger). Le multi-pages reste en capture image haute résolution.
+        if (pdfVector && !multiPage) {
+          const { exportFlowToPdfVector } = await import("../lib/pdfVector");
+          await exportFlowToPdfVector(visibleNodes, visibleEdges, theme, pdfOptions);
+        } else {
+          await exportFlowToPdf(el, nodes, pdfOptions);
+        }
       } else if (kind === "pptx") {
         const pptxOptions = {
           title: includeTitle ? meta.title : undefined,
@@ -135,7 +229,8 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
         const chartJson = JSON.stringify(toFile(), null, 2);
         if (pptxEditable) {
           const { exportFlowToPptxEditable } = await import("../lib/pptxEditable");
-          await exportFlowToPptxEditable(storeNodes, storeEdges, theme, pptxOptions, chartJson);
+          // Nœuds visibles uniquement : l'export reflète l'affichage (branches repliées exclues)
+          await exportFlowToPptxEditable(visibleNodes, visibleEdges, theme, pptxOptions, chartJson);
         } else {
           await exportFlowToPptx(el, nodes, pptxOptions, chartJson);
         }
@@ -144,9 +239,9 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
         setCopied(true);
         setTimeout(() => setCopied(false), 2500);
       } else if (kind === "png") {
-        await exportFlowToPng(el, nodes, `${meta.title || "organigramme"}.png`);
+        await exportFlowToPng(el, nodes, `${meta.title || "organigramme"}.png`, { transparent: transparentBg });
       } else {
-        await exportFlowToSvg(el, nodes, `${meta.title || "organigramme"}.svg`);
+        await exportFlowToSvg(el, nodes, `${meta.title || "organigramme"}.svg`, { transparent: transparentBg });
       }
     } catch (err) {
       console.error(err);
@@ -188,6 +283,30 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
         <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500 leading-normal">
           Exportez votre organigramme sous forme de document vectoriel ou d'image haute définition.
         </p>
+
+        {/* Export WYSIWYG : signale les membres exclus par le repli de branches */}
+        {hiddenIds.size > 0 && (
+          <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-primary-600/25 bg-primary-600/5 dark:border-primary-400/25 dark:bg-primary-400/5 p-3">
+            <svg
+              className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary-700 dark:text-primary-300"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+            <p className="text-[11px] leading-relaxed text-primary-800 dark:text-primary-200">
+              L'export reflète l'affichage actuel : {hiddenIds.size} membre{hiddenIds.size > 1 ? "s" : ""} de
+              branches repliées n'y figurer{hiddenIds.size > 1 ? "ont" : "a"} pas. Dépliez les branches avant
+              d'exporter pour un organigramme complet — ou repliez-en pour exporter une vue partielle.
+            </p>
+          </div>
+        )}
 
         {/* Configuration PDF */}
         <div className="grid grid-cols-2 gap-3 mt-5">
@@ -330,24 +449,30 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
               <div className="mt-2.5 flex flex-col gap-2">
                 <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
                   L'organigramme est trop étendu pour cette page : une fois ajusté, le nom des
-                  cartes fera {readability.fontPt} pt à l'impression.
-                  {layoutMode !== "compact"
-                    ? " La disposition compacte empile les équipes sous leur responsable pour rapprocher l'organigramme du format de la page, sans changer le style des cartes."
-                    : " Essayez le format A3, réduisez les marges, ou activez le multi-pages."}
+                  cartes fera {readability.fontPt} pt à l'impression. L'optimiseur compare
+                  plusieurs dispositions (arbre vertical, horizontal, compacte) et applique
+                  celle qui donne le plus grand texte sur ce format.
                 </p>
-                {layoutMode !== "compact" && (
-                  <button
-                    onClick={applyCompactLayout}
-                    className={`self-start rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all hover:scale-102 active:scale-98 cursor-pointer ${
-                      themeMode === "dark"
-                        ? "bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
-                        : "bg-zinc-900 text-white hover:bg-zinc-800"
-                    }`}
-                  >
-                    Appliquer la disposition compacte
-                  </button>
-                )}
+                <button
+                  onClick={handleOptimize}
+                  disabled={busy !== null}
+                  className={`self-start rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all hover:scale-102 active:scale-98 cursor-pointer disabled:opacity-50 ${
+                    themeMode === "dark"
+                      ? "bg-primary-600 text-white hover:bg-primary-500"
+                      : "bg-primary-700 text-white hover:bg-primary-600"
+                  }`}
+                >
+                  {busy === "optimize" ? "Analyse des dispositions…" : "Optimiser la disposition pour cette page"}
+                </button>
               </div>
+            )}
+            {optimizeNotice && (
+              <p
+                role="status"
+                className="mt-2.5 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300 border-t border-zinc-200/60 dark:border-zinc-800 pt-2.5"
+              >
+                {optimizeNotice}
+              </p>
             )}
           </div>
         )}
@@ -361,8 +486,8 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
             disabled={busy !== null}
             className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold shadow-sm transition-all hover:scale-101 active:scale-99 cursor-pointer ${
               themeMode === "dark"
-                ? "bg-zinc-100 text-zinc-900 hover:bg-zinc-200"
-                : "bg-zinc-900 text-white hover:bg-zinc-800"
+                ? "bg-primary-600 text-white hover:bg-primary-500"
+                : "bg-primary-700 text-white hover:bg-primary-600"
             } disabled:opacity-50`}
           >
             {busy === "pdf" ? (
@@ -378,10 +503,29 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                <span>Télécharger le PDF vectoriel</span>
+                <span>Télécharger le PDF</span>
               </>
             )}
           </button>
+
+          <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer px-1">
+            <input
+              type="checkbox"
+              checked={pdfVector && !multiPage}
+              disabled={multiPage}
+              onChange={(e) => setPdfVector(e.target.checked)}
+              className={`${checkboxClass} mt-0.5`}
+            />
+            <span className={multiPage ? "opacity-50" : ""}>
+              PDF vectoriel natif (texte net)
+              <span className="mt-0.5 block text-[10px] text-zinc-400 dark:text-zinc-500">
+                Coché : cartes dessinées en vectoriel — texte parfaitement net à toutes les échelles,
+                fichier léger. Polices standardisées, photos non incluses. Décoché
+                {multiPage ? " (ou multi-pages)" : ""} : capture image haute résolution, fidèle au
+                pixel près.
+              </span>
+            </span>
+          </label>
 
           <button
             onClick={() => run("pptx")}
@@ -428,6 +572,21 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                 Coché : cartes et liens deviennent des formes natives, modifiables par le destinataire.
                 Décoché : image figée, fidèle au pixel près. Dans les deux cas, le fichier se réimporte
                 ici à l'identique via « Ouvrir ».
+              </span>
+            </span>
+          </label>
+
+          <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer px-1">
+            <input
+              type="checkbox"
+              checked={transparentBg}
+              onChange={(e) => setTransparentBg(e.target.checked)}
+              className={`${checkboxClass} mt-0.5`}
+            />
+            <span>
+              Fond transparent (PNG / SVG)
+              <span className="mt-0.5 block text-[10px] text-zinc-400 dark:text-zinc-500">
+                Idéal pour intégrer l'organigramme sur un fond de slide ou une charte graphique existante.
               </span>
             </span>
           </label>

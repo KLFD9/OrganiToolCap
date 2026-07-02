@@ -173,7 +173,8 @@ export async function captureFlow(
   viewportEl: HTMLElement,
   nodes: Node[],
   type: "svg" | "png" | "jpeg",
-  desiredRatio: number
+  desiredRatio: number,
+  capture?: { transparent?: boolean }
 ): Promise<CaptureResult> {
   const bounds = getNodesBounds(nodes);
   const width = Math.max(1, Math.ceil(bounds.width * (1 + CONTENT_PADDING_RATIO * 2)));
@@ -203,8 +204,10 @@ export async function captureFlow(
   await nextFrame();
 
   try {
+    // Le JPEG ne gère pas la transparence : fond blanc imposé.
+    const transparent = Boolean(capture?.transparent) && type !== "jpeg";
     const options = {
-      backgroundColor: "#ffffff",
+      backgroundColor: transparent ? undefined : "#ffffff",
       pixelRatio,
       width,
       height,
@@ -288,7 +291,7 @@ export function computeChromeOffsets(options: PdfExportOptions, margin: number):
 }
 
 /** Dessine l'en-tête (logos, titre, sous-titre) et le pied de page sur la page courante du PDF. */
-async function drawPageChrome(
+export async function drawPageChrome(
   pdf: jsPDF,
   options: PdfExportOptions,
   pageWidth: number,
@@ -344,8 +347,22 @@ async function drawPageChrome(
   return { topOffset, bottomOffset };
 }
 
-function safeFileName(title: string | undefined, suffix = ""): string {
+export function safeFileName(title: string | undefined, suffix = ""): string {
   return `${(title || "organigramme").replace(/[^a-z0-9-_]+/gi, "-")}${suffix}.pdf`;
+}
+
+/**
+ * Métadonnées d'accessibilité et d'archivage du document : titre, sujet,
+ * créateur et langue (lecteurs d'écran, recherche, GED).
+ */
+export function applyPdfMetadata(pdf: jsPDF, options: Pick<PdfExportOptions, "title" | "subtitle">): void {
+  pdf.setProperties({
+    title: options.title || "Organigramme",
+    subject: options.subtitle || "Organigramme",
+    creator: "OrganiTool CAP",
+    author: options.subtitle || options.title || "OrganiTool CAP",
+  });
+  pdf.setLanguage("fr-FR");
 }
 
 /** Exporte les nœuds React Flow (recadrés sur l'ensemble de l'organigramme) en PDF haute résolution. */
@@ -358,6 +375,8 @@ export async function exportFlowToPdf(viewportEl: HTMLElement, nodes: Node[], op
     unit: "mm",
     format: options.format,
   });
+
+  applyPdfMetadata(pdf, options);
 
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
@@ -422,8 +441,13 @@ async function drawSinglePage(
 }
 
 /** Export PNG haute résolution, recadré sur l'ensemble de l'organigramme. */
-export async function exportFlowToPng(viewportEl: HTMLElement, nodes: Node[], filename = "organigramme.png"): Promise<void> {
-  const { dataUrl } = await captureFlow(viewportEl, nodes, "png", PNG_DPI_SCALE);
+export async function exportFlowToPng(
+  viewportEl: HTMLElement,
+  nodes: Node[],
+  filename = "organigramme.png",
+  options?: { transparent?: boolean }
+): Promise<void> {
+  const { dataUrl } = await captureFlow(viewportEl, nodes, "png", PNG_DPI_SCALE, options);
   const a = document.createElement("a");
   a.href = dataUrl;
   a.download = filename;
@@ -444,8 +468,13 @@ export async function copyFlowToClipboard(viewportEl: HTMLElement, nodes: Node[]
 }
 
 /** Export SVG, recadré sur l'ensemble de l'organigramme. */
-export async function exportFlowToSvg(viewportEl: HTMLElement, nodes: Node[], filename = "organigramme.svg"): Promise<void> {
-  const { dataUrl } = await captureFlow(viewportEl, nodes, "svg", 1);
+export async function exportFlowToSvg(
+  viewportEl: HTMLElement,
+  nodes: Node[],
+  filename = "organigramme.svg",
+  options?: { transparent?: boolean }
+): Promise<void> {
+  const { dataUrl } = await captureFlow(viewportEl, nodes, "svg", 1, options);
   const a = document.createElement("a");
   a.href = dataUrl;
   a.download = filename;

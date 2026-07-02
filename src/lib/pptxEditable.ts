@@ -1,4 +1,4 @@
-import type { OrgEdge, OrgNode, OrgTheme } from "../types/orgchart";
+import { resolveDisplay, type OrgEdge, type OrgNode, type OrgTheme } from "../types/orgchart";
 import { computeLevels, computeNodeStyle, getContrastColor } from "./nodeStyle";
 import { computeStackedIds, CARD_WIDTH, CARD_HEIGHT } from "./compactLayout";
 import {
@@ -89,6 +89,7 @@ export function buildEditableSpec(
   const levels = computeLevels(nodes, edges);
   const stackedIds = computeStackedIds(nodes, edges);
   const byId = new Map(nodes.map((n) => [n.id, n]));
+  const display = resolveDisplay(theme);
 
   const namePt = clamp(12 * scale * PT_PER_IN * (96 / 72), MIN_FONT_PT, MAX_NAME_PT);
 
@@ -106,9 +107,9 @@ export function buildEditableSpec(
       fillColor,
       lineColor: pptxColor(style.accentColor, "472F74"),
       lineWidth: theme.nodeStyle === "outline" ? 1.25 : 0.75,
-      department: n.data.department,
+      department: display.showDepartments ? n.data.department : undefined,
       name: n.data.name || "Sans nom",
-      role: n.data.role,
+      role: display.showRoles ? n.data.role : undefined,
       deptColor: isFlat ? textColor : pptxColor(style.accentColor, "472F74"),
       textColor,
       namePt,

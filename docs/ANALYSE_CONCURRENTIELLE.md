@@ -37,6 +37,8 @@ Notre limite assumée face aux concurrents : pas de collaboration temps réel ni
 | Copie presse-papiers | ✅ | — | ✅ | ✅ |
 | Undo/redo | ✅ | ✅ | ✅ | ✅ (50 niveaux) |
 | Regroupement par département | ✅ | ✅ | ❌ | ✅ |
+| Replier/déplier les branches | ✅ | ✅ | ❌ | ✅ (badge effectif + export partiel) |
+| Statistiques d'effectifs | ✅ | ✅ | ❌ | ✅ |
 | Recherche de membre | ✅ | ✅ | ❌ | ✅ |
 | Données 100 % locales | ❌ | ❌ | ❌ | ✅ **unique** |
 | Fonctionne hors-ligne / fichier local | partiel | ❌ | ❌ | ✅ **unique** |
@@ -53,11 +55,21 @@ Notre limite assumée face aux concurrents : pas de collaboration temps réel ni
 - **Disposition compacte** : empilement vertical des équipes terrain sous leur responsable (le « smart layout » de Visio/Organimi), avec routage des liens « en épine ». Résout le cas des arbres plats et larges (ratio 5:1) illisibles une fois ajustés sur une page.
 - **Jauge de lisibilité à l'export** : estimation en temps réel de la taille du texte imprimé (pt) selon format/orientation/marges, verdict colorié et action corrective en un clic. Aucun concurrent grand public n'expose cette information avant génération.
 - **PowerPoint éditable + round-trip** : l'export .pptx produit des formes natives modifiables (et non une image figée), embarque le `.orgchart.json` dans le fichier, et « Ouvrir » réimporte aussi bien nos .pptx (restauration à l'identique) que les organigrammes SmartArt créés dans PowerPoint. Ce cycle complet PowerPoint ↔ application n'existe chez aucun concurrent du comparatif.
+- **Replier / déplier les branches** (juillet 2026) : standard du segment (piste n° 1), avec badge d'effectif masqué (`+N`) et rappel « Tout déplier ». Doublé d'un usage différenciant : l'export étant WYSIWYG, replier des branches produit un **export par direction / par pôle** sans dupliquer le fichier.
+- **Statistiques d'effectifs** (juillet 2026) : effectif, encadrants, profondeur et répartition par pôle dans l'inspecteur ; taille d'équipe sur chaque fiche (piste n° 3).
+- **Affichage des cartes personnalisable** (juillet 2026) : photos / postes / pôles / e-mails activables globalement, persisté dans le fichier (`theme.display`, champ optionnel additif du format v1) et respecté par l'export PowerPoint éditable. Répond au besoin « anonymiser » un organigramme diffusé largement (masquer les e-mails) sans toucher aux données.
+- **Fond transparent PNG / SVG** (juillet 2026) : intégration directe sur un gabarit de slide ou une charte graphique.
+- **Optimiseur de disposition pour la page** (juillet 2026) : prolonge la jauge de lisibilité — au lieu de constater le problème, l'app compare les dispositions candidates (arbre TB/LR via elkjs, compacte) contre la zone utile réelle de la page et applique celle qui maximise la taille du texte imprimé, gain affiché et annulable. Suggestions d'escalade (orientation opposée, A3, multi-pages) quand le format ne suffit pas. Le « best fit to page » automatique mesuré en points typographiques n'existe chez aucun concurrent du comparatif.
+- **Métadonnées d'accessibilité PDF** (juillet 2026) : titre, sujet, créateur et langue (fr-FR) déclarés dans le document exporté.
+- **Édition rapide au canvas** (juillet 2026) : clic droit contextuel (membre et fond), « add node on edge drop » (tirer une poignée dans le vide crée le subordonné à cet endroit), raccourcis Tab/Entrée façon Miro/FigJam. Répond au critère n° 1 des avis utilisateurs du segment : la fluidité d'édition drag & drop (« intuitive, minimal training »).
+- **Grille ajustée à la page** (juillet 2026) : 5ᵉ candidat de l'optimiseur — les sous-arbres de premier niveau sont réagencés en rangées (shelf-packing) pour épouser le ratio du papier ; un arbre plat 5:1 devient 2-3 rangées proches du 1,4:1 de l'A4.
+- **PDF vectoriel natif** (juillet 2026, ex-piste n° 5 revisitée) : au lieu de svg2pdf (incompatible avec les captures html-to-image), les cartes sont dessinées nativement dans jsPDF en réutilisant le générateur de formes du PPTX éditable — texte net à toutes les échelles, ~20 Ko. Fallback image au pixel près (photos, multi-pages).
 
 ## 5. Pistes futures (non implémentées, par priorité)
 
-1. **Replier/déplier les branches** — standard du segment, utile dès ~50 personnes.
-2. **Liens en pointillés** (rattachement fonctionnel / dotted line) — nécessite une évolution du schéma de fichier (version 2 avec migration).
-3. **Statistiques d'effectifs** (par pôle, par niveau) dans l'inspecteur.
-4. **PWA installable** (manifest + service worker) pour renforcer l'usage hors-ligne.
-5. **Export PDF nativement vectoriel** via svg2pdf.js (aujourd'hui : raster haute densité, garde-fous canvas inclus).
+1. **Liens en pointillés** (rattachement fonctionnel / dotted line) — nécessite une évolution du schéma de fichier (version 2 avec migration).
+2. **PWA installable** (manifest + service worker) pour renforcer l'usage hors-ligne. Différée en juillet 2026 : compatibilité vite-plugin-pwa / Vite 8 (rolldown) non garantie, et un service worker mal invalidé bloque les mises à jour.
+3. **Vue annuaire / liste** (directory view, cœur d'offre Organimi) — table triable des membres synchronisée avec le canvas.
+4. **Photos dans le PDF vectoriel** (initiales dessinées, ou pastilles image rasterisées localement).
+
+*Réalisées depuis l'audit initial : replier/déplier les branches, statistiques d'effectifs, PDF nativement vectoriel (ex-n° 5, approche jsPDF natif plutôt que svg2pdf) — voir § 4.*
