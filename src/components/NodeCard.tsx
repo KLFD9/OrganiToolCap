@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { resolveDisplay, type OrgNode, type OrgTheme } from "../types/orgchart";
-import { computeNodeStyle } from "../lib/nodeStyle";
+import { computeNodeStyle, getContrastColor } from "../lib/nodeStyle";
 import { useOrgChartStore } from "../store/useOrgChartStore";
 
 export interface NodeCardData extends Record<string, unknown> {
@@ -39,35 +39,54 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
 
   const isGlass = theme.nodeStyle === "glass";
   const isFlat = theme.nodeStyle === "flat";
+  const isNeon = theme.nodeStyle === "neon";
+  const isMinimal = theme.nodeStyle === "minimal";
   const sourcePos = direction === "TB" ? Position.Bottom : Position.Right;
   const targetPos =
     targetSide === "left" ? Position.Left : direction === "TB" ? Position.Top : Position.Left;
 
+  // Configuration de l'ombre néon (glowing)
+  const neonGlow = `0 0 14px ${style.accentColor}2c, 0 4px 18px rgba(0,0,0,0.5)`;
+
   // Ombres portées de style Awwwards
   const shadowStyle = selected
     ? `0 0 0 2px ${style.accentColor}, 0 20px 40px -10px rgba(0, 0, 0, 0.18)`
+    : isNeon
+    ? neonGlow
     : "0 8px 30px -10px rgba(0, 0, 0, 0.06)";
 
   // Détection du texte sombre pour adapter les contrastes internes du nœud
-  const isDarkText = style.textColor === "#1a1a1e" || style.textColor === "#111111" || style.textColor === "#000000";
+  const isDarkText =
+    !isNeon &&
+    (style.textColor === "#1a1a1e" ||
+      style.textColor === "#111111" ||
+      style.textColor === "#000000" ||
+      style.textColor === "#18181b");
+
+  // Détermination si le fond global de la carte est coloré
+  const isColoredBg = isFlat || theme.nodeStyle === "gradient";
 
   // Configuration dynamique de l'avatar initials
-  const initialsBg = isFlat
+  const initialsBg = isColoredBg
     ? isDarkText
       ? "rgba(0, 0, 0, 0.08)"
       : "rgba(255, 255, 255, 0.22)"
+    : isNeon
+    ? `${style.accentColor}1a`
     : style.accentColor;
 
-  const initialsColor = isFlat ? style.textColor : "#ffffff";
+  const initialsColor = isColoredBg ? style.textColor : isNeon ? style.accentColor : "#ffffff";
 
   // Configuration du badge de département
-  const deptBg = isFlat
+  const deptBg = isColoredBg
     ? isDarkText
       ? "rgba(0, 0, 0, 0.07)"
       : "rgba(255, 255, 255, 0.18)"
+    : isNeon
+    ? `${style.accentColor}1f`
     : `${style.accentColor}12`;
 
-  const deptColor = isFlat ? style.textColor : style.accentColor;
+  const deptColor = isColoredBg ? style.textColor : style.accentColor;
 
   return (
     <div
@@ -76,6 +95,8 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
         background: style.background,
         color: style.textColor,
         borderColor: style.borderColor,
+        borderLeftWidth: isMinimal ? "4px" : undefined,
+        borderLeftColor: isMinimal ? style.accentColor : undefined,
         borderRadius: theme.cornerRadius,
         fontFamily: theme.fontFamily,
         boxShadow: shadowStyle,
@@ -130,7 +151,7 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
             {name || "Sans nom"}
           </div>
           {role && display.showRoles && (
-            <div className="truncate text-[10px] leading-relaxed mt-0.5 font-medium opacity-80">
+            <div className={`truncate text-[10px] leading-relaxed mt-0.5 font-medium ${isDarkText ? "opacity-90" : "opacity-80"}`}>
               {role}
             </div>
           )}
@@ -140,7 +161,7 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
       {/* Email */}
       {email && display.showEmails && (
         <div
-          className="mt-2.5 pt-2 border-t truncate text-[9px] font-mono tracking-tight opacity-60"
+          className={`mt-2.5 pt-2 border-t truncate text-[9px] font-mono tracking-tight ${isDarkText ? "opacity-75" : "opacity-60"}`}
           style={{ borderColor: isDarkText ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.08)" }}
         >
           {email}
@@ -169,7 +190,7 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
           style={{
             background: collapsed ? style.accentColor : "#ffffff",
             borderColor: style.accentColor,
-            color: collapsed ? "#ffffff" : style.accentColor,
+            color: collapsed ? getContrastColor(style.accentColor) : style.accentColor,
           }}
         >
           {collapsed ? `+${hiddenCount}` : "−"}

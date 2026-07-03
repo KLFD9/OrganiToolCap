@@ -5,6 +5,17 @@ import { isHierarchyEdge } from "../types/orgchart";
 import { computeLevels, computeNodeStyle } from "../lib/nodeStyle";
 import { buildChildrenMap, computeDescendantCounts, computeDescendants } from "../lib/hierarchy";
 import { downloadPeopleCsv } from "../lib/csvExport";
+import {
+  Search,
+  Plus,
+  FileSpreadsheet,
+  LayoutGrid,
+  UserPlus,
+  Eye,
+  Trash2,
+  ArrowUp,
+  ArrowDown
+} from "lucide-react";
 
 /**
  * Vue annuaire : table triable, filtrable et **éditable** de tous les membres.
@@ -90,7 +101,7 @@ function EditableCell({
         title="Double-clic pour modifier"
         className={`w-full cursor-text truncate rounded px-1 py-0.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${
           mono ? "font-mono text-[10px]" : ""
-        } ${value ? "" : "text-zinc-300 dark:text-zinc-600"}`}
+        } ${value ? "" : "text-zinc-300 dark:text-zinc-650"}`}
       >
         {value || placeholder}
       </button>
@@ -115,7 +126,7 @@ function EditableCell({
         if (e.key === "Enter") commit();
         else if (e.key === "Escape") setEditing(false);
       }}
-      className={`w-full rounded border px-1 py-0.5 text-xs focus:outline-none ${
+      className={`w-full rounded border px-1 py-0.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 ${
         mono ? "font-mono text-[10px]" : ""
       } ${
         dark
@@ -231,18 +242,16 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
 
         <div className="relative ml-auto">
           <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-zinc-400">
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
+            <Search className="h-3.5 w-3.5" />
           </div>
           <input
             type="search"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filtrer (nom, poste, pôle...)"
-            className={`w-56 rounded-lg border py-1.5 pl-9 pr-3 text-xs transition-all focus:outline-none ${
+            className={`w-56 rounded-lg border py-1.5 pl-9 pr-3 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 dark:focus:ring-primary-400/20 dark:focus:border-primary-400 ${
               dark
-                ? "border-border-dark bg-zinc-900 text-zinc-200 placeholder-zinc-500 focus:border-zinc-700"
+                ? "border-border-dark bg-zinc-900 text-zinc-200 placeholder-zinc-550 focus:border-zinc-700"
                 : "border-border-light bg-white text-zinc-700 placeholder-zinc-400 focus:border-zinc-300"
             }`}
           />
@@ -254,10 +263,8 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
             dark ? "bg-primary-600 hover:bg-primary-500" : "bg-primary-700 hover:bg-primary-600"
           }`}
         >
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-          </svg>
-          Ajouter un membre
+          <Plus className="h-3.5 w-3.5" />
+          <span>Ajouter un membre</span>
         </button>
 
         <button
@@ -265,13 +272,11 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
           className={`flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-all cursor-pointer ${
             dark
               ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800"
-              : "border-border-light bg-white text-zinc-600 hover:bg-zinc-50"
+              : "border-border-light bg-white text-zinc-600 hover:bg-zinc-55"
           }`}
         >
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-          </svg>
-          Exporter en CSV
+          <FileSpreadsheet className="h-3.5 w-3.5" />
+          <span>Exporter en CSV</span>
         </button>
 
         <button
@@ -280,10 +285,11 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
           className={`flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-all cursor-pointer ${
             dark
               ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800"
-              : "border-border-light bg-white text-zinc-600 hover:bg-zinc-50"
+              : "border-border-light bg-white text-zinc-600 hover:bg-zinc-55"
           }`}
         >
-          Organigramme
+          <LayoutGrid className="h-3.5 w-3.5" />
+          <span>Organigramme</span>
           <span className="font-mono text-[9px] opacity-70">(Échap)</span>
         </button>
       </div>
@@ -303,14 +309,20 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
                 >
                   <button
                     onClick={() => handleSort(col.key)}
-                    className={`inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider transition-colors cursor-pointer ${
+                    className={`inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider transition-colors cursor-pointer ${
                       sortKey === col.key
                         ? "text-primary-700 dark:text-primary-300"
-                        : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300"
+                        : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-650 dark:hover:text-zinc-300"
                     }`}
                   >
-                    {col.label}
-                    {sortKey === col.key && <span aria-hidden>{sortDir === 1 ? "↑" : "↓"}</span>}
+                    <span>{col.label}</span>
+                    {sortKey === col.key && (
+                      sortDir === 1 ? (
+                        <ArrowUp className="h-3 w-3 text-primary-500" />
+                      ) : (
+                        <ArrowDown className="h-3 w-3 text-primary-500" />
+                      )
+                    )}
                   </button>
                 </th>
               ))}
@@ -353,7 +365,7 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
                   <td className="border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-900">
                     <EditableCell value={row.department} placeholder="—" dark={dark} onCommit={commit("department")} />
                   </td>
-                  <td className="hidden border-b border-zinc-100 px-3 py-1.5 text-zinc-500 lg:table-cell dark:border-zinc-900 dark:text-zinc-400">
+                  <td className="hidden border-b border-zinc-100 px-3 py-1.5 text-zinc-550 lg:table-cell dark:border-zinc-900 dark:text-zinc-400">
                     <EditableCell value={row.email} placeholder="—" mono dark={dark} onCommit={commit("email")} />
                   </td>
                   <td className="border-b border-zinc-100 px-3 py-1.5 text-zinc-500 dark:border-zinc-900 dark:text-zinc-400">
@@ -371,7 +383,7 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
                           setManager(row.id, e.target.value || undefined);
                           setManagerEditId(null);
                         }}
-                        className={`w-full rounded border px-1 py-0.5 text-xs focus:outline-none ${
+                        className={`w-full rounded border px-1 py-0.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 ${
                           dark
                             ? "border-primary-400/50 bg-zinc-900 text-zinc-100"
                             : "border-primary-600/50 bg-white text-zinc-800"
@@ -399,7 +411,7 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
                         }}
                         title="Double-clic pour changer de responsable"
                         className={`w-full cursor-text truncate rounded px-1 py-0.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${
-                          row.manager ? "" : "text-zinc-300 dark:text-zinc-600"
+                          row.manager ? "" : "text-zinc-300 dark:text-zinc-650"
                         }`}
                       >
                         {row.manager || "—"}
@@ -410,7 +422,7 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
                     {row.total > 0 ? `${row.direct} / ${row.total}` : "—"}
                   </td>
                   <td className="border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-900">
-                    <span className="flex items-center justify-end gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                    <span className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -422,9 +434,7 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
                           dark ? "text-zinc-500 hover:text-primary-300 hover:bg-zinc-800" : "text-zinc-400 hover:text-primary-700 hover:bg-zinc-100"
                         }`}
                       >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                        </svg>
+                        <UserPlus className="h-3.5 w-3.5" />
                       </button>
                       <button
                         onClick={(e) => {
@@ -437,14 +447,7 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
                           dark ? "text-zinc-500 hover:text-primary-300 hover:bg-zinc-800" : "text-zinc-400 hover:text-primary-700 hover:bg-zinc-100"
                         }`}
                       >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                          />
-                        </svg>
+                        <Eye className="h-3.5 w-3.5" />
                       </button>
                       <button
                         onClick={(e) => {
@@ -453,16 +456,9 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
                         }}
                         title={`Supprimer ${row.name || "ce membre"}`}
                         aria-label={`Supprimer ${row.name || "ce membre"}`}
-                        className="rounded-md p-1 text-zinc-400 transition-colors hover:text-red-500 hover:bg-red-500/10 cursor-pointer"
+                        className="rounded-md p-1 text-zinc-450 transition-colors hover:text-red-500 hover:bg-red-500/10 cursor-pointer"
                       >
-                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                          />
-                        </svg>
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </span>
                   </td>
@@ -471,7 +467,7 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
             })}
             {visibleRows.length === 0 && (
               <tr>
-                <td colSpan={COLUMNS.length + 1} className="px-3 py-8 text-center text-zinc-400 dark:text-zinc-500">
+                <td colSpan={COLUMNS.length + 1} className="px-3 py-8 text-center text-zinc-400 dark:text-zinc-550">
                   Aucun membre ne correspond au filtre.
                 </td>
               </tr>

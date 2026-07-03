@@ -2,12 +2,32 @@ import { useRef } from "react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import { isHierarchyEdge, NodeStyleVariantSchema, resolveDisplay, type OrgDisplayOptions } from "../types/orgchart";
 import { computeOrgStats, computeTeamSize } from "../lib/stats";
+import {
+  Plus,
+  Trash2,
+  Camera,
+  UserPlus,
+  Copy,
+  Scissors,
+  ChevronDown,
+  X,
+  Settings,
+  Palette,
+  Layout,
+  Users,
+  Briefcase,
+  GitFork,
+  Trash
+} from "lucide-react";
 
 const NODE_STYLE_LABELS: Record<string, string> = {
   glass: "Verre (glass)",
   flat: "Aplat (flat)",
   card: "Carte",
   outline: "Contour",
+  neon: "Néon (sombre)",
+  gradient: "Dégradé",
+  minimal: "Minimal (accent gauche)",
 };
 
 const BRAND_COLORS = [
@@ -61,7 +81,7 @@ function LogoPicker({
             <button
               onClick={() => onChange(undefined)}
               title="Retirer le logo"
-              className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-[10px] font-semibold"
+              className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-[10px] font-semibold cursor-pointer"
             >
               Retirer
             </button>
@@ -69,21 +89,19 @@ function LogoPicker({
         ) : (
           <button
             onClick={() => inputRef.current?.click()}
-            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-dashed text-xs transition-all ${
+            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-dashed text-xs transition-all cursor-pointer ${
               themeMode === "dark"
                 ? "border-zinc-800 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400"
                 : "border-zinc-200 bg-zinc-50/40 text-zinc-400 hover:border-zinc-300 hover:text-zinc-600"
             }`}
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
+            <Plus className="h-4.5 w-4.5 text-zinc-400 dark:text-zinc-500" />
           </button>
         )}
         <div className="flex flex-col items-start gap-1">
           <button
             onClick={() => inputRef.current?.click()}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
               themeMode === "dark"
                 ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800"
                 : "border-zinc-200 bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100"
@@ -145,7 +163,7 @@ function DisplayToggle({
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className="flex w-full items-center justify-between gap-3 py-1 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer group"
+      className="flex w-full items-center justify-between gap-3 py-1.5 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer group"
     >
       <span>{label}</span>
       <span
@@ -222,16 +240,16 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
     e.target.value = "";
   };
 
-  const inputClass = `w-full rounded-xl border px-3 py-2 text-xs transition-all focus:outline-none ${
+  const inputClass = `w-full rounded-xl border px-3 py-2 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 dark:focus:ring-primary-400/20 dark:focus:border-primary-400 ${
     themeMode === "dark"
-      ? "border-zinc-800 bg-zinc-900/60 text-zinc-100 placeholder-zinc-500 focus:bg-zinc-950 focus:border-zinc-700"
-      : "border-zinc-200 bg-zinc-50/50 text-zinc-800 placeholder-zinc-400 focus:bg-white focus:border-zinc-300"
+      ? "border-zinc-800 bg-zinc-900/60 text-zinc-100 placeholder-zinc-500 focus:bg-zinc-950"
+      : "border-zinc-200 bg-zinc-50/50 text-zinc-800 placeholder-zinc-400 focus:bg-white"
   }`;
 
-  const selectClass = `w-full rounded-xl border px-3 py-2 text-xs transition-all focus:outline-none appearance-none ${
+  const selectClass = `w-full rounded-xl border px-3 py-2 text-xs transition-all focus:outline-none appearance-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 dark:focus:ring-primary-400/20 dark:focus:border-primary-400 ${
     themeMode === "dark"
-      ? "border-zinc-800 bg-zinc-900/60 text-zinc-100 focus:border-zinc-700"
-      : "border-zinc-200 bg-zinc-50/50 text-zinc-800 focus:border-zinc-300"
+      ? "border-zinc-800 bg-zinc-900/60 text-zinc-100"
+      : "border-zinc-200 bg-zinc-50/50 text-zinc-800"
   }`;
 
   // Rendu de sélection multiple
@@ -239,18 +257,26 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
     return (
       <div className="flex h-full flex-col gap-5 overflow-y-auto p-5 custom-scrollbar">
         <div>
-          <h2 className="text-sm font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
-            Sélection multiple
-          </h2>
-          <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1 leading-normal">
+          <div className="flex items-center gap-2">
+            <Users className="h-5 w-5 text-primary-500" />
+            <h2 className="text-sm font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
+              Sélection multiple
+            </h2>
+          </div>
+          <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1.5 leading-normal">
             Vous avez sélectionné {selectedNodeIds.length} membres. Les modifications ci-dessous s'appliqueront à tous.
           </p>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            Couleur d'accentuation du groupe
-          </span>
+        <div className={`rounded-xl border p-4 space-y-4 ${
+          themeMode === "dark" ? "border-zinc-800/80 bg-zinc-900/10" : "border-zinc-200 bg-zinc-50/20"
+        }`}>
+          <div className="flex items-center gap-2 pb-1.5 border-b border-zinc-100 dark:border-zinc-900/50">
+            <Palette className="h-4 w-4 text-primary-500" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300">
+              Couleur du groupe
+            </span>
+          </div>
           <ColorInput
             value={theme.palette[0]}
             onChange={(color) => updateNodesStyleOverride(selectedNodeIds, { accentColor: color })}
@@ -258,12 +284,13 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
           />
         </div>
 
-        <div className="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-900">
+        <div className="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-900/50">
           <button
             onClick={() => deleteNodes(selectedNodeIds)}
-            className="w-full rounded-xl bg-red-500/10 px-4 py-2.5 text-xs font-semibold text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm"
+            className="w-full flex items-center justify-center gap-2 rounded-xl bg-red-500/10 px-4 py-2.5 text-xs font-semibold text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm cursor-pointer"
           >
-            Supprimer les {selectedNodeIds.length} membres
+            <Trash2 className="h-4 w-4" />
+            <span>Supprimer les {selectedNodeIds.length} membres</span>
           </button>
         </div>
       </div>
@@ -272,217 +299,222 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
 
   // Rendu par défaut : Thème Global de l'organigramme
   if (!selected) {
+    const cardBg = themeMode === "dark" ? "border-zinc-800/80 bg-zinc-900/10" : "border-zinc-200 bg-zinc-50/20";
+    const headerBorder = "flex items-center gap-2 pb-2 border-b border-zinc-100 dark:border-zinc-900/50";
+    const headerTitle = "text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300";
+
     return (
       <div className="flex h-full flex-col gap-6 overflow-y-auto p-5 custom-scrollbar">
         <div>
-          <h2 className="text-sm font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
-            Thème global
-          </h2>
-          <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1 leading-normal">
+          <div className="flex items-center gap-2">
+            <Settings className="h-5 w-5 text-primary-500" />
+            <h2 className="text-sm font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
+              Thème global
+            </h2>
+          </div>
+          <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1.5 leading-normal">
             Configurez la structure visuelle, les logos et l'identité graphique de l'organigramme.
           </p>
         </div>
 
-        {/* Textes en-tête et pied de page */}
-        <div className="flex flex-col gap-4">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Sous-titre / Groupe / Entité
-            </span>
-            <input
-              type="text"
-              value={meta.subtitle ?? ""}
-              placeholder="ex : Groupe ATHANOR — Filiale Sud"
-              onChange={(e) => setSubtitle(e.target.value)}
-              className={inputClass}
-            />
-          </label>
+        {/* Groupe 1 : Identité & En-tête */}
+        <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>
+          <div className={headerBorder}>
+            <Briefcase className="h-4 w-4 text-primary-500" />
+            <h3 className={headerTitle}>En-tête & Identité</h3>
+          </div>
 
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Pied de page (export)
-            </span>
-            <input
-              type="text"
-              value={meta.footer ?? ""}
-              placeholder="ex : Document confidentiel — usage interne"
-              onChange={(e) => setFooter(e.target.value)}
-              className={inputClass}
-            />
-          </label>
-        </div>
+          <div className="flex flex-col gap-4">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                Sous-titre / Groupe / Entité
+              </span>
+              <input
+                type="text"
+                value={meta.subtitle ?? ""}
+                placeholder="ex : Groupe ATHANOR — Filiale Sud"
+                onChange={(e) => setSubtitle(e.target.value)}
+                className={inputClass}
+              />
+            </label>
 
-        <hr className="border-zinc-100 dark:border-zinc-900" />
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                Pied de page (export)
+              </span>
+              <input
+                type="text"
+                value={meta.footer ?? ""}
+                placeholder="ex : Document confidentiel — usage interne"
+                onChange={(e) => setFooter(e.target.value)}
+                className={inputClass}
+              />
+            </label>
 
-        {/* Importateurs de Logos */}
-        <div className="flex flex-col gap-4">
-          <LogoPicker
-            label="Logo Principal (Entreprise / Groupe)"
-            value={theme.logoUrl}
-            onChange={(url) => setTheme({ logoUrl: url })}
-            themeMode={themeMode}
-          />
-          <LogoPicker
-            label="Logo Secondaire (Entité / Partenaire)"
-            value={theme.secondaryLogoUrl}
-            onChange={(url) => setTheme({ secondaryLogoUrl: url })}
-            themeMode={themeMode}
-          />
-        </div>
-
-        <hr className="border-zinc-100 dark:border-zinc-900" />
-
-        {/* Personnalisation visuelle */}
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Couleur d'accent globale
-            </span>
-            <ColorInput
-              value={theme.accent}
-              onChange={(color) => setTheme({ accent: color })}
+            <LogoPicker
+              label="Logo Principal (Entreprise / Groupe)"
+              value={theme.logoUrl}
+              onChange={(url) => setTheme({ logoUrl: url })}
               themeMode={themeMode}
             />
-            {/* Swatches de marque CAP */}
-            <div className="flex flex-wrap gap-1.5 mt-1">
-              {BRAND_COLORS.map((c) => (
-                <button
-                  key={c.hex}
-                  onClick={() => setTheme({ accent: c.hex })}
-                  title={c.name}
-                  className={`h-5 w-5 rounded-full border border-black/10 dark:border-white/10 shadow-sm transition-transform hover:scale-110 active:scale-95 cursor-pointer ${
-                    theme.accent === c.hex ? "ring-2 ring-zinc-500 dark:ring-zinc-400" : ""
-                  }`}
-                  style={{ backgroundColor: c.hex }}
-                />
-              ))}
-            </div>
-          </div>
-
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Police de caractères
-            </span>
-            <div className="relative">
-              <select
-                value={theme.fontFamily}
-                onChange={(e) => setTheme({ fontFamily: e.target.value })}
-                className={selectClass}
-              >
-                <option value="'Inter', system-ui, sans-serif">Inter</option>
-                <option value="'Poppins', system-ui, sans-serif">Poppins</option>
-                <option value="'Playfair Display', Georgia, serif">Playfair Display (Serif)</option>
-                <option value="ui-monospace, monospace">Code Monospace</option>
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-zinc-400">
-                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
-            </div>
-          </label>
-
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Style visuel des nœuds
-            </span>
-            <div className="relative">
-              <select
-                value={theme.nodeStyle}
-                onChange={(e) => setTheme({ nodeStyle: NodeStyleVariantSchema.parse(e.target.value) })}
-                className={selectClass}
-              >
-                {NodeStyleVariantSchema.options.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {NODE_STYLE_LABELS[opt]}
-                  </option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-zinc-400">
-                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
-            </div>
-          </label>
-
-          <div className="flex flex-col gap-1.5">
-            <span className="flex justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              <span>Arrondi des coins</span>
-              <span className="font-mono text-zinc-500">{theme.cornerRadius}px</span>
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={32}
-              value={theme.cornerRadius}
-              onChange={(e) => setTheme({ cornerRadius: Number(e.target.value) })}
-              className="w-full accent-zinc-800 dark:accent-zinc-200 cursor-pointer bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none h-1"
+            <LogoPicker
+              label="Logo Secondaire (Entité / Partenaire)"
+              value={theme.secondaryLogoUrl}
+              onChange={(url) => setTheme({ secondaryLogoUrl: url })}
+              themeMode={themeMode}
             />
           </div>
         </div>
 
-        <hr className="border-zinc-100 dark:border-zinc-900" />
+        {/* Groupe 2 : Design du Graphique */}
+        <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>
+          <div className={headerBorder}>
+            <Palette className="h-4 w-4 text-primary-500" />
+            <h3 className={headerTitle}>Design du Graphique</h3>
+          </div>
 
-        {/* Palette par niveaux */}
-        <div className="flex flex-col gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-1">
-            Palette de couleurs hiérarchique
-          </span>
-          <div className="grid grid-cols-2 gap-2">
-            {theme.palette.map((color, i) => (
-              <div key={i} className="flex flex-col gap-1">
-                <span className="text-[9px] font-medium text-zinc-400">Niveau {i + 1}</span>
-                <ColorInput
-                  value={color}
-                  onChange={(val) => {
-                    const palette = [...theme.palette];
-                    palette[i] = val;
-                    setTheme({ palette });
-                  }}
-                  themeMode={themeMode}
-                />
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                Couleur d'accent globale
+              </span>
+              <ColorInput
+                value={theme.accent}
+                onChange={(color) => setTheme({ accent: color })}
+                themeMode={themeMode}
+              />
+              {/* Swatches de marque CAP */}
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                {BRAND_COLORS.map((c) => (
+                  <button
+                    key={c.hex}
+                    onClick={() => setTheme({ accent: c.hex })}
+                    title={c.name}
+                    className={`h-5 w-5 rounded-full border border-black/10 dark:border-white/10 shadow-sm transition-transform hover:scale-110 active:scale-95 cursor-pointer ${
+                      theme.accent === c.hex ? "ring-2 ring-zinc-500 dark:ring-zinc-400" : ""
+                    }`}
+                    style={{ backgroundColor: c.hex }}
+                  />
+                ))}
               </div>
-            ))}
+            </div>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                Police de caractères
+              </span>
+              <div className="relative">
+                <select
+                  value={theme.fontFamily}
+                  onChange={(e) => setTheme({ fontFamily: e.target.value })}
+                  className={selectClass}
+                >
+                  <option value="'Inter', system-ui, sans-serif">Inter</option>
+                  <option value="'Poppins', system-ui, sans-serif">Poppins</option>
+                  <option value="'Playfair Display', Georgia, serif">Playfair Display (Serif)</option>
+                  <option value="ui-monospace, monospace">Code Monospace</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+              </div>
+            </label>
+
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                Style visuel des nœuds
+              </span>
+              <div className="relative">
+                <select
+                  value={theme.nodeStyle}
+                  onChange={(e) => setTheme({ nodeStyle: NodeStyleVariantSchema.parse(e.target.value) })}
+                  className={selectClass}
+                >
+                  {NodeStyleVariantSchema.options.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {NODE_STYLE_LABELS[opt]}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+              </div>
+            </label>
+
+            <div className="flex flex-col gap-1.5">
+              <span className="flex justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                <span>Arrondi des coins</span>
+                <span className="font-mono text-zinc-500">{theme.cornerRadius}px</span>
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={32}
+                value={theme.cornerRadius}
+                onChange={(e) => setTheme({ cornerRadius: Number(e.target.value) })}
+                className="w-full accent-primary-600 dark:accent-primary-400 cursor-pointer bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none h-1"
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-1">
+                Palette de couleurs hiérarchique
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                {theme.palette.map((color, i) => (
+                  <div key={i} className="flex flex-col gap-1">
+                    <span className="text-[9px] font-medium text-zinc-400">Niveau {i + 1}</span>
+                    <ColorInput
+                      value={color}
+                      onChange={(val) => {
+                        const palette = [...theme.palette];
+                        palette[i] = val;
+                        setTheme({ palette });
+                      }}
+                      themeMode={themeMode}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
 
-        <hr className="border-zinc-100 dark:border-zinc-900" />
+        {/* Groupe 3 : Options d'affichage */}
+        <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>
+          <div className={headerBorder}>
+            <Layout className="h-4 w-4 text-primary-500" />
+            <h3 className={headerTitle}>Paramètres des Cartes</h3>
+          </div>
 
-        {/* Champs affichés sur les cartes (persisté dans le fichier) */}
-        <div className="flex flex-col gap-1">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 mb-1">
-            Affichage des cartes
-          </span>
-          <DisplayToggle
-            label="Photos / avatars"
-            checked={display.showPhotos}
-            onChange={(v) => setDisplay({ showPhotos: v })}
-          />
-          <DisplayToggle
-            label="Intitulés de poste"
-            checked={display.showRoles}
-            onChange={(v) => setDisplay({ showRoles: v })}
-          />
-          <DisplayToggle
-            label="Badges de pôle"
-            checked={display.showDepartments}
-            onChange={(v) => setDisplay({ showDepartments: v })}
-          />
-          <DisplayToggle
-            label="Adresses e-mail"
-            checked={display.showEmails}
-            onChange={(v) => setDisplay({ showEmails: v })}
-          />
+          <div className="flex flex-col gap-1">
+            <DisplayToggle
+              label="Photos / avatars"
+              checked={display.showPhotos}
+              onChange={(v) => setDisplay({ showPhotos: v })}
+            />
+            <DisplayToggle
+              label="Intitulés de poste"
+              checked={display.showRoles}
+              onChange={(v) => setDisplay({ showRoles: v })}
+            />
+            <DisplayToggle
+              label="Badges de pôle"
+              checked={display.showDepartments}
+              onChange={(v) => setDisplay({ showDepartments: v })}
+            />
+            <DisplayToggle
+              label="Adresses e-mail"
+              checked={display.showEmails}
+              onChange={(v) => setDisplay({ showEmails: v })}
+            />
+          </div>
         </div>
 
-        <hr className="border-zinc-100 dark:border-zinc-900" />
+        {/* Groupe 4 : Statistiques */}
+        <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>
+          <div className={headerBorder}>
+            <Users className="h-4 w-4 text-primary-500" />
+            <h3 className={headerTitle}>Effectifs & Répartition</h3>
+          </div>
 
-        {/* Statistiques d'effectifs dérivées de l'organigramme */}
-        <div className="flex flex-col gap-2.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            Effectifs
-          </span>
           <div className="grid grid-cols-3 gap-2">
             {[
               { label: "Membres", value: stats.total },
@@ -500,8 +532,9 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
               </div>
             ))}
           </div>
+
           {stats.byDepartment.length > 0 && (
-            <div className="flex flex-col gap-1.5 mt-1">
+            <div className="flex flex-col gap-1.5 mt-2.5 pt-2.5 border-t border-zinc-100 dark:border-zinc-900/50">
               {stats.byDepartment.map((dept) => (
                 <div key={dept.department} className="flex items-center gap-2">
                   <span className="w-28 truncate text-[10px] text-zinc-500 dark:text-zinc-400" title={dept.department}>
@@ -523,18 +556,16 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
         </div>
 
         {/* Ajouter un nœud racine */}
-        <div className="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-900">
+        <div className="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-900/50">
           <button
             onClick={() => addNode()}
-            className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold shadow-sm transition-all hover:scale-102 active:scale-98 ${
+            className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold shadow-sm transition-all hover:scale-102 active:scale-98 cursor-pointer ${
               themeMode === "dark"
                 ? "bg-primary-600 text-white hover:bg-primary-500"
                 : "bg-primary-700 text-white hover:bg-primary-600"
             }`}
           >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-            </svg>
+            <Plus className="h-4 w-4" />
             <span>Ajouter un membre racine</span>
           </button>
         </div>
@@ -543,278 +574,289 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
   }
 
   // Rendu : Propriétés du membre sélectionné
+  const cardBg = themeMode === "dark" ? "border-zinc-800/80 bg-zinc-900/10" : "border-zinc-200 bg-zinc-50/20";
+  const headerBorder = "flex items-center gap-2 pb-2 border-b border-zinc-100 dark:border-zinc-900/50";
+  const headerTitle = "text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300";
+
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-5 custom-scrollbar">
       <div>
-        <h2 className="text-sm font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
-          Fiche membre
-        </h2>
-        <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1 leading-normal">
+        <div className="flex items-center gap-2">
+          <Briefcase className="h-5 w-5 text-primary-500" />
+          <h2 className="text-sm font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
+            Fiche membre
+          </h2>
+        </div>
+        <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1.5 leading-normal">
           Modifiez les informations personnelles et le style visuel de ce nœud.
         </p>
         {teamSize && teamSize.total > 0 && (
           <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-primary-600/10 dark:bg-primary-400/10 px-2.5 py-1 text-[10px] font-semibold text-primary-700 dark:text-primary-300">
-            <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0 -.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"
-              />
-            </svg>
-            Équipe : {teamSize.direct} direct{teamSize.direct > 1 ? "s" : ""} · {teamSize.total} au total
+            <Users className="h-3.5 w-3.5 mr-0.5" />
+            <span>Équipe : {teamSize.direct} direct{teamSize.direct > 1 ? "s" : ""} · {teamSize.total} au total</span>
           </div>
         )}
       </div>
 
-      {/* Profil Avatar */}
-      <div className="flex items-center gap-4">
-        {selected.data.avatarUrl ? (
-          <div className="relative group h-14 w-14 shrink-0 rounded-full overflow-hidden border-2 border-zinc-200 dark:border-zinc-700 shadow-md">
-            <img src={selected.data.avatarUrl} alt="" className="h-full w-full object-cover" />
-            <button
-              onClick={() => updateNodeData(selected.id, { avatarUrl: undefined })}
-              title="Supprimer la photo"
-              className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-[9px] font-semibold"
-            >
-              Retirer
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-dashed text-xs transition-all ${
-              themeMode === "dark"
-                ? "border-zinc-800 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400"
-                : "border-zinc-200 bg-zinc-50/40 text-zinc-400 hover:border-zinc-300 hover:text-zinc-600"
-            }`}
-          >
-            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-              />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </button>
-        )}
-        <div className="flex flex-col items-start gap-1">
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
-              themeMode === "dark"
-                ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800"
-                : "border-zinc-200 bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100"
-            }`}
-          >
-            {selected.data.avatarUrl ? "Changer" : "Importer une photo"}
-          </button>
-          <span className="text-[9px] text-zinc-400 dark:text-zinc-500">Carrée de préférence</span>
+      {/* Groupe 1 : Profil & Avatar */}
+      <div className={`rounded-xl border p-4 space-y-4 ${cardBg}`}>
+        <div className={headerBorder}>
+          <Camera className="h-4 w-4 text-primary-500" />
+          <h3 className={headerTitle}>Photo de profil</h3>
         </div>
-        <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
-      </div>
 
-      <hr className="border-zinc-100 dark:border-zinc-900" />
-
-      {/* Champs d'édition du membre */}
-      <div className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            Nom complet
-          </span>
-          <input
-            type="text"
-            value={selected.data.name}
-            onChange={(e) => updateNodeData(selected.id, { name: e.target.value })}
-            className={inputClass}
-          />
-        </label>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            Intitulé de poste
-          </span>
-          <input
-            type="text"
-            value={selected.data.role ?? ""}
-            onChange={(e) => updateNodeData(selected.id, { role: e.target.value })}
-            className={inputClass}
-          />
-        </label>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            Pôle / Département
-          </span>
-          <input
-            type="text"
-            value={selected.data.department ?? ""}
-            onChange={(e) => updateNodeData(selected.id, { department: e.target.value })}
-            className={inputClass}
-          />
-        </label>
-
-        <label className="flex flex-col gap-1.5">
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            Adresse e-mail
-          </span>
-          <input
-            type="email"
-            value={selected.data.email ?? ""}
-            onChange={(e) => updateNodeData(selected.id, { email: e.target.value })}
-            className={inputClass}
-          />
-        </label>
-      </div>
-
-      <hr className="border-zinc-100 dark:border-zinc-900" />
-
-      {/* Personnalisation de style par nœud */}
-      <div className="flex flex-col gap-1.5">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-          Couleur d'accent propre à ce nœud
-        </span>
-        <div className="flex items-center gap-2">
-          <div className="flex-1">
-            <ColorInput
-              value={selected.styleOverride?.accentColor ?? theme.palette[0]}
-              onChange={(color) => updateNodeStyleOverride(selected.id, { accentColor: color })}
-              themeMode={themeMode}
-            />
-          </div>
-          {selected.styleOverride?.accentColor && (
+        <div className="flex items-center gap-4">
+          {selected.data.avatarUrl ? (
+            <div className="relative group h-14 w-14 shrink-0 rounded-full overflow-hidden border-2 border-zinc-200 dark:border-zinc-700 shadow-md">
+              <img src={selected.data.avatarUrl} alt="" className="h-full w-full object-cover" />
+              <button
+                onClick={() => updateNodeData(selected.id, { avatarUrl: undefined })}
+                title="Supprimer la photo"
+                className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-[9px] font-semibold cursor-pointer"
+              >
+                Retirer
+              </button>
+            </div>
+          ) : (
             <button
-              onClick={() => updateNodeStyleOverride(selected.id, { ...selected.styleOverride, accentColor: undefined })}
-              className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-red-200/40 text-red-500 bg-red-500/5 hover:bg-red-500/10 transition-colors cursor-pointer"
+              onClick={() => fileInputRef.current?.click()}
+              className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-dashed text-xs transition-all cursor-pointer ${
+                themeMode === "dark"
+                  ? "border-zinc-800 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400"
+                  : "border-zinc-200 bg-zinc-50/40 text-zinc-400 hover:border-zinc-300 hover:text-zinc-600"
+              }`}
             >
-              Réinitialiser
+              <Camera className="h-5 w-5" />
             </button>
           )}
-        </div>
-        {/* Swatches de marque CAP */}
-        <div className="flex flex-wrap gap-1.5 mt-1">
-          {BRAND_COLORS.map((c) => (
+          <div className="flex flex-col items-start gap-1">
             <button
-              key={c.hex}
-              onClick={() => updateNodeStyleOverride(selected.id, { accentColor: c.hex })}
-              title={c.name}
-              className={`h-5 w-5 rounded-full border border-black/10 dark:border-white/10 shadow-sm transition-transform hover:scale-110 active:scale-95 cursor-pointer ${
-                (selected.styleOverride?.accentColor ?? theme.palette[0]) === c.hex ? "ring-2 ring-zinc-500 dark:ring-zinc-400" : ""
+              onClick={() => fileInputRef.current?.click()}
+              className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
+                themeMode === "dark"
+                  ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800"
+                  : "border-zinc-200 bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100"
               }`}
-              style={{ backgroundColor: c.hex }}
-            />
-          ))}
+            >
+              {selected.data.avatarUrl ? "Changer" : "Importer une photo"}
+            </button>
+            <span className="text-[9px] text-zinc-400 dark:text-zinc-500">Carrée de préférence</span>
+          </div>
+          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarChange} />
         </div>
       </div>
 
-      <hr className="border-zinc-100 dark:border-zinc-900" />
+      {/* Groupe 2 : Informations du membre */}
+      <div className={`rounded-xl border p-4 space-y-4 ${cardBg}`}>
+        <div className={headerBorder}>
+          <Briefcase className="h-4 w-4 text-primary-500" />
+          <h3 className={headerTitle}>Champs Membre</h3>
+        </div>
 
-      {/* Rattachements fonctionnels (liens pointillés, format v2) */}
-      <div className="flex flex-col gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-          Rattachements fonctionnels
-        </span>
-        {dottedManagers.map(({ edge, manager }) => (
-          <div
-            key={edge.id}
-            className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 px-2.5 py-1.5"
-          >
-            <span className="truncate text-xs text-zinc-700 dark:text-zinc-300">
-              {manager?.data.name || "Membre supprimé"}
+        <div className="flex flex-col gap-4">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Nom complet
             </span>
-            <button
-              onClick={() => deleteEdge(edge.id)}
-              title="Retirer ce rattachement fonctionnel"
-              aria-label={`Retirer le rattachement fonctionnel à ${manager?.data.name ?? "ce membre"}`}
-              className="shrink-0 rounded-md p-0.5 text-zinc-400 transition-colors hover:text-red-500 hover:bg-red-500/10 cursor-pointer"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        ))}
-        {dottedCandidates.length > 0 && (
-          <div className="relative">
-            <select
-              value=""
-              aria-label="Ajouter un rattachement fonctionnel"
-              onChange={(e) => {
-                if (e.target.value) addDottedEdge(e.target.value, selected.id);
-              }}
-              className={selectClass}
-            >
-              <option value="">Ajouter un rattachement…</option>
-              {dottedCandidates.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.data.name || "Sans nom"}
-                  {n.data.role ? ` — ${n.data.role}` : ""}
-                </option>
-              ))}
-            </select>
-            <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-zinc-400">
-              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-          </div>
-        )}
-        <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
-          Trait pointillé sur l'organigramme (n+1 fonctionnel, mission transverse). N'affecte ni la
-          hiérarchie, ni les statistiques, ni la colonne Responsable du CSV.
-        </p>
+            <input
+              type="text"
+              value={selected.data.name}
+              onChange={(e) => updateNodeData(selected.id, { name: e.target.value })}
+              className={inputClass}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Intitulé de poste
+            </span>
+            <input
+              type="text"
+              value={selected.data.role ?? ""}
+              onChange={(e) => updateNodeData(selected.id, { role: e.target.value })}
+              className={inputClass}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Pôle / Département
+            </span>
+            <input
+              type="text"
+              value={selected.data.department ?? ""}
+              onChange={(e) => updateNodeData(selected.id, { department: e.target.value })}
+              className={inputClass}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Adresse e-mail
+            </span>
+            <input
+              type="email"
+              value={selected.data.email ?? ""}
+              onChange={(e) => updateNodeData(selected.id, { email: e.target.value })}
+              className={inputClass}
+            />
+          </label>
+        </div>
       </div>
 
-      <hr className="border-zinc-100 dark:border-zinc-900" />
+      {/* Groupe 3 : Couleur Propre */}
+      <div className={`rounded-xl border p-4 space-y-4 ${cardBg}`}>
+        <div className={headerBorder}>
+          <Palette className="h-4 w-4 text-primary-500" />
+          <h3 className={headerTitle}>Couleur de ce nœud</h3>
+        </div>
 
-      {/* Actions hiérarchiques et suppression */}
-      <div className="flex flex-col gap-2">
-        <button
-          onClick={() => addNode(selected.id)}
-          className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold shadow-sm transition-all hover:scale-102 active:scale-98 ${
-            themeMode === "dark"
-              ? "bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
-              : "bg-primary-600/5 text-primary-700 border border-primary-600/10 hover:bg-primary-600/10"
-          }`}
-        >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-          </svg>
-          <span>Ajouter un subordonné</span>
-        </button>
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+            Couleur d'accent propre à ce nœud
+          </span>
+          <div className="flex items-center gap-2">
+            <div className="flex-1">
+              <ColorInput
+                value={selected.styleOverride?.accentColor ?? theme.palette[0]}
+                onChange={(color) => updateNodeStyleOverride(selected.id, { accentColor: color })}
+                themeMode={themeMode}
+              />
+            </div>
+            {selected.styleOverride?.accentColor && (
+              <button
+                onClick={() => updateNodeStyleOverride(selected.id, { ...selected.styleOverride, accentColor: undefined })}
+                className="text-xs font-semibold px-2.5 py-1.5 rounded-lg border border-red-200/40 text-red-500 bg-red-500/5 hover:bg-red-500/10 transition-colors cursor-pointer"
+              >
+                Réinitialiser
+              </button>
+            )}
+          </div>
+          {/* Swatches de marque CAP */}
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {BRAND_COLORS.map((c) => (
+              <button
+                key={c.hex}
+                onClick={() => updateNodeStyleOverride(selected.id, { accentColor: c.hex })}
+                title={c.name}
+                className={`h-5 w-5 rounded-full border border-black/10 dark:border-white/10 shadow-sm transition-transform hover:scale-110 active:scale-95 cursor-pointer ${
+                  (selected.styleOverride?.accentColor ?? theme.palette[0]) === c.hex ? "ring-2 ring-zinc-500 dark:ring-zinc-400" : ""
+                }`}
+                style={{ backgroundColor: c.hex }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
 
-        <button
-          onClick={() => duplicateNode(selected.id)}
-          className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-medium border transition-colors ${
-            themeMode === "dark"
-              ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800"
-              : "border-zinc-200 bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100"
-          }`}
-        >
-          Dupliquer le membre
-        </button>
+      {/* Groupe 4 : Rattachements Fonctionnels */}
+      <div className={`rounded-xl border p-4 space-y-4 ${cardBg}`}>
+        <div className={headerBorder}>
+          <GitFork className="h-4 w-4 text-primary-500" />
+          <h3 className={headerTitle}>Rattachements fonctionnels</h3>
+        </div>
 
-        {parentEdge && (
+        <div className="flex flex-col gap-2">
+          {dottedManagers.map(({ edge, manager }) => (
+            <div
+              key={edge.id}
+              className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 px-2.5 py-1.5"
+            >
+              <span className="truncate text-xs text-zinc-700 dark:text-zinc-300">
+                {manager?.data.name || "Membre supprimé"}
+              </span>
+              <button
+                onClick={() => deleteEdge(edge.id)}
+                title="Retirer ce rattachement fonctionnel"
+                aria-label={`Retirer le rattachement fonctionnel à ${manager?.data.name ?? "ce membre"}`}
+                className="shrink-0 rounded-md p-0.5 text-zinc-400 transition-colors hover:text-red-500 hover:bg-red-500/10 cursor-pointer"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ))}
+          {dottedCandidates.length > 0 && (
+            <div className="relative">
+              <select
+                value=""
+                aria-label="Ajouter un rattachement fonctionnel"
+                onChange={(e) => {
+                  if (e.target.value) addDottedEdge(e.target.value, selected.id);
+                }}
+                className={selectClass}
+              >
+                <option value="">Ajouter un rattachement…</option>
+                {dottedCandidates.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.data.name || "Sans nom"}
+                    {n.data.role ? ` — ${n.data.role}` : ""}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+            </div>
+          )}
+          <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+            Trait pointillé sur l'organigramme (n+1 fonctionnel, mission transverse). N'affecte ni la
+            hiérarchie, ni les statistiques, ni la colonne Responsable du CSV.
+          </p>
+        </div>
+      </div>
+
+      {/* Groupe 5 : Actions */}
+      <div className={`rounded-xl border p-4 space-y-3 ${cardBg}`}>
+        <div className={headerBorder}>
+          <Settings className="h-4 w-4 text-primary-500" />
+          <h3 className={headerTitle}>Actions hiérarchiques</h3>
+        </div>
+
+        <div className="flex flex-col gap-2">
           <button
-            onClick={() => deleteEdge(parentEdge.id)}
-            className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-medium border transition-colors ${
+            onClick={() => addNode(selected.id)}
+            className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold shadow-sm transition-all hover:scale-102 active:scale-98 cursor-pointer ${
               themeMode === "dark"
-                ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800"
-                : "border-zinc-200 bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100"
+                ? "bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+                : "bg-primary-50 text-primary-700 border border-primary-200/50 hover:bg-primary-100/80"
             }`}
           >
-            Détacher du responsable
+            <UserPlus className="h-4 w-4" />
+            <span>Ajouter un subordonné</span>
           </button>
-        )}
 
-        <button
-          onClick={() => deleteNode(selected.id)}
-          className="w-full rounded-xl bg-red-500/10 px-4 py-2.5 text-xs font-semibold text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm mt-2"
-        >
-          Supprimer ce membre
-        </button>
+          <button
+            onClick={() => duplicateNode(selected.id)}
+            className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-medium border transition-colors cursor-pointer ${
+              themeMode === "dark"
+                ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800"
+                : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"
+            }`}
+          >
+            <Copy className="h-3.5 w-3.5" />
+            <span>Dupliquer le membre</span>
+          </button>
+
+          {parentEdge && (
+            <button
+              onClick={() => deleteEdge(parentEdge.id)}
+              className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-medium border transition-colors cursor-pointer ${
+                themeMode === "dark"
+                  ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800"
+                  : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"
+              }`}
+            >
+              <Scissors className="h-3.5 w-3.5" />
+              <span>Détacher du responsable</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => deleteNode(selected.id)}
+            className="w-full flex items-center justify-center gap-2 rounded-xl bg-red-500/10 px-4 py-2.5 text-xs font-semibold text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm mt-2 cursor-pointer"
+          >
+            <Trash className="h-4 w-4" />
+            <span>Supprimer ce membre</span>
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -42,6 +42,9 @@ const VARIANT_TEXT: Record<OrgTheme["nodeStyle"], string> = {
   flat: "#ffffff",
   card: "#1a1a1e",
   outline: "#1a1a1e",
+  neon: "#ffffff",
+  gradient: "#ffffff",
+  minimal: "#18181b",
 };
 
 function hexToRgba(hex: string, alpha: number): string {
@@ -55,6 +58,20 @@ function hexToRgba(hex: string, alpha: number): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+function getLuminance(hex: string): number {
+  const clean = hex.replace("#", "");
+  const bigint = parseInt(clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+
+  const a = [r, g, b].map((v) => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return a[0] * 0.2126 + a[1] * 0.7152 + a[2] * 0.0722;
+}
+
 /**
  * Détermine si le texte doit être blanc ou noir en fonction de la luminance du fond hexadécimal.
  * Respecte les directives d'accessibilité contrastes WCAG.
@@ -64,18 +81,19 @@ export function getContrastColor(hexColor: string): string {
   
   const clean = hexColor.replace("#", "");
   if (clean.length !== 3 && clean.length !== 6) return "#1a1a1e";
-  
-  const bigint = parseInt(clean.length === 3
-    ? clean.split("").map((c) => c + c).join("")
-    : clean, 16);
-  const r = (bigint >> 16) & 255;
-  const g = (bigint >> 8) & 255;
-  const b = bigint & 255;
-  
-  // Calcul de la luminance relative (formule standard)
-  const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  // Un luma élevé (> 150) indique une couleur claire : on renvoie du texte sombre
-  return luma > 150 ? "#1a1a1e" : "#ffffff";
+
+  try {
+    const bgLuminance = getLuminance(hexColor);
+    const whiteLuminance = 1.0;
+    const darkLuminance = 0.0091; // pour #1a1a1e
+
+    const ratioWhite = (whiteLuminance + 0.05) / (bgLuminance + 0.05);
+    const ratioDark = (bgLuminance + 0.05) / (darkLuminance + 0.05);
+
+    return ratioWhite > ratioDark ? "#ffffff" : "#1a1a1e";
+  } catch {
+    return "#1a1a1e";
+  }
 }
 
 /** Calcule le style effectif d'un nœud : palette du thème selon le niveau, fusionnée avec styleOverride. */
@@ -108,6 +126,30 @@ export function computeNodeStyle(theme: OrgTheme, level: number, override?: Part
         accentColor,
       };
       break;
+    case "neon":
+      base = {
+        background: "#0c0a09",
+        textColor: VARIANT_TEXT.neon,
+        borderColor: accentColor,
+        accentColor,
+      };
+      break;
+    case "gradient":
+      base = {
+        background: `linear-gradient(135deg, ${accentColor} 0%, ${hexToRgba(accentColor, 0.75)} 100%)`,
+        textColor: getContrastColor(accentColor),
+        borderColor: "transparent",
+        accentColor,
+      };
+      break;
+    case "minimal":
+      base = {
+        background: "rgba(255, 255, 255, 0.85)",
+        textColor: VARIANT_TEXT.minimal,
+        borderColor: "rgba(9, 9, 11, 0.08)",
+        accentColor,
+      };
+      break;
     case "card":
     default:
       base = {
@@ -121,9 +163,10 @@ export function computeNodeStyle(theme: OrgTheme, level: number, override?: Part
 
   const result = { ...base, ...override };
 
-  // Forcer le calcul du contraste si le style global est "flat" ou si un fond personnalisé est défini
-  if (theme.nodeStyle === "flat" || override?.background) {
-    result.textColor = getContrastColor(result.background);
+  // Forcer le calcul du contraste si le style global est "flat" ou "gradient" ou si un fond personnalisé est défini
+  if (theme.nodeStyle === "flat" || theme.nodeStyle === "gradient" || override?.background) {
+    const contrastBase = override?.background || (theme.nodeStyle === "gradient" ? accentColor : result.background);
+    result.textColor = getContrastColor(contrastBase);
   }
 
   return result;

@@ -15,6 +15,18 @@ import { exportFlowToPptx } from "../lib/pptxExport";
 import { estimateReadability, pageAvailableArea } from "../lib/readability";
 import { computeHiddenNodeIds } from "../lib/hierarchy";
 import { optimizeLayoutForPage, rankCandidates } from "../lib/exportLayout";
+import {
+  Info,
+  ChevronDown,
+  Sparkles,
+  Loader2,
+  FileText,
+  Presentation,
+  Image,
+  FileCode,
+  Copy,
+  Check
+} from "lucide-react";
 
 interface ExportDialogProps {
   open: boolean;
@@ -225,11 +237,10 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
           secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
           accent: theme.accent,
         };
-        // Le .orgchart.json est embarqué dans le .pptx : le réimporter restaure le projet
+        // Le .orgchart.json is embedded in the .pptx
         const chartJson = JSON.stringify(toFile(), null, 2);
         if (pptxEditable) {
           const { exportFlowToPptxEditable } = await import("../lib/pptxEditable");
-          // Nœuds visibles uniquement : l'export reflète l'affichage (branches repliées exclues)
           await exportFlowToPptxEditable(visibleNodes, visibleEdges, theme, pptxOptions, chartJson);
         } else {
           await exportFlowToPptx(el, nodes, pptxOptions, chartJson);
@@ -256,16 +267,16 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
     }
   };
 
-  const selectClass = `w-full rounded-xl border px-3 py-2 text-xs transition-all focus:outline-none appearance-none ${
+  const selectClass = `w-full rounded-xl border px-3 py-2 text-xs transition-all focus:outline-none appearance-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 dark:focus:ring-primary-400/20 dark:focus:border-primary-400 ${
     themeMode === "dark"
       ? "border-zinc-800 bg-zinc-900/60 text-zinc-100 focus:border-zinc-700"
       : "border-zinc-200 bg-zinc-50/50 text-zinc-800 focus:border-zinc-300"
   }`;
 
-  const checkboxClass = `h-4 w-4 rounded border transition-colors focus:ring-1 cursor-pointer ${
+  const checkboxClass = `h-4 w-4 rounded border transition-colors focus:ring-1 cursor-pointer focus:ring-primary-500 focus:border-primary-500 ${
     themeMode === "dark"
-      ? "border-zinc-800 bg-zinc-900 text-zinc-300 focus:ring-zinc-700 checked:bg-zinc-100 checked:border-zinc-100"
-      : "border-zinc-300 bg-zinc-50 text-zinc-700 focus:ring-zinc-400 checked:bg-zinc-900 checked:border-zinc-900"
+      ? "border-zinc-800 bg-zinc-900 text-zinc-350 focus:ring-zinc-700 checked:bg-primary-600 checked:border-primary-600"
+      : "border-zinc-300 bg-zinc-50 text-zinc-700 focus:ring-zinc-400 checked:bg-primary-700 checked:border-primary-700"
   }`;
 
   return (
@@ -287,19 +298,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
         {/* Export WYSIWYG : signale les membres exclus par le repli de branches */}
         {hiddenIds.size > 0 && (
           <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-primary-600/25 bg-primary-600/5 dark:border-primary-400/25 dark:bg-primary-400/5 p-3">
-            <svg
-              className="h-3.5 w-3.5 shrink-0 mt-0.5 text-primary-700 dark:text-primary-300"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              />
-            </svg>
+            <Info className="h-4 w-4 shrink-0 mt-0.5 text-primary-700 dark:text-primary-300" />
             <p className="text-[11px] leading-relaxed text-primary-800 dark:text-primary-200">
               L'export reflète l'affichage actuel : {hiddenIds.size} membre{hiddenIds.size > 1 ? "s" : ""} de
               branches repliées n'y figurer{hiddenIds.size > 1 ? "ont" : "a"} pas. Dépliez les branches avant
@@ -323,11 +322,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                 <option value="a4">A4</option>
                 <option value="a3">A3</option>
               </select>
-              <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-zinc-400">
-                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
             </div>
           </label>
           <label className="flex flex-col gap-1.5">
@@ -343,11 +338,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                 <option value="landscape">Paysage</option>
                 <option value="portrait">Portrait</option>
               </select>
-              <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-zinc-400">
-                <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
-                </svg>
-              </div>
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
             </div>
           </label>
         </div>
@@ -356,7 +347,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
         <div className="flex flex-col gap-1.5 mt-4">
           <span className="flex justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
             <span>Marges du document</span>
-            <span className="font-mono text-zinc-500">{margin} mm</span>
+            <span className="font-mono text-zinc-550">{margin} mm</span>
           </span>
           <input
             type="range"
@@ -364,7 +355,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
             max={30}
             value={margin}
             onChange={(e) => setMargin(Number(e.target.value))}
-            className="w-full accent-zinc-800 dark:accent-zinc-200 cursor-pointer bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none h-1"
+            className="w-full accent-primary-600 dark:accent-primary-400 cursor-pointer bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none h-1"
           />
         </div>
 
@@ -456,20 +447,30 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                 <button
                   onClick={handleOptimize}
                   disabled={busy !== null}
-                  className={`self-start rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all hover:scale-102 active:scale-98 cursor-pointer disabled:opacity-50 ${
+                  className={`self-start rounded-lg px-3.5 py-1.5 text-[11px] font-semibold transition-all hover:scale-102 active:scale-98 cursor-pointer disabled:opacity-50 ${
                     themeMode === "dark"
                       ? "bg-primary-600 text-white hover:bg-primary-500"
                       : "bg-primary-700 text-white hover:bg-primary-600"
                   }`}
                 >
-                  {busy === "optimize" ? "Analyse des dispositions…" : "Optimiser la disposition pour cette page"}
+                  {busy === "optimize" ? (
+                    <span className="flex items-center gap-1.5 justify-center">
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      <span>Analyse des dispositions…</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 justify-center">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Optimiser la disposition pour cette page</span>
+                    </span>
+                  )}
                 </button>
               </div>
             )}
             {optimizeNotice && (
               <p
                 role="status"
-                className="mt-2.5 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300 border-t border-zinc-200/60 dark:border-zinc-800 pt-2.5"
+                className="mt-2.5 text-[11px] leading-relaxed text-zinc-655 dark:text-zinc-300 border-t border-zinc-200/60 dark:border-zinc-800 pt-2.5"
               >
                 {optimizeNotice}
               </p>
@@ -480,7 +481,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
         {error && <p className="mt-4 text-xs text-red-500">{error}</p>}
 
         {/* Boutons d'export */}
-        <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-900 flex flex-col gap-2">
+        <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-900 flex flex-col gap-2.5">
           <button
             onClick={() => run("pdf")}
             disabled={busy !== null}
@@ -492,17 +493,12 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
           >
             {busy === "pdf" ? (
               <>
-                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
+                <Loader2 className="animate-spin h-4 w-4" />
                 <span>Exportation PDF en cours...</span>
               </>
             ) : (
               <>
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
+                <FileText className="h-4 w-4" />
                 <span>Télécharger le PDF</span>
               </>
             )}
@@ -538,22 +534,12 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
           >
             {busy === "pptx" ? (
               <>
-                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
+                <Loader2 className="animate-spin h-4 w-4" />
                 <span>Génération PowerPoint...</span>
               </>
             ) : (
               <>
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M7 4a1 1 0 011-1h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4zm4 4h3a2 2 0 110 4h-3V8zm0 0v8"
-                  />
-                </svg>
+                <Presentation className="h-4 w-4" />
                 <span>Diapositive PowerPoint (.pptx)</span>
               </>
             )}
@@ -598,10 +584,11 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
               className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition-all hover:scale-101 active:scale-99 cursor-pointer ${
                 themeMode === "dark"
                   ? "border-zinc-800 text-zinc-300 hover:bg-zinc-800"
-                  : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+                  : "border-zinc-200 text-zinc-650 hover:bg-zinc-50"
               } disabled:opacity-50`}
             >
-              {busy === "png" ? "Génération..." : "PNG Haute Résolution"}
+              <Image className="h-3.5 w-3.5" />
+              <span>{busy === "png" ? "Génération..." : "PNG Image"}</span>
             </button>
             <button
               onClick={() => run("svg")}
@@ -609,10 +596,11 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
               className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition-all hover:scale-101 active:scale-99 cursor-pointer ${
                 themeMode === "dark"
                   ? "border-zinc-800 text-zinc-300 hover:bg-zinc-800"
-                  : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+                  : "border-zinc-200 text-zinc-650 hover:bg-zinc-50"
               } disabled:opacity-50`}
             >
-              {busy === "svg" ? "Génération..." : "Fichier SVG"}
+              <FileCode className="h-3.5 w-3.5" />
+              <span>{busy === "svg" ? "Génération..." : "SVG Fichier"}</span>
             </button>
           </div>
 
@@ -624,14 +612,25 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                 ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5"
                 : themeMode === "dark"
                 ? "border-zinc-800 text-zinc-300 hover:bg-zinc-800"
-                : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+                : "border-zinc-200 text-zinc-650 hover:bg-zinc-50"
             } disabled:opacity-50`}
           >
-            {busy === "clipboard"
-              ? "Copie en cours..."
-              : copied
-              ? "Copié ! Collez l'image où vous voulez."
-              : "Copier l'image dans le presse-papiers"}
+            {busy === "clipboard" ? (
+              <>
+                <Loader2 className="animate-spin h-3.5 w-3.5" />
+                <span>Copie en cours...</span>
+              </>
+            ) : copied ? (
+              <>
+                <Check className="h-3.5 w-3.5 text-emerald-500" />
+                <span>Copié dans le presse-papiers !</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3.5 w-3.5" />
+                <span>Copier l'image (presse-papiers)</span>
+              </>
+            )}
           </button>
 
           <button

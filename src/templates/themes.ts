@@ -24,6 +24,30 @@ export const cardOutlineTheme: OrgTheme = {
   cornerRadius: 12,
 };
 
+export const neonDarkTheme: OrgTheme = {
+  accent: "#00f2fe",
+  palette: ["#00f2fe", "#4facfe", "#00ff87", "#ff0844"],
+  fontFamily: "ui-monospace, monospace",
+  nodeStyle: "neon",
+  cornerRadius: 8,
+};
+
+export const gradientSoftTheme: OrgTheme = {
+  accent: "#6366f1",
+  palette: ["#6366f1", "#8b5cf6", "#ec4899", "#f43f5e"],
+  fontFamily: "'Poppins', system-ui, sans-serif",
+  nodeStyle: "gradient",
+  cornerRadius: 16,
+};
+
+export const minimalAccentTheme: OrgTheme = {
+  accent: "#18181b",
+  palette: ["#18181b", "#3f3f46", "#71717a", "#a1a1aa"],
+  fontFamily: "'Inter', system-ui, sans-serif",
+  nodeStyle: "minimal",
+  cornerRadius: 6,
+};
+
 export interface TemplateDefinition {
   id: string;
   label: string;
@@ -49,6 +73,24 @@ export const TEMPLATES: TemplateDefinition[] = [
     label: "Card Outline",
     description: "Cartes blanches, bordures fines, look sobre et dense.",
     theme: cardOutlineTheme,
+  },
+  {
+    id: "neon-dark",
+    label: "Neon Dark",
+    description: "Néon fluorescent sur fond sombre, look moderne et technologique.",
+    theme: neonDarkTheme,
+  },
+  {
+    id: "gradient-soft",
+    label: "Soft Gradient",
+    description: "Dégradés linéaires fluides, coins arrondis, look chaleureux.",
+    theme: gradientSoftTheme,
+  },
+  {
+    id: "minimal-accent",
+    label: "Minimal Accent",
+    description: "Cartes épurées avec liseré d'accentuation gauche, look très dense.",
+    theme: minimalAccentTheme,
   },
 ];
 

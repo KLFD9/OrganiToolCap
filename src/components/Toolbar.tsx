@@ -1,5 +1,25 @@
 import { useMemo, useRef, useState } from "react";
 import { useReactFlow } from "@xyflow/react";
+import {
+  FilePlus2,
+  Sparkles,
+  FolderOpen,
+  FileSpreadsheet,
+  Undo2,
+  Redo2,
+  Wand2,
+  Shrink,
+  Maximize,
+  Boxes,
+  Users,
+  Presentation,
+  Sun,
+  Moon,
+  Save,
+  SaveAll,
+  Download,
+  Search,
+} from "lucide-react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import { openOrgChartFile, saveOrgChartFile, FileFormatError } from "../lib/fileIO";
 import { importPeopleCsv, CsvFormatError } from "../lib/csvImport";
@@ -127,7 +147,6 @@ export function Toolbar({
       const imported = await importPptxFile(result.data);
       if (imported.kind === "orgchart") {
         loadFile(imported.file);
-        requestAnimationFrame(() => fitView({ duration: motionDuration(300), padding: 0.2 }));
         return;
       }
 
@@ -157,7 +176,6 @@ export function Toolbar({
       console.error(err);
     }
   };
-
 
   const handleImportCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -203,6 +221,25 @@ export function Toolbar({
     }
   };
 
+  const groupClass = `flex items-center gap-1 rounded-xl border p-1 shadow-sm ${
+    themeMode === "dark"
+      ? "border-zinc-800/80 bg-zinc-900/40"
+      : "border-zinc-200/85 bg-zinc-100/40"
+  }`;
+
+  const buttonBaseClass = `flex h-8 w-8 items-center justify-center rounded-lg transition-all focus:outline-none cursor-pointer`;
+
+  const getButtonClass = (isActive?: boolean) => {
+    if (isActive) {
+      return `${buttonBaseClass} bg-primary-50 border border-primary-200/60 text-primary-700 dark:bg-primary-950/40 dark:border-primary-800/50 dark:text-primary-300 shadow-inner`;
+    }
+    return `${buttonBaseClass} border border-transparent ${
+      themeMode === "dark"
+        ? "text-zinc-300 hover:bg-zinc-800 hover:text-white"
+        : "text-zinc-600 hover:bg-zinc-200/60 hover:text-zinc-900"
+    }`;
+  };
+
   return (
     <div
       className={`mx-4 mt-4 mb-2 flex flex-wrap items-center gap-3 rounded-2xl border px-4 py-2.5 shadow-md backdrop-blur-md transition-all duration-300 z-10 ${
@@ -216,20 +253,24 @@ export function Toolbar({
         <input
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          className={`w-48 rounded-lg border border-transparent bg-transparent px-2.5 py-1 text-sm font-semibold transition-all focus:outline-none ${
+          className={`flex h-8 items-center w-48 rounded-lg border border-transparent bg-transparent px-2 text-sm font-semibold transition-all focus:outline-none ${
             themeMode === "dark"
               ? "text-zinc-100 hover:border-zinc-800 focus:border-zinc-700 focus:bg-zinc-900/50"
               : "text-zinc-800 hover:border-zinc-200 focus:border-zinc-300 focus:bg-zinc-50/50"
           }`}
         />
-        <div className="relative group">
+        <div className="relative group flex items-center h-8">
           <span
             className={`flex h-2.5 w-2.5 rounded-full ${
               isDirty ? "bg-amber-500 animate-pulse" : "bg-emerald-500"
             }`}
           />
-          <div className="absolute left-1/2 top-full mt-2 hidden -translate-x-1/2 rounded bg-zinc-900 px-2 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30">
-            {isDirty ? "Modifications non enregistrées" : "Enregistré et à jour"}
+          <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+            {isDirty ? (
+              <span>Modifications non enregistrées <span className="text-zinc-400 font-normal">(Raccourci : Ctrl+S)</span></span>
+            ) : (
+              <span>Enregistré et à jour <span className="text-zinc-400 font-normal">(toutes les modifications sont sauvegardées)</span></span>
+            )}
           </div>
         </div>
       </div>
@@ -237,16 +278,9 @@ export function Toolbar({
       <div className="hidden h-5 w-px bg-zinc-200 dark:bg-zinc-800 sm:block" />
 
       {/* Barre de recherche animée */}
-      <div className="relative">
+      <div className="relative flex items-center h-8">
         <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-zinc-400">
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2.5}
-              d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-            />
-          </svg>
+          <Search className="h-3.5 w-3.5" />
         </div>
         <input
           type="search"
@@ -256,25 +290,18 @@ export function Toolbar({
             setSearchOpen(true);
           }}
           onFocus={() => setSearchOpen(true)}
-          onBlur={() => setTimeout(() => setSearchOpen(false), 180)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && searchResults.length > 0) {
-              handleGoToNode(searchResults[0].id);
-            } else if (e.key === "Escape") {
-              setSearchOpen(false);
-            }
-          }}
-          placeholder="Rechercher un membre..."
-          className={`w-40 rounded-lg border pl-9 pr-3 py-1.5 text-xs transition-all duration-300 focus:w-56 focus:outline-none ${
+          onBlur={() => setTimeout(() => setSearchOpen(false), 200)}
+          placeholder="Rechercher un nom..."
+          className={`w-40 h-8 rounded-lg border pl-9 pr-3 text-xs transition-all focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 dark:focus:ring-primary-400/20 dark:focus:border-primary-400 ${
             themeMode === "dark"
-              ? "border-border-dark bg-zinc-900 text-zinc-200 placeholder-zinc-500 focus:border-zinc-700"
-              : "border-border-light bg-zinc-50 text-zinc-700 placeholder-zinc-400 focus:border-zinc-300"
+              ? "border-border-dark bg-zinc-900 text-zinc-200 placeholder-zinc-500"
+              : "border-border-light bg-white text-zinc-700 placeholder-zinc-400"
           }`}
         />
 
         {searchOpen && searchQuery.trim() && (
           <div
-            className={`absolute left-0 top-full z-20 mt-1 w-64 overflow-hidden rounded-xl border shadow-lg ${
+            className={`absolute left-0 top-full z-20 mt-1.5 w-64 overflow-hidden rounded-xl border shadow-lg ${
               themeMode === "dark"
                 ? "border-border-dark bg-panel-bg-dark"
                 : "border-border-light bg-panel-bg-light"
@@ -307,132 +334,22 @@ export function Toolbar({
         )}
       </div>
 
-      {/* Actions et boutons */}
-      <div className="ml-auto flex items-center gap-1.5 flex-wrap">
-        {/* Nouveau */}
-        <div className="relative group">
-          <button
-            aria-label="Nouveau projet"
-            onClick={onNewClick}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
-              themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-          </button>
-          <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30">
-            Nouveau projet
-          </div>
-        </div>
+      <div className="hidden h-5 w-px bg-zinc-200 dark:bg-zinc-800 sm:block" />
 
-        {/* Démo ATHANOR */}
-        <div className="relative group">
-          <button
-            aria-label="Charger la démo ATHANOR"
-            onClick={() => loadFile(athanorDemo)}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
-              themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
-              />
-            </svg>
-          </button>
-          <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            Charger la démo ATHANOR
-          </div>
-        </div>
-
-        {/* Ouvrir */}
-        <div className="relative group">
-          <button
-            data-action="open"
-            aria-label="Ouvrir un fichier"
-            onClick={handleOpen}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
-              themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9l-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"
-              />
-            </svg>
-          </button>
-          <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            Ouvrir (.orgchart.json ou .pptx) <span className="text-zinc-400 font-mono">(Ctrl+O)</span>
-          </div>
-        </div>
-
-        {/* Importer une liste CSV (Excel / Google Sheets) */}
-        <div className="relative group">
-          <button
-            aria-label="Importer un CSV"
-            onClick={() => csvInputRef.current?.click()}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
-              themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.8}
-                d="M3 10h18M3 14h18M9 4v16M3 6a2 2 0 012-2h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6z"
-              />
-            </svg>
-          </button>
-          <input
-            ref={csvInputRef}
-            type="file"
-            accept=".csv,text/csv,text/tab-separated-values"
-            className="hidden"
-            onChange={handleImportCsv}
-          />
-          <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            Importer un CSV <span className="text-zinc-400 font-mono">(Nom;Poste;Pôle;Email;Responsable)</span>
-          </div>
-        </div>
-
-        {/* Séparateur */}
-        <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800 mx-1" />
-
+      {/* Historique (Annuler / Rétablir) placé après la recherche */}
+      <div className={groupClass}>
         {/* Annuler */}
         <div className="relative group">
           <button
             aria-label="Annuler"
             onClick={undo}
             disabled={!canUndo}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-              themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
+            className={getButtonClass(false)}
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-            </svg>
+            <Undo2 className="h-4 w-4" />
           </button>
           <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            Annuler <span className="text-zinc-400 font-mono">(Ctrl+Z)</span>
+            Annuler la dernière action <span className="text-zinc-400 font-normal">(revenir en arrière)</span> <span className="text-zinc-400 font-mono">(Ctrl+Z)</span>
           </div>
         </div>
 
@@ -442,335 +359,286 @@ export function Toolbar({
             aria-label="Rétablir"
             onClick={redo}
             disabled={!canRedo}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
-              themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
+            className={getButtonClass(false)}
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6" />
-            </svg>
+            <Redo2 className="h-4 w-4" />
           </button>
           <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            Rétablir <span className="text-zinc-400 font-mono">(Ctrl+Shift+Z)</span>
+            Rétablir l'action annulée <span className="text-zinc-400 font-normal">(recommencer)</span> <span className="text-zinc-400 font-mono">(Ctrl+Maj+Z)</span>
           </div>
         </div>
+      </div>
 
-        {/* Séparateur */}
-        <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800 mx-1" />
-
-        {/* Layout direction */}
-        <div className="relative group">
-          <button
-            aria-label="Basculer la direction du layout"
-            onClick={() => setLayoutDirection(layout.direction === "TB" ? "LR" : "TB")}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
-              themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
-          >
-            {layout.direction === "TB" ? (
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <rect x="10" y="3" width="4" height="3" rx="0.5" strokeWidth={1.8} />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 6v5M6 11h12M6 11v4M12 11v4M18 11v4" />
-                <rect x="4" y="15" width="4" height="3" rx="0.5" strokeWidth={1.8} />
-                <rect x="10" y="15" width="4" height="3" rx="0.5" strokeWidth={1.8} />
-                <rect x="16" y="15" width="4" height="3" rx="0.5" strokeWidth={1.8} />
-              </svg>
-            ) : (
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <rect x="3" y="10" width="3" height="4" rx="0.5" strokeWidth={1.8} />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M6 12h5M11 6v12M11 6h4M11 12h4M11 18h4" />
-                <rect x="15" y="4" width="3" height="4" rx="0.5" strokeWidth={1.8} />
-                <rect x="15" y="10" width="3" height="4" rx="0.5" strokeWidth={1.8} />
-                <rect x="15" y="16" width="3" height="4" rx="0.5" strokeWidth={1.8} />
-              </svg>
-            )}
-          </button>
-          <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            Layout : {layout.direction === "TB" ? "Vertical" : "Horizontal"}
-          </div>
-        </div>
-
-        {/* Rangement Auto */}
-        <div className="relative group">
-          <button
-            aria-label="Ranger automatiquement"
-            onClick={handleAutoLayout}
-            disabled={busy}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all disabled:opacity-40 ${
-              themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
-          >
-            <svg
-              className={`h-4 w-4 ${busy ? "animate-pulse" : ""}`}
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
+      {/* Actions et boutons */}
+      <div className="ml-auto flex items-center gap-2.5 flex-wrap">
+        {/* Groupe Fichier & Import */}
+        <div className={groupClass}>
+          {/* Nouveau */}
+          <div className="relative group">
+            <button
+              aria-label="Nouveau projet"
+              onClick={onNewClick}
+              className={getButtonClass(false)}
             >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.286L13 21l-2.286-6.857L5 12l5.714-2.286L13 3z" />
-            </svg>
-          </button>
-          <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            Ranger automatiquement
+              <FilePlus2 className="h-4 w-4" />
+            </button>
+            <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Nouveau projet <span className="text-zinc-400 font-normal">(efface le dessin actuel pour repartir à zéro)</span>
+            </div>
+          </div>
+
+          {/* Ouvrir */}
+          <div className="relative group">
+            <button
+              data-action="open"
+              aria-label="Ouvrir un fichier"
+              onClick={handleOpen}
+              className={getButtonClass(false)}
+            >
+              <FolderOpen className="h-4 w-4" />
+            </button>
+            <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Ouvrir un fichier <span className="text-zinc-400 font-normal">(charger un fichier .json ou un PowerPoint)</span> <span className="text-zinc-400 font-mono">(Ctrl+O)</span>
+            </div>
+          </div>
+
+          {/* Importer une liste CSV (Excel / Google Sheets) */}
+          <div className="relative group">
+            <button
+              aria-label="Importer un CSV"
+              onClick={() => csvInputRef.current?.click()}
+              className={getButtonClass(false)}
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+            </button>
+            <input
+              ref={csvInputRef}
+              type="file"
+              accept=".csv,text/csv,text/tab-separated-values"
+              className="hidden"
+              onChange={handleImportCsv}
+            />
+            <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Importer depuis Excel / CSV <span className="text-zinc-400 font-normal">(créer l'organigramme à partir d'une liste)</span>
+            </div>
+          </div>
+
+          {/* Démo ATHANOR */}
+          <div className="relative group">
+            <button
+              aria-label="Charger la démo ATHANOR"
+              onClick={() => loadFile(athanorDemo)}
+              className={getButtonClass(false)}
+            >
+              <Sparkles className="h-4 w-4" />
+            </button>
+            <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Charger l'exemple ATHANOR <span className="text-zinc-400 font-normal">(charger un exemple d'organigramme de démonstration)</span>
+            </div>
           </div>
         </div>
 
-        {/* Disposition compacte : équipes empilées, optimisée pour l'impression */}
-        <div className="relative group">
-          <button
-            onClick={() => {
-              applyCompactLayout();
-              requestAnimationFrame(() => fitView({ duration: motionDuration(300), padding: 0.2 }));
-            }}
-            aria-label="Disposition compacte"
-            aria-pressed={layout.mode === "compact"}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
-              layout.mode === "compact"
-                ? themeMode === "dark"
-                  ? "border-primary-400/40 bg-primary-500/15 text-primary-300"
-                  : "border-primary-600/40 bg-primary-600/10 text-primary-700"
-                : themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <rect x="8" y="3" width="8" height="4" rx="1" strokeWidth={1.8} />
-              <path strokeLinecap="round" strokeWidth={1.5} d="M6 9v9M6 11h3M6 15h3M6 19h3" />
-              <rect x="9" y="9.5" width="7" height="3.5" rx="1" strokeWidth={1.8} />
-              <rect x="9" y="13.5" width="7" height="3.5" rx="1" strokeWidth={1.8} />
-              <rect x="9" y="17.5" width="7" height="3.5" rx="1" strokeWidth={1.8} />
-            </svg>
-          </button>
-          <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            Disposition compacte (optimisée impression)
+        {/* Groupe Disposition & Mise en page */}
+        <div className={groupClass}>
+          {/* Ranger automatiquement */}
+          <div className="relative group">
+            <button
+              aria-label="Ranger automatiquement"
+              onClick={handleAutoLayout}
+              disabled={busy}
+              className={getButtonClass(false)}
+            >
+              <Wand2 className={`h-4 w-4 ${busy ? "animate-pulse" : ""}`} />
+            </button>
+            <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Réorganiser automatiquement <span className="text-zinc-400 font-normal">(repositionner proprement toutes les cartes)</span>
+            </div>
+          </div>
+
+          {/* Layout direction */}
+          <div className="relative group">
+            <button
+              aria-label="Basculer la direction du layout"
+              onClick={() => setLayoutDirection(layout.direction === "TB" ? "LR" : "TB")}
+              className={getButtonClass(false)}
+            >
+              {layout.direction === "TB" ? (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <rect x="10" y="3" width="4" height="3" rx="0.5" strokeWidth={2} />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v5M6 11h12M6 11v4M12 11v4M18 11v4" />
+                  <rect x="4" y="15" width="4" height="3" rx="0.5" strokeWidth={2} />
+                  <rect x="10" y="15" width="4" height="3" rx="0.5" strokeWidth={2} />
+                  <rect x="16" y="15" width="4" height="3" rx="0.5" strokeWidth={2} />
+                </svg>
+              ) : (
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <rect x="3" y="10" width="3" height="4" rx="0.5" strokeWidth={2} />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 12h5M11 6v12M11 6h4M11 12h4M11 18h4" />
+                  <rect x="15" y="4" width="3" height="4" rx="0.5" strokeWidth={2} />
+                  <rect x="15" y="10" width="3" height="4" rx="0.5" strokeWidth={2} />
+                  <rect x="15" y="16" width="3" height="4" rx="0.5" strokeWidth={2} />
+                </svg>
+              )}
+            </button>
+            <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Changer le sens de lecture <span className="text-zinc-400 font-normal">(haut en bas ou gauche à droite)</span>
+            </div>
+          </div>
+
+          {/* Disposition compacte : équipes empilées, optimisée pour l'impression */}
+          <div className="relative group">
+            <button
+              onClick={() => {
+                applyCompactLayout();
+                requestAnimationFrame(() => fitView({ duration: motionDuration(300), padding: 0.2 }));
+              }}
+              aria-label="Disposition compacte"
+              aria-pressed={layout.mode === "compact"}
+              className={getButtonClass(layout.mode === "compact")}
+            >
+              <Shrink className="h-4 w-4" />
+            </button>
+            <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Mode compact <span className="text-zinc-400 font-normal">(empiler les équipes verticalement pour l'impression)</span>
+            </div>
+          </div>
+
+          {/* Ajuster la vue */}
+          <div className="relative group">
+            <button
+              aria-label="Recentrer l'organigramme"
+              onClick={() => fitView({ duration: motionDuration(300), padding: 0.2 })}
+              className={getButtonClass(false)}
+            >
+              <Maximize className="h-4 w-4" />
+            </button>
+            <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Recentrer la vue <span className="text-zinc-400 font-normal">(ajuster la vue pour afficher tout l'organigramme)</span>
+            </div>
           </div>
         </div>
 
-        {/* Ajuster la vue */}
-        <div className="relative group">
-          <button
-            aria-label="Recadrer l'organigramme"
-            onClick={() => fitView({ duration: motionDuration(300), padding: 0.2 })}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
-              themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.8}
-                d="M4 8V4h4M16 4h4v4M4 16v4h4M16 20h4v-4M9 12h6m-3-3v6"
-              />
-            </svg>
-          </button>
-          <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            Recadrer l'organigramme
+        {/* Groupe Vues & Affichage */}
+        <div className={groupClass}>
+          {/* Regroupement visuel par pôle / département */}
+          <div className="relative group">
+            <button
+              aria-label="Afficher les pôles"
+              onClick={onToggleGroups}
+              aria-pressed={showGroups}
+              className={getButtonClass(showGroups)}
+            >
+              <Boxes className="h-4 w-4" />
+            </button>
+            <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Afficher/Masquer les blocs de couleur <span className="text-zinc-400 font-normal">(délimiter visuellement les différents départements ou pôles)</span>
+            </div>
+          </div>
+
+          {/* Vue annuaire (table triable des membres) */}
+          <div className="relative group">
+            <button
+              aria-label="Vue annuaire"
+              onClick={onToggleDirectory}
+              aria-pressed={directoryOpen}
+              className={getButtonClass(directoryOpen)}
+            >
+              <Users className="h-4 w-4" />
+            </button>
+            <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Afficher la liste complète des membres <span className="text-zinc-400 font-normal">(vue tableau éditable pour ajouter ou trier rapidement)</span>
+            </div>
+          </div>
+
+          {/* Mode présentation plein écran */}
+          <div className="relative group">
+            <button
+              aria-label="Mode présentation"
+              onClick={onTogglePresentation}
+              className={getButtonClass(false)}
+            >
+              <Presentation className="h-4 w-4" />
+            </button>
+            <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Plein écran / Présentation <span className="text-zinc-400 font-normal">(masquer les outils pour projeter ou présenter l'organigramme)</span> <span className="text-zinc-400 font-mono">(Échap pour quitter)</span>
+            </div>
           </div>
         </div>
 
-        {/* Regroupement visuel par pôle / département */}
-        <div className="relative group">
-          <button
-            aria-label="Afficher les pôles"
-            onClick={onToggleGroups}
-            aria-pressed={showGroups}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
-              showGroups
-                ? themeMode === "dark"
-                  ? "border-primary-400/40 bg-primary-500/15 text-primary-300"
-                  : "border-primary-600/40 bg-primary-600/10 text-primary-700"
-                : themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.8}
-                d="M4 4h7v7H4V4zm9 0h7v4h-7V4zm0 7h7v9h-7v-9zM4 14h7v6H4v-6z"
-              />
-            </svg>
-          </button>
-          <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            {showGroups ? "Masquer les pôles" : "Afficher les pôles"}
+        {/* Groupe Thème */}
+        <div className={groupClass}>
+          {/* Switch Thème (Clair/Sombre) */}
+          <div className="relative group">
+            <button
+              aria-label="Changer de thème"
+              onClick={onToggleTheme}
+              className={getButtonClass(false)}
+            >
+              {themeMode === "dark" ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+            </button>
+            <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Mode sombre / clair <span className="text-zinc-400 font-normal">(adapter la luminosité de l'interface)</span>
+            </div>
           </div>
         </div>
 
-        {/* Vue annuaire (table triable des membres) */}
-        <div className="relative group">
-          <button
-            aria-label="Vue annuaire"
-            onClick={onToggleDirectory}
-            aria-pressed={directoryOpen}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
-              directoryOpen
-                ? themeMode === "dark"
-                  ? "border-primary-400/40 bg-primary-500/15 text-primary-300"
-                  : "border-primary-600/40 bg-primary-600/10 text-primary-700"
-                : themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 6h16M4 10h16M4 14h16M4 18h10" />
-            </svg>
-          </button>
-          <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            {directoryOpen ? "Retour à l'organigramme" : "Vue annuaire (liste des membres)"}
+        {/* Groupe Enregistrement */}
+        <div className={groupClass}>
+          {/* BOUTON ENREGISTRER (Visuellement mis en avant - Label + Icône + Raccourci) */}
+          <div className="relative group">
+            <button
+              data-action="save"
+              onClick={handleSave}
+              className={`flex h-8 items-center gap-1.5 rounded-lg px-4 text-xs font-semibold shadow-sm transition-all hover:scale-102 active:scale-98 cursor-pointer ${
+                themeMode === "dark"
+                  ? "bg-primary-600 text-white hover:bg-primary-500 shadow-primary-950/30"
+                  : "bg-primary-700 text-white hover:bg-primary-600 shadow-primary-900/10"
+              }`}
+            >
+              <Save className="h-3.5 w-3.5" />
+              <span>Enregistrer</span>
+            </button>
+            <div className="absolute right-0 top-full mt-2.5 hidden rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Enregistrer les modifications <span className="text-zinc-400 font-normal">(enregistrer directement dans votre fichier actuel)</span> <span className="text-zinc-400 font-mono">(Ctrl+S)</span>
+            </div>
           </div>
-        </div>
 
-        {/* Mode présentation plein écran */}
-        <div className="relative group">
-          <button
-            aria-label="Mode présentation"
-            onClick={onTogglePresentation}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
-              themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.8}
-                d="M4 8V4h4M16 4h4v4M4 16v4h4M16 20h4v-4"
-              />
-            </svg>
-          </button>
-          <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            Mode présentation <span className="text-zinc-400 font-mono">(Échap pour quitter)</span>
-          </div>
-        </div>
-
-        {/* Séparateur */}
-        <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800 mx-1" />
-
-        {/* Switch Thème (Clair/Sombre) - SANS EMOJI (Soleil / Lune) */}
-        <div className="relative group">
-          <button
-            aria-label="Changer de thème"
-            onClick={onToggleTheme}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
-              themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800"
-            }`}
-          >
-            {themeMode === "dark" ? (
-              // Icône Soleil
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.2}
-                  d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707M12 8a4 4 0 100 8 4 4 0 000-8z"
-                />
-              </svg>
-            ) : (
-              // Icône Lune
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2.2}
-                  d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"
-                />
-              </svg>
-            )}
-          </button>
-          <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            Thème {themeMode === "dark" ? "Clair" : "Sombre"}
-          </div>
-        </div>
-
-        {/* Séparateur */}
-        <div className="h-4 w-px bg-zinc-200 dark:bg-zinc-800 mx-1" />
-
-        {/* BOUTON ENREGISTRER (Visuellement mis en avant - Label + Icône + Raccourci) */}
-        <div className="relative group">
-          <button
-            data-action="save"
-            onClick={handleSave}
-            className={`flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold shadow-sm transition-all hover:scale-102 active:scale-98 ${
-              themeMode === "dark"
-                ? "bg-primary-600 text-white hover:bg-primary-500 shadow-primary-950/30"
-                : "bg-primary-700 text-white hover:bg-primary-600 shadow-primary-900/10"
-            }`}
-          >
-            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2.5}
-                d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"
-              />
-            </svg>
-            <span>Enregistrer</span>
-          </button>
-          <div className="absolute right-0 top-full mt-2.5 hidden rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            Sauvegarder le fichier <span className="text-zinc-400 font-mono">(Ctrl+S)</span>
-          </div>
-        </div>
-
-        {/* Enregistrer sous... (Secondaire) */}
-        <div className="relative group">
-          <button
-            aria-label="Enregistrer sous"
-            onClick={handleSaveAs}
-            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
-              themeMode === "dark"
-                ? "border-border-dark bg-zinc-900/40 text-zinc-400 hover:bg-zinc-800 hover:text-white"
-                : "border-border-light bg-zinc-50/60 text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
-          >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"
-              />
-            </svg>
-          </button>
-          <div className="absolute right-0 top-full mt-2.5 hidden rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-            Enregistrer sous...
+          {/* Enregistrer sous... (Secondaire) */}
+          <div className="relative group">
+            <button
+              aria-label="Enregistrer sous"
+              onClick={handleSaveAs}
+              className={getButtonClass(false)}
+            >
+              <SaveAll className="h-4 w-4" />
+            </button>
+            <div className="absolute right-0 top-full mt-2.5 hidden rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Enregistrer une copie <span className="text-zinc-400 font-normal">(créer un nouveau fichier d'organigramme distinct)</span>
+            </div>
           </div>
         </div>
 
         {/* BOUTON EXPORTER (Visuellement mis en avant - Label + Icône) */}
-        <button
-          onClick={onExportClick}
-          className={`flex h-8 items-center gap-1.5 rounded-lg px-3.5 text-xs font-semibold shadow-sm transition-all hover:scale-102 active:scale-98 ${
-            themeMode === "dark"
-              ? "border border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-800 hover:text-white"
-              : "border border-zinc-200 bg-zinc-100/60 text-zinc-700 hover:bg-zinc-100 hover:text-zinc-900"
-          }`}
-        >
-          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2.5}
-              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-            />
-          </svg>
-          <span>Exporter</span>
-        </button>
+        <div className="relative group">
+          <button
+            onClick={onExportClick}
+            className={`flex h-8 items-center gap-1.5 rounded-lg px-4 text-xs font-semibold shadow-sm transition-all hover:scale-102 active:scale-98 cursor-pointer ${
+              themeMode === "dark"
+                ? "border border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-800 hover:text-white"
+                : "border border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900"
+            }`}
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>Exporter</span>
+          </button>
+          <div className="absolute right-0 top-full mt-2.5 hidden rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+            Télécharger ou imprimer <span className="text-zinc-400 font-normal">(exporter en PDF, PowerPoint, Image, ou Excel)</span>
+          </div>
+        </div>
       </div>
 
       {error && <div className="w-full text-xs text-red-500 mt-1">{error}</div>}

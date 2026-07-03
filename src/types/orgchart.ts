@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const NodeStyleVariantSchema = z.enum(["glass", "flat", "card", "outline"]);
+export const NodeStyleVariantSchema = z.enum(["glass", "flat", "card", "outline", "neon", "gradient", "minimal"]);
 export type NodeStyleVariant = z.infer<typeof NodeStyleVariantSchema>;
 
 export const OrgNodeStyleSchema = z.object({
