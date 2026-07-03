@@ -105,7 +105,9 @@ function App() {
         return;
       }
 
-      if (e.key === "Escape" && directoryOpen) {
+      // Échap ferme l'annuaire — sauf pendant l'édition d'une cellule,
+      // où il annule l'édition (géré par la cellule elle-même).
+      if (e.key === "Escape" && directoryOpen && !isEditable) {
         e.preventDefault();
         setDirectoryOpen(false);
         return;

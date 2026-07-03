@@ -80,6 +80,11 @@ interface OrgChartState {
   addDottedEdge: (source: string, target: string) => void;
   /** Convertit un lien hiérarchique ⇄ fonctionnel (avec garde anti-cycle et parent unique). */
   setEdgeKind: (id: string, kind: "hierarchy" | "dotted") => void;
+  /**
+   * Change (ou retire, si undefined) le responsable hiérarchique d'un membre
+   * en une seule entrée d'historique. Refuse les cycles.
+   */
+  setManager: (childId: string, managerId?: string) => void;
   deleteEdge: (id: string) => void;
 
   // -- layout --
@@ -451,6 +456,24 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
         ...pushHistory(s),
         edges: s.edges.map((e) => (e.id === id ? { ...e, kind: "dotted" as const } : e)),
         isDirty: true,
+      };
+    }),
+
+  setManager: (childId, managerId) =>
+    set((s) => {
+      if (managerId === childId) return s;
+      const currentParent = s.edges.find((e) => isHierarchyEdge(e) && e.target === childId);
+      if ((currentParent?.source ?? undefined) === managerId) return s;
+      if (managerId && wouldCreateHierarchyCycle(s.edges, managerId, childId)) return s;
+
+      const withoutParent = s.edges.filter((e) => !(isHierarchyEdge(e) && e.target === childId));
+      return {
+        ...pushHistory(s),
+        edges: managerId
+          ? [...withoutParent, { id: generateId("edge"), source: managerId, target: childId }]
+          : withoutParent,
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
       };
     }),
 

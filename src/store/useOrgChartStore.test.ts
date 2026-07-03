@@ -128,6 +128,34 @@ describe("useOrgChartStore", () => {
     expect(updated.source).toBe(rootId);
   });
 
+  it("setManager remplace le responsable, le retire, et refuse les cycles", () => {
+    const { addNode, setManager } = useOrgChartStore.getState();
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+
+    addNode(rootId); // root -> A
+    const aId = useOrgChartStore.getState().nodes[1].id;
+    addNode(aId); // A -> B
+    const bId = useOrgChartStore.getState().nodes[2].id;
+    addNode(); // C sans parent
+    const cId = useOrgChartStore.getState().nodes[3].id;
+
+    // Remplacement : C devient le responsable de B (une seule arête vers B)
+    setManager(bId, cId);
+    let edgesToB = useOrgChartStore.getState().edges.filter((e) => e.target === bId);
+    expect(edgesToB).toHaveLength(1);
+    expect(edgesToB[0].source).toBe(cId);
+
+    // Cycle refusé : B (désormais sous C) ne peut pas devenir responsable de C
+    const before = useOrgChartStore.getState().edges;
+    setManager(cId, bId);
+    expect(useOrgChartStore.getState().edges).toEqual(before);
+
+    // Retrait : B devient racine
+    setManager(bId, undefined);
+    edgesToB = useOrgChartStore.getState().edges.filter((e) => e.target === bId);
+    expect(edgesToB).toHaveLength(0);
+  });
+
   it("duplicateNode clones the node and reattaches it to the same parent", () => {
     const { addNode, duplicateNode } = useOrgChartStore.getState();
     const rootId = useOrgChartStore.getState().nodes[0].id;

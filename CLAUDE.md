@@ -29,7 +29,7 @@ Toujours lancer `npm test` et `npm run lint` avant de considérer une modificati
 ```
 src/
   components/   Canvas (React Flow : edge-drop, menus contextuels), NodeCard,
-                Toolbar, Inspector, Directory (vue annuaire), TemplatePicker,
+                Toolbar, Inspector, Directory (annuaire éditable), TemplatePicker,
                 ExportDialog, ContextMenu, GroupBackground, ErrorBoundary
   store/        useOrgChartStore (Zustand) — undo/redo 50 niveaux,
                 sérialise vers/depuis OrgChartFile sans perte
