@@ -47,10 +47,25 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   const storeEdges = useOrgChartStore((s) => s.edges);
   const collapsedNodeIds = useOrgChartStore((s) => s.collapsedNodeIds);
   const toFile = useOrgChartStore((s) => s.toFile);
+  const pageSetup = useOrgChartStore((s) => s.layout.page);
+  const setPageSetup = useOrgChartStore((s) => s.setPageSetup);
   const { getNodes, fitView } = useReactFlow();
-  const [format, setFormat] = useState<PdfFormat>("a4");
-  const [orientation, setOrientation] = useState<PdfOrientation>("landscape");
-  const [margin, setMargin] = useState(10);
+  const [format, setFormat] = useState<PdfFormat>(pageSetup?.format ?? "a4");
+  const [orientation, setOrientation] = useState<PdfOrientation>(pageSetup?.orientation ?? "landscape");
+  const [margin, setMargin] = useState(pageSetup?.margin ?? 10);
+
+  // Le format choisi est celui du document : le dialogue se réaligne sur le
+  // fichier à chaque ouverture (ajustement d'état pendant le rendu, pattern
+  // React officiel), et chaque changement met à jour le cadre de page.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open && pageSetup) {
+      setFormat(pageSetup.format);
+      setOrientation(pageSetup.orientation);
+      setMargin(pageSetup.margin);
+    }
+  }
   const [includeTitle, setIncludeTitle] = useState(true);
   const [includeFooter, setIncludeFooter] = useState(true);
   const [includeLogos, setIncludeLogos] = useState(true);
@@ -328,7 +343,11 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                   <div className="relative">
                     <select
                       value={format}
-                      onChange={(e) => setFormat(e.target.value as PdfFormat)}
+                      onChange={(e) => {
+                        const value = e.target.value as PdfFormat;
+                        setFormat(value);
+                        setPageSetup({ format: value, orientation, margin });
+                      }}
                       className={selectClass}
                     >
                       <option value="a4">A4</option>
@@ -344,7 +363,11 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                   <div className="relative">
                     <select
                       value={orientation}
-                      onChange={(e) => setOrientation(e.target.value as PdfOrientation)}
+                      onChange={(e) => {
+                        const value = e.target.value as PdfOrientation;
+                        setOrientation(value);
+                        setPageSetup({ format, orientation: value, margin });
+                      }}
                       className={selectClass}
                     >
                       <option value="landscape">Paysage</option>
@@ -366,7 +389,11 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                   min={0}
                   max={30}
                   value={margin}
-                  onChange={(e) => setMargin(Number(e.target.value))}
+                  onChange={(e) => {
+                    const value = Number(e.target.value);
+                    setMargin(value);
+                    setPageSetup({ format, orientation, margin: value });
+                  }}
                   className="w-full accent-primary-600 dark:accent-primary-400 cursor-pointer bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none h-1"
                 />
               </div>

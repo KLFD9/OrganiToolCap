@@ -20,10 +20,19 @@ import { computeDepartmentGroups, buildGroupTheme } from "../lib/groups";
 import { computeStackedIds, CARD_WIDTH, CARD_HEIGHT } from "../lib/compactLayout";
 import { buildChildrenMap, computeDescendantCounts, computeHiddenNodeIds, wouldCreateHierarchyCycle } from "../lib/hierarchy";
 import { isHierarchyEdge } from "../types/orgchart";
+import {
+  availableAreaForSetup,
+  chromeOffsetsForSetup,
+  estimateReadability,
+  pageSizeMm,
+  COMFORT_MM_PER_PX,
+  DEFAULT_PAGE,
+} from "../lib/readability";
 import { NodeCard, type NodeCardData } from "./NodeCard";
 import { GroupBackground, type GroupBackgroundData } from "./GroupBackground";
 import { OrgEdge } from "./OrgEdge";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
+import { PageGuide, type PageGuideData } from "./PageGuide";
 
 interface MenuState {
   x: number;
@@ -36,8 +45,13 @@ interface MenuState {
   flowPos?: { x: number; y: number };
 }
 
-const nodeTypes = { orgNode: NodeCard, groupBg: GroupBackground };
+const nodeTypes = { orgNode: NodeCard, groupBg: GroupBackground, pageGuide: PageGuide };
 const edgeTypes = { org: OrgEdge };
+
+const FORMAT_LABEL = { a4: "A4", a3: "A3" } as const;
+const ORIENTATION_LABEL = { landscape: "paysage", portrait: "portrait" } as const;
+/** Marge intérieure de la capture autour du contenu (captureFlow). */
+const CAPTURE_MARGIN = 1.12;
 
 interface CanvasProps {
   themeMode?: "light" | "dark";
@@ -87,6 +101,67 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     () => (layout.mode === "compact" ? computeStackedIds(storeNodes, storeEdges) : new Set<string>()),
     [layout.mode, storeNodes, storeEdges]
   );
+
+  // Cadre de page : feuille A4/A3 à l'échelle « confort », centrée sur le
+  // contenu comme le fera l'export (fit-contain centré).
+  const pageGuideEnabled = useOrgChartStore((s) => s.pageGuide);
+  const page = useOrgChartStore((s) => s.layout.page) ?? DEFAULT_PAGE;
+  const meta = useOrgChartStore((s) => s.meta);
+
+  const pageGuideNodes = useMemo<Node<PageGuideData>[]>(() => {
+    if (!pageGuideEnabled || visibleNodes.length === 0) return [];
+
+    const chrome = {
+      title: meta.title,
+      footer: meta.footer,
+      logoUrl: theme.logoUrl,
+      secondaryLogoUrl: theme.secondaryLogoUrl,
+    };
+    const paperMm = pageSizeMm(page.format, page.orientation);
+    const offsets = chromeOffsetsForSetup(page, chrome);
+    const avail = availableAreaForSetup(page, chrome);
+
+    // Encombrement du contenu (marge de capture incluse) et son centre
+    const xs = visibleNodes.map((n) => n.position.x);
+    const ys = visibleNodes.map((n) => n.position.y);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const boundsW = (Math.max(...xs) - minX + CARD_WIDTH) * CAPTURE_MARGIN;
+    const boundsH = (Math.max(...ys) - minY + CARD_HEIGHT) * CAPTURE_MARGIN;
+    const centerX = minX + (Math.max(...xs) - minX + CARD_WIDTH) / 2;
+    const centerY = minY + (Math.max(...ys) - minY + CARD_HEIGHT) / 2;
+
+    const px = (mm: number) => mm / COMFORT_MM_PER_PX;
+    const width = px(paperMm.width);
+    const height = px(paperMm.height);
+    const estimate = estimateReadability(boundsW, boundsH, avail.width, avail.height);
+
+    return [
+      {
+        id: "__page-guide__",
+        type: "pageGuide",
+        position: { x: centerX - width / 2, y: centerY - height / 2 },
+        draggable: false,
+        selectable: false,
+        focusable: false,
+        zIndex: -2,
+        data: {
+          width,
+          height,
+          insetLeft: px(page.margin),
+          insetRight: px(page.margin),
+          insetTop: px(offsets.topOffset),
+          insetBottom: px(offsets.bottomOffset),
+          hasHeader: offsets.topOffset > page.margin,
+          hasFooter: offsets.bottomOffset > page.margin,
+          label: `${FORMAT_LABEL[page.format]} ${ORIENTATION_LABEL[page.orientation]} · le contenu doit tenir dans les pointillés`,
+          fontPt: estimate.fontPt,
+          rating: estimate.rating,
+          dark: themeMode === "dark",
+        },
+      },
+    ];
+  }, [pageGuideEnabled, visibleNodes, page, meta, theme.logoUrl, theme.secondaryLogoUrl, themeMode]);
 
   // Zones de regroupement visuel par pôle / département (nœuds visibles uniquement)
   const groupNodes = useMemo<Node<GroupBackgroundData>[]>(() => {
@@ -141,8 +216,8 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   );
 
   const initialRfNodes = useMemo<Node[]>(
-    () => [...groupNodes, ...memberRfNodes],
-    [groupNodes, memberRfNodes]
+    () => [...pageGuideNodes, ...groupNodes, ...memberRfNodes],
+    [pageGuideNodes, groupNodes, memberRfNodes]
   );
 
   // Adapter les connexions (edges) avec un tracé ultra-propre et une animation subtile

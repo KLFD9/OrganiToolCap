@@ -98,6 +98,28 @@ export function dottedEdges(edges: OrgEdge[]): OrgEdge[] {
 /** Version courante du format de fichier. */
 export const ORG_CHART_VERSION = 2;
 
+/**
+ * Position d'un élément d'en-tête/pied de page sur la feuille (WYSIWYG).
+ * `x`/`y` en mm relatifs au coin haut-gauche de la page (ancrage haut-gauche) ;
+ * `size` : taille de police en pt pour les textes, hauteur en mm pour les logos.
+ */
+export const ChromeElementSchema = z.object({
+  x: z.number(),
+  y: z.number(),
+  size: z.number(),
+});
+export type ChromeElement = z.infer<typeof ChromeElementSchema>;
+
+export const ChromeLayoutSchema = z.object({
+  title: ChromeElementSchema.optional(),
+  subtitle: ChromeElementSchema.optional(),
+  logo: ChromeElementSchema.optional(),
+  secondaryLogo: ChromeElementSchema.optional(),
+  footer: ChromeElementSchema.optional(),
+});
+export type ChromeLayout = z.infer<typeof ChromeLayoutSchema>;
+export type ChromeKey = keyof ChromeLayout;
+
 export const OrgChartFileSchema = z.object({
   format: z.literal("orgchart"),
   // v1 : liens sans `kind`. v2 : liens hiérarchiques ou pointillés.
@@ -108,6 +130,9 @@ export const OrgChartFileSchema = z.object({
     footer: z.string().optional(),    // pied de page affiché à l'export
     createdAt: z.string(),
     updatedAt: z.string(),
+    // Positions personnalisées des éléments d'en-tête/pied sur la feuille.
+    // Optionnel et additif : absence = disposition historique par défaut.
+    chromeLayout: ChromeLayoutSchema.optional(),
   }),
   templateId: z.string(),
   theme: OrgThemeSchema,
@@ -120,6 +145,16 @@ export const OrgChartFileSchema = z.object({
     // verticalement (optimisé pour l'impression). Optionnel : les fichiers v1
     // antérieurs restent valides.
     mode: z.enum(["tree", "compact"]).optional(),
+    // Format de page cible du document (cadre de page dans le canvas,
+    // rangement automatique et valeurs par défaut de l'export).
+    // Optionnel et additif : les fichiers antérieurs restent valides.
+    page: z
+      .object({
+        format: z.enum(["a4", "a3"]),
+        orientation: z.enum(["portrait", "landscape"]),
+        margin: z.number(),
+      })
+      .optional(),
   }),
 });
 export type OrgChartFile = z.infer<typeof OrgChartFileSchema>;

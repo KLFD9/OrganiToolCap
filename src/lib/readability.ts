@@ -1,4 +1,4 @@
-import type { PdfFormat, PdfOrientation } from "./pdfExport";
+import { computeChromeOffsets, type PdfFormat, type PdfOrientation } from "./pdfExport";
 
 /**
  * Estimation de la lisibilité du document exporté AVANT génération.
@@ -12,8 +12,8 @@ import type { PdfFormat, PdfOrientation } from "./pdfExport";
  */
 
 /** Taille en px CSS du nom sur une carte (text-xs de NodeCard). */
-const NAME_FONT_PX = 12;
-const PT_PER_MM = 72 / 25.4;
+export const NAME_FONT_PX = 12;
+export const PT_PER_MM = 72 / 25.4;
 
 /** En dessous : illisible à l'impression. Au-dessus de `GOOD` : confortable. */
 export const READABLE_PT_GOOD = 6.5;
@@ -25,6 +25,14 @@ const PAGE_SIZES_MM: Record<PdfFormat, [number, number]> = {
 };
 
 export type ReadabilityRating = "good" | "warn" | "bad";
+
+/** Dimensions totales de la page en mm, orientation appliquée. */
+export function pageSizeMm(format: PdfFormat, orientation: PdfOrientation): { width: number; height: number } {
+  const [shortSide, longSide] = PAGE_SIZES_MM[format];
+  return orientation === "landscape"
+    ? { width: longSide, height: shortSide }
+    : { width: shortSide, height: longSide };
+}
 
 export interface ReadabilityEstimate {
   /** Taille du nom des cartes sur le papier, en points typographiques. */
@@ -59,6 +67,49 @@ export function pageAvailableArea(
  * `contentHeightPx` (px CSS, cartes de 240 px) ajusté dans la zone
  * `availWidthMm` x `availHeightMm`.
  */
+/** Format de page cible du document (cadre de page, rangement auto, export). */
+export interface PageSetup {
+  format: PdfFormat;
+  orientation: PdfOrientation;
+  margin: number;
+}
+
+export const DEFAULT_PAGE: PageSetup = { format: "a4", orientation: "landscape", margin: 10 };
+
+/**
+ * Échelle (mm de papier par px de canvas) au seuil « confortable » : un
+ * contenu qui tient dans la zone utile dessinée à cette échelle imprimera
+ * son texte à READABLE_PT_GOOD minimum une fois ajusté à la page.
+ */
+export const COMFORT_MM_PER_PX = READABLE_PT_GOOD / (NAME_FONT_PX * PT_PER_MM);
+
+export interface PageChrome {
+  title?: string;
+  footer?: string;
+  logoUrl?: string;
+  secondaryLogoUrl?: string;
+}
+
+/** Offsets haut/bas (mm) occupés par marges + en-tête/pied pour un format configuré. */
+export function chromeOffsetsForSetup(
+  page: PageSetup,
+  chrome: PageChrome
+): { topOffset: number; bottomOffset: number } {
+  return computeChromeOffsets(
+    { format: page.format, orientation: page.orientation, margin: page.margin, ...chrome },
+    page.margin
+  );
+}
+
+/**
+ * Zone utile (mm) pour un format de page configuré, en-tête / pied déduits
+ * selon les métadonnées du document (mêmes règles que l'export PDF).
+ */
+export function availableAreaForSetup(page: PageSetup, chrome: PageChrome): { width: number; height: number } {
+  const offsets = chromeOffsetsForSetup(page, chrome);
+  return pageAvailableArea(page.format, page.orientation, page.margin, offsets.topOffset, offsets.bottomOffset);
+}
+
 export function estimateReadability(
   contentWidthPx: number,
   contentHeightPx: number,

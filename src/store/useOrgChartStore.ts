@@ -2,6 +2,8 @@ import { create } from "zustand";
 import {
   ORG_CHART_VERSION,
   isHierarchyEdge,
+  type ChromeElement,
+  type ChromeKey,
   type OrgChartFile,
   type OrgEdge,
   type OrgNode,
@@ -13,6 +15,7 @@ import { athanorDemo } from "../templates/athanorDemo";
 import { layoutWithElk } from "../lib/elkLayout";
 import { layoutCompact } from "../lib/compactLayout";
 import { computeHiddenNodeIds, wouldCreateHierarchyCycle } from "../lib/hierarchy";
+import { availableAreaForSetup, DEFAULT_PAGE, type PageSetup } from "../lib/readability";
 
 let nodeCounter = 0;
 function generateId(prefix: string): string {
@@ -44,6 +47,8 @@ interface OrgChartState {
   selectedNodeIds: string[];
   /** Branches repliées (état de vue, non persisté dans le fichier). */
   collapsedNodeIds: string[];
+  /** Cadre de page visible dans le canvas (état de vue, non persisté). */
+  pageGuide: boolean;
 
   past: HistorySnapshot[];
   future: HistorySnapshot[];
@@ -59,6 +64,9 @@ interface OrgChartState {
   setTitle: (title: string) => void;
   setSubtitle: (subtitle: string) => void;
   setFooter: (footer: string) => void;
+  /** Position/taille d'un élément d'en-tête sur la feuille (WYSIWYG, mm). */
+  setChromeElement: (key: ChromeKey, element: ChromeElement) => void;
+  resetChromeLayout: () => void;
   setTheme: (theme: Partial<OrgTheme>) => void;
   setTemplateId: (templateId: string) => void;
 
@@ -90,7 +98,16 @@ interface OrgChartState {
   // -- layout --
   setLayoutDirection: (direction: "TB" | "LR") => void;
   setLayoutAuto: (auto: boolean) => void;
+  /** Format de page cible (persisté dans le fichier) + affichage du cadre. */
+  setPageSetup: (page: PageSetup) => void;
+  togglePageGuide: () => void;
   applyAutoLayout: () => Promise<void>;
+  /**
+   * Rangement automatique optimisé pour le format de page du document :
+   * essaie plusieurs dispositions et applique celle qui donne le plus grand
+   * texte imprimé. Ne touche pas aux branches repliées.
+   */
+  applyAutoLayoutForPage: () => Promise<void>;
   applyCompactLayout: () => void;
   /**
    * Applique une disposition candidate (optimiseur d'export) : fusionne les
@@ -140,6 +157,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
   isDirty: false,
   selectedNodeIds: [],
   collapsedNodeIds: [],
+  pageGuide: true,
 
   past: [],
   future: [],
@@ -238,6 +256,27 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       meta: { ...s.meta, footer, updatedAt: new Date().toISOString() },
       isDirty: true,
     })),
+
+  setChromeElement: (key, element) =>
+    set((s) => ({
+      ...pushHistory(s),
+      meta: {
+        ...s.meta,
+        chromeLayout: { ...s.meta.chromeLayout, [key]: element },
+        updatedAt: new Date().toISOString(),
+      },
+      isDirty: true,
+    })),
+
+  resetChromeLayout: () =>
+    set((s) => {
+      if (!s.meta.chromeLayout) return s;
+      return {
+        ...pushHistory(s),
+        meta: { ...s.meta, chromeLayout: undefined, updatedAt: new Date().toISOString() },
+        isDirty: true,
+      };
+    }),
 
   setTheme: (theme) =>
     set((s) => ({
@@ -489,10 +528,63 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
 
   setLayoutAuto: (auto) => set((s) => ({ ...pushHistory(s), layout: { ...s.layout, auto }, isDirty: true })),
 
+  setPageSetup: (page) =>
+    set((s) => {
+      const current = s.layout.page;
+      if (
+        current &&
+        current.format === page.format &&
+        current.orientation === page.orientation &&
+        current.margin === page.margin
+      ) {
+        return s;
+      }
+      return {
+        layout: { ...s.layout, page },
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+      };
+    }),
+
+  togglePageGuide: () => set((s) => ({ pageGuide: !s.pageGuide })),
+
   applyAutoLayout: async () => {
     const s = get();
     const laidOut = await layoutWithElk(s.nodes, s.edges, s.layout.direction);
     set({ ...pushHistory(s), nodes: laidOut, layout: { ...s.layout, mode: "tree" }, isDirty: true });
+  },
+
+  applyAutoLayoutForPage: async () => {
+    const s = get();
+    const hidden = computeHiddenNodeIds(s.collapsedNodeIds, s.edges);
+    const visibleNodes = hidden.size === 0 ? s.nodes : s.nodes.filter((n) => !hidden.has(n.id));
+    const visibleEdges =
+      hidden.size === 0 ? s.edges : s.edges.filter((e) => !hidden.has(e.source) && !hidden.has(e.target));
+    if (visibleNodes.length === 0) return;
+
+    const page = s.layout.page ?? DEFAULT_PAGE;
+    const avail = availableAreaForSetup(page, {
+      title: s.meta.title,
+      footer: s.meta.footer,
+      logoUrl: s.theme.logoUrl,
+      secondaryLogoUrl: s.theme.secondaryLogoUrl,
+    });
+
+    const { optimizeLayoutForPage } = await import("../lib/exportLayout");
+    const best = (await optimizeLayoutForPage(visibleNodes, visibleEdges, s.layout, avail))[0];
+
+    const posById = new Map(best.nodes.map((n) => [n.id, n.position]));
+    const current = get(); // l'état a pu changer pendant le calcul elk
+    set({
+      ...pushHistory(current),
+      nodes: current.nodes.map((n) => {
+        const position = posById.get(n.id);
+        return position ? { ...n, position } : n;
+      }),
+      layout: { ...current.layout, ...best.layout },
+      isDirty: true,
+      meta: { ...current.meta, updatedAt: new Date().toISOString() },
+    });
   },
 
   applyCompactLayout: () => {

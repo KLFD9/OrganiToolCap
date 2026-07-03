@@ -23,6 +23,8 @@ Toujours lancer `npm test` et `npm run lint` avant de considérer une modificati
 5. **Round-trip PowerPoint** : l'export .pptx embarque le `.orgchart.json` complet et doit toujours se réimporter à l'identique (`pptxEditable.ts` / `pptxImport.ts`).
 6. **Accessibilité** : `prefers-reduced-motion` respecté (voir `motionDuration()` dans Toolbar), focus visible, `aria-label` sur les boutons icône. Les raccourcis Tab/Entrée du canvas ne s'activent que si le focus est sur le canvas (jamais sur la toolbar ou un champ). PDF exporté : métadonnées + langue fr-FR (`applyPdfMetadata`).
 7. **Piège de layout NodeCard** : la poignée source React Flow est au bas-centre des cartes — tout élément ajouté à cet endroit doit être décalé et porter la classe `nodrag`, sinon il intercepte l'edge-drop et déclenche un déplacement de carte (bug corrigé sur la pastille de repli).
+8. **WYSIWYG canvas ↔ PDF vectoriel** : `lib/pdfVector.ts` est une **réplique proportionnelle** de NodeCard (dimensions exprimées en px de la carte 240 px × échelle `mmPerPx`). Toute modification du design de NodeCard (paddings, tailles de police, badge, avatar) doit être répercutée dans pdfVector — et `NAME_FONT_PX` (readability.ts) doit rester la taille réelle du nom à l'écran, car la jauge, le cadre de page (`COMFORT_MM_PER_PX`) et l'optimiseur en dépendent.
+9. **Format de page** : `layout.page` (optionnel additif) est la cible unique partagée par le cadre de page (PageGuide), « Réorganiser pour la page » (`applyAutoLayoutForPage`) et les valeurs par défaut de l'ExportDialog. Ne pas réintroduire un état de format local non synchronisé.
 
 ## Architecture
 

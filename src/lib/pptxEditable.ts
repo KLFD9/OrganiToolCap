@@ -29,8 +29,11 @@ export interface CardSpec {
   department?: string;
   name: string;
   role?: string;
+  email?: string;
   deptColor: string;
   textColor: string;
+  /** Couleur d'accent du niveau (bordures, pastille d'initiales). */
+  accentColor: string;
   namePt: number;
   rolePt: number;
   deptPt: number;
@@ -97,9 +100,26 @@ export function buildEditableSpec(
 
   const cards: CardSpec[] = nodes.map((n) => {
     const style = computeNodeStyle(theme, levels.get(n.id) ?? 0, n.styleOverride);
-    const isFlat = theme.nodeStyle === "flat" || Boolean(n.styleOverride?.background);
-    const fillColor = isFlat ? pptxColor(style.background, "FFFFFF") : "FFFFFF";
-    const textColor = isFlat ? pptxColor(getContrastColor(`#${fillColor}`), "1A1A1E") : "1A1A1E";
+    const accent = pptxColor(style.accentColor, "472F74");
+    // Fond de carte selon le style : plein pour flat/gradient (accent) et
+    // neon (sombre), blanc pour les styles clairs (glass, card, outline,
+    // minimal — leurs fonds semi-transparents s'aplatissent en blanc).
+    const solidBg =
+      theme.nodeStyle === "flat" || theme.nodeStyle === "gradient" || Boolean(n.styleOverride?.background);
+    const fillColor =
+      theme.nodeStyle === "neon"
+        ? "0C0A09"
+        : theme.nodeStyle === "gradient"
+        ? accent
+        : solidBg
+        ? pptxColor(style.background, accent)
+        : "FFFFFF";
+    const textColor =
+      theme.nodeStyle === "neon"
+        ? "FFFFFF"
+        : solidBg
+        ? pptxColor(getContrastColor(`#${fillColor}`), "1A1A1E")
+        : "1A1A1E";
     return {
       x: posX(n.position.x),
       y: posY(n.position.y),
@@ -107,13 +127,15 @@ export function buildEditableSpec(
       h: toIn(CARD_HEIGHT),
       radiusIn: toIn(theme.cornerRadius),
       fillColor,
-      lineColor: pptxColor(style.accentColor, "472F74"),
-      lineWidth: theme.nodeStyle === "outline" ? 1.25 : 0.75,
+      lineColor: accent,
+      lineWidth: theme.nodeStyle === "outline" || theme.nodeStyle === "neon" ? 1.25 : 0.75,
       department: display.showDepartments ? n.data.department : undefined,
       name: n.data.name || "Sans nom",
       role: display.showRoles ? n.data.role : undefined,
-      deptColor: isFlat ? textColor : pptxColor(style.accentColor, "472F74"),
+      email: display.showEmails ? n.data.email : undefined,
+      deptColor: solidBg || theme.nodeStyle === "neon" ? textColor : accent,
       textColor,
+      accentColor: accent,
       namePt,
       rolePt: Math.max(MIN_FONT_PT, namePt * 0.82),
       deptPt: Math.max(MIN_FONT_PT - 1, namePt * 0.62),
@@ -200,10 +222,24 @@ export async function exportFlowToPptxEditable(
     }
     runs.push({
       text: card.name,
-      options: { fontSize: card.namePt, color: card.textColor, bold: true, breakLine: Boolean(card.role) },
+      options: {
+        fontSize: card.namePt,
+        color: card.textColor,
+        bold: true,
+        breakLine: Boolean(card.role || card.email),
+      },
     });
     if (card.role) {
-      runs.push({ text: card.role, options: { fontSize: card.rolePt, color: card.textColor, transparency: 25 } });
+      runs.push({
+        text: card.role,
+        options: { fontSize: card.rolePt, color: card.textColor, transparency: 25, breakLine: Boolean(card.email) },
+      });
+    }
+    if (card.email) {
+      runs.push({
+        text: card.email,
+        options: { fontSize: Math.max(MIN_FONT_PT - 1, card.rolePt * 0.9), color: card.textColor, transparency: 40 },
+      });
     }
 
     slide.addText(runs, {

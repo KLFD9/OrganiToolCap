@@ -72,6 +72,29 @@ describe("buildEditableSpec", () => {
     expect(spec.connectors).toHaveLength(0);
   });
 
+  it("expose l'e-mail (si affiché) et l'accent du niveau", () => {
+    const nodes: OrgNode[] = [
+      { id: "a", position: { x: 0, y: 0 }, data: { name: "Claire", email: "claire@corp.fr" } },
+    ];
+    const spec = buildEditableSpec(nodes, [], glassCapTheme, AREA);
+    expect(spec.cards[0].email).toBe("claire@corp.fr");
+    expect(spec.cards[0].accentColor).toBe("472F74");
+
+    const hidden = buildEditableSpec(nodes, [], { ...glassCapTheme, display: { showEmails: false } }, AREA);
+    expect(hidden.cards[0].email).toBeUndefined();
+  });
+
+  it("styles pleins : neon = fond sombre, gradient = fond accent, texte contrasté", () => {
+    const { nodes, edges } = org();
+    const neon = buildEditableSpec(nodes, edges, { ...glassCapTheme, nodeStyle: "neon" }, AREA);
+    expect(neon.cards[0].fillColor).toBe("0C0A09");
+    expect(neon.cards[0].textColor).toBe("FFFFFF");
+
+    const gradient = buildEditableSpec(nodes, edges, { ...glassCapTheme, nodeStyle: "gradient" }, AREA);
+    expect(gradient.cards[0].fillColor).toBe("472F74"); // accent niveau 0
+    expect(gradient.cards[0].textColor).toBe("FFFFFF");
+  });
+
   it("respecte les options d'affichage du thème (postes et pôles masqués)", () => {
     const { nodes, edges } = org();
     const theme = { ...glassCapTheme, display: { showRoles: false, showDepartments: false } };

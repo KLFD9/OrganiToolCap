@@ -19,6 +19,7 @@ import {
   SaveAll,
   Download,
   Search,
+  Frame,
 } from "lucide-react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import { openOrgChartFile, saveOrgChartFile, FileFormatError } from "../lib/fileIO";
@@ -65,7 +66,10 @@ export function Toolbar({
   const markSaved = useOrgChartStore((s) => s.markSaved);
   const setLayoutDirection = useOrgChartStore((s) => s.setLayoutDirection);
   const applyAutoLayout = useOrgChartStore((s) => s.applyAutoLayout);
+  const applyAutoLayoutForPage = useOrgChartStore((s) => s.applyAutoLayoutForPage);
   const applyCompactLayout = useOrgChartStore((s) => s.applyCompactLayout);
+  const pageGuide = useOrgChartStore((s) => s.pageGuide);
+  const togglePageGuide = useOrgChartStore((s) => s.togglePageGuide);
   const undo = useOrgChartStore((s) => s.undo);
   const redo = useOrgChartStore((s) => s.redo);
   const canUndo = useOrgChartStore((s) => s.past.length > 0);
@@ -214,7 +218,9 @@ export function Toolbar({
   const handleAutoLayout = async () => {
     setBusy(true);
     try {
-      await applyAutoLayout();
+      // Rangement optimisé pour le format de page du document : la meilleure
+      // disposition (arbre, compacte, grille) pour le papier cible est choisie.
+      await applyAutoLayoutForPage();
       requestAnimationFrame(() => fitView({ duration: motionDuration(300), padding: 0.2 }));
     } finally {
       setBusy(false);
@@ -451,7 +457,22 @@ export function Toolbar({
               <Wand2 className={`h-4 w-4 ${busy ? "animate-pulse" : ""}`} />
             </button>
             <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-              Réorganiser automatiquement <span className="text-zinc-400 font-normal">(repositionner proprement toutes les cartes)</span>
+              Réorganiser pour la page <span className="text-zinc-400 font-normal">(meilleure disposition pour le format d'export — Ctrl+Z pour revenir)</span>
+            </div>
+          </div>
+
+          {/* Cadre de page : feuille A4/A3 visible derrière l'organigramme */}
+          <div className="relative group">
+            <button
+              aria-label="Afficher le cadre de page"
+              onClick={togglePageGuide}
+              aria-pressed={pageGuide}
+              className={getButtonClass(pageGuide)}
+            >
+              <Frame className="h-4 w-4" />
+            </button>
+            <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+              Cadre de page <span className="text-zinc-400 font-normal">(voir la feuille A4/A3 et concevoir dans ses limites)</span>
             </div>
           </div>
 
