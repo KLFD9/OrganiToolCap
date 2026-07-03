@@ -25,7 +25,8 @@ import {
   Image,
   FileCode,
   Copy,
-  Check
+  Check,
+  X
 } from "lucide-react";
 
 interface ExportDialogProps {
@@ -57,6 +58,9 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   const [pptxEditable, setPptxEditable] = useState(true);
   const [pdfVector, setPdfVector] = useState(true);
   const [transparentBg, setTransparentBg] = useState(false);
+  
+  // Onglet d'export sélectionné
+  const [activeTab, setActiveTab] = useState<"pdf" | "pptx" | "image">("pdf");
 
   // L'export est WYSIWYG : les branches repliées n'y figurent pas.
   const hiddenIds = useMemo(
@@ -282,360 +286,447 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
       <div
-        className={`w-full max-w-md overflow-y-auto rounded-3xl border p-6 shadow-2xl transition-all max-h-[85vh] custom-scrollbar ${
+        className={`w-full max-w-3xl overflow-hidden rounded-3xl border shadow-2xl transition-all max-h-[92vh] flex flex-col ${
           themeMode === "dark"
             ? "border-border-dark bg-panel-bg-dark text-text-dark"
             : "border-border-light bg-panel-bg-light text-text-light"
         }`}
       >
-        <h2 className="text-base font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
-          Exporter l'organigramme
-        </h2>
-        <p className="mt-1 text-xs text-zinc-400 dark:text-zinc-500 leading-normal">
-          Exportez votre organigramme sous forme de document vectoriel ou d'image haute définition.
-        </p>
-
-        {/* Export WYSIWYG : signale les membres exclus par le repli de branches */}
-        {hiddenIds.size > 0 && (
-          <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-primary-600/25 bg-primary-600/5 dark:border-primary-400/25 dark:bg-primary-400/5 p-3">
-            <Info className="h-4 w-4 shrink-0 mt-0.5 text-primary-700 dark:text-primary-300" />
-            <p className="text-[11px] leading-relaxed text-primary-800 dark:text-primary-200">
-              L'export reflète l'affichage actuel : {hiddenIds.size} membre{hiddenIds.size > 1 ? "s" : ""} de
-              branches repliées n'y figurer{hiddenIds.size > 1 ? "ont" : "a"} pas. Dépliez les branches avant
-              d'exporter pour un organigramme complet — ou repliez-en pour exporter une vue partielle.
+        {/* En-tête fixe */}
+        <div className="px-6 py-4 border-b border-zinc-200/60 dark:border-zinc-800 flex justify-between items-center">
+          <div>
+            <h2 className="text-base font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
+              Exporter l'organigramme
+            </h2>
+            <p className="mt-1 text-xs text-zinc-450 dark:text-zinc-500 leading-normal">
+              Ajustez le format, configurez la page et téléchargez votre fichier.
             </p>
           </div>
-        )}
-
-        {/* Configuration PDF */}
-        <div className="grid grid-cols-2 gap-3 mt-5">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Format de page
-            </span>
-            <div className="relative">
-              <select
-                value={format}
-                onChange={(e) => setFormat(e.target.value as PdfFormat)}
-                className={selectClass}
-              >
-                <option value="a4">A4</option>
-                <option value="a3">A3</option>
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
-            </div>
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Orientation
-            </span>
-            <div className="relative">
-              <select
-                value={orientation}
-                onChange={(e) => setOrientation(e.target.value as PdfOrientation)}
-                className={selectClass}
-              >
-                <option value="landscape">Paysage</option>
-                <option value="portrait">Portrait</option>
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
-            </div>
-          </label>
-        </div>
-
-        {/* Marge */}
-        <div className="flex flex-col gap-1.5 mt-4">
-          <span className="flex justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            <span>Marges du document</span>
-            <span className="font-mono text-zinc-550">{margin} mm</span>
-          </span>
-          <input
-            type="range"
-            min={0}
-            max={30}
-            value={margin}
-            onChange={(e) => setMargin(Number(e.target.value))}
-            className="w-full accent-primary-600 dark:accent-primary-400 cursor-pointer bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none h-1"
-          />
-        </div>
-
-        {/* Options de contenu */}
-        <div className="mt-5 flex flex-col gap-3">
-          <label className="flex items-center gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeTitle}
-              onChange={(e) => setIncludeTitle(e.target.checked)}
-              className={checkboxClass}
-            />
-            <span>Inclure le titre et sous-titre en en-tête</span>
-          </label>
-          <label className="flex items-center gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeLogos}
-              onChange={(e) => setIncludeLogos(e.target.checked)}
-              className={checkboxClass}
-            />
-            <span>Inclure les logos de l'entreprise</span>
-          </label>
-          <label className="flex items-center gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeFooter}
-              onChange={(e) => setIncludeFooter(e.target.checked)}
-              className={checkboxClass}
-            />
-            <span>Inclure le pied de page</span>
-          </label>
-          <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={multiPage}
-              onChange={(e) => setMultiPage(e.target.checked)}
-              className={`${checkboxClass} mt-0.5`}
-            />
-            <span>
-              Répartir sur plusieurs pages (impression grand format)
-              <span className="mt-0.5 block text-[10px] text-zinc-400 dark:text-zinc-500">
-                Désactivé : l'organigramme est ajusté dynamiquement pour tenir sur une seule page.
-              </span>
-            </span>
-          </label>
-        </div>
-
-        {/* Jauge de lisibilité du document */}
-        {readability && (
-          <div
-            className={`mt-5 rounded-xl border p-3.5 ${
-              readability.rating === "good"
-                ? "border-emerald-500/25 bg-emerald-500/5"
-                : readability.rating === "warn"
-                ? "border-amber-500/30 bg-amber-500/5"
-                : "border-red-500/30 bg-red-500/5"
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <span
-                className={`h-2.5 w-2.5 shrink-0 rounded-full ${
-                  readability.rating === "good"
-                    ? "bg-emerald-500"
-                    : readability.rating === "warn"
-                    ? "bg-amber-500"
-                    : "bg-red-500"
-                }`}
-              />
-              <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
-                {readability.rating === "good"
-                  ? "Document lisible"
-                  : readability.rating === "warn"
-                  ? "Lisibilité limite"
-                  : "Document illisible à cette échelle"}
-              </span>
-              <span className="ml-auto font-mono text-[10px] text-zinc-400 dark:text-zinc-500">
-                texte ≈ {readability.fontPt} pt · carte ≈ {readability.cardWidthMm} mm
-              </span>
-            </div>
-            {readability.rating !== "good" && (
-              <div className="mt-2.5 flex flex-col gap-2">
-                <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                  L'organigramme est trop étendu pour cette page : une fois ajusté, le nom des
-                  cartes fera {readability.fontPt} pt à l'impression. L'optimiseur compare
-                  plusieurs dispositions (arbre vertical, horizontal, compacte) et applique
-                  celle qui donne le plus grand texte sur ce format.
-                </p>
-                <button
-                  onClick={handleOptimize}
-                  disabled={busy !== null}
-                  className={`self-start rounded-lg px-3.5 py-1.5 text-[11px] font-semibold transition-all hover:scale-102 active:scale-98 cursor-pointer disabled:opacity-50 ${
-                    themeMode === "dark"
-                      ? "bg-primary-600 text-white hover:bg-primary-500"
-                      : "bg-primary-700 text-white hover:bg-primary-600"
-                  }`}
-                >
-                  {busy === "optimize" ? (
-                    <span className="flex items-center gap-1.5 justify-center">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Analyse des dispositions…</span>
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5 justify-center">
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span>Optimiser la disposition pour cette page</span>
-                    </span>
-                  )}
-                </button>
-              </div>
-            )}
-            {optimizeNotice && (
-              <p
-                role="status"
-                className="mt-2.5 text-[11px] leading-relaxed text-zinc-655 dark:text-zinc-300 border-t border-zinc-200/60 dark:border-zinc-800 pt-2.5"
-              >
-                {optimizeNotice}
-              </p>
-            )}
-          </div>
-        )}
-
-        {error && <p className="mt-4 text-xs text-red-500">{error}</p>}
-
-        {/* Boutons d'export */}
-        <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-900 flex flex-col gap-2.5">
-          <button
-            onClick={() => run("pdf")}
-            disabled={busy !== null}
-            className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold shadow-sm transition-all hover:scale-101 active:scale-99 cursor-pointer ${
-              themeMode === "dark"
-                ? "bg-primary-600 text-white hover:bg-primary-500"
-                : "bg-primary-700 text-white hover:bg-primary-600"
-            } disabled:opacity-50`}
-          >
-            {busy === "pdf" ? (
-              <>
-                <Loader2 className="animate-spin h-4 w-4" />
-                <span>Exportation PDF en cours...</span>
-              </>
-            ) : (
-              <>
-                <FileText className="h-4 w-4" />
-                <span>Télécharger le PDF</span>
-              </>
-            )}
-          </button>
-
-          <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer px-1">
-            <input
-              type="checkbox"
-              checked={pdfVector && !multiPage}
-              disabled={multiPage}
-              onChange={(e) => setPdfVector(e.target.checked)}
-              className={`${checkboxClass} mt-0.5`}
-            />
-            <span className={multiPage ? "opacity-50" : ""}>
-              PDF vectoriel natif (texte net)
-              <span className="mt-0.5 block text-[10px] text-zinc-400 dark:text-zinc-500">
-                Coché : cartes dessinées en vectoriel — texte parfaitement net à toutes les échelles,
-                fichier léger. Polices standardisées, photos non incluses. Décoché
-                {multiPage ? " (ou multi-pages)" : ""} : capture image haute résolution, fidèle au
-                pixel près.
-              </span>
-            </span>
-          </label>
-
-          <button
-            onClick={() => run("pptx")}
-            disabled={busy !== null}
-            className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-semibold shadow-sm transition-all hover:scale-101 active:scale-99 cursor-pointer ${
-              themeMode === "dark"
-                ? "bg-orange-700/80 text-white hover:bg-orange-600/80"
-                : "bg-[#C43E1C] text-white hover:bg-[#a83419]"
-            } disabled:opacity-50`}
-          >
-            {busy === "pptx" ? (
-              <>
-                <Loader2 className="animate-spin h-4 w-4" />
-                <span>Génération PowerPoint...</span>
-              </>
-            ) : (
-              <>
-                <Presentation className="h-4 w-4" />
-                <span>Diapositive PowerPoint (.pptx)</span>
-              </>
-            )}
-          </button>
-
-          <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer px-1">
-            <input
-              type="checkbox"
-              checked={pptxEditable}
-              onChange={(e) => setPptxEditable(e.target.checked)}
-              className={`${checkboxClass} mt-0.5`}
-            />
-            <span>
-              Éléments éditables dans PowerPoint
-              <span className="mt-0.5 block text-[10px] text-zinc-400 dark:text-zinc-500">
-                Coché : cartes et liens deviennent des formes natives, modifiables par le destinataire.
-                Décoché : image figée, fidèle au pixel près. Dans les deux cas, le fichier se réimporte
-                ici à l'identique via « Ouvrir ».
-              </span>
-            </span>
-          </label>
-
-          <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer px-1">
-            <input
-              type="checkbox"
-              checked={transparentBg}
-              onChange={(e) => setTransparentBg(e.target.checked)}
-              className={`${checkboxClass} mt-0.5`}
-            />
-            <span>
-              Fond transparent (PNG / SVG)
-              <span className="mt-0.5 block text-[10px] text-zinc-400 dark:text-zinc-500">
-                Idéal pour intégrer l'organigramme sur un fond de slide ou une charte graphique existante.
-              </span>
-            </span>
-          </label>
-
-          <div className="flex gap-2.5">
-            <button
-              onClick={() => run("png")}
-              disabled={busy !== null}
-              className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition-all hover:scale-101 active:scale-99 cursor-pointer ${
-                themeMode === "dark"
-                  ? "border-zinc-800 text-zinc-300 hover:bg-zinc-800"
-                  : "border-zinc-200 text-zinc-650 hover:bg-zinc-50"
-              } disabled:opacity-50`}
-            >
-              <Image className="h-3.5 w-3.5" />
-              <span>{busy === "png" ? "Génération..." : "PNG Image"}</span>
-            </button>
-            <button
-              onClick={() => run("svg")}
-              disabled={busy !== null}
-              className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition-all hover:scale-101 active:scale-99 cursor-pointer ${
-                themeMode === "dark"
-                  ? "border-zinc-800 text-zinc-300 hover:bg-zinc-800"
-                  : "border-zinc-200 text-zinc-650 hover:bg-zinc-50"
-              } disabled:opacity-50`}
-            >
-              <FileCode className="h-3.5 w-3.5" />
-              <span>{busy === "svg" ? "Génération..." : "SVG Fichier"}</span>
-            </button>
-          </div>
-
-          <button
-            onClick={() => run("clipboard")}
-            disabled={busy !== null}
-            className={`flex w-full items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition-all hover:scale-101 active:scale-99 cursor-pointer ${
-              copied
-                ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5"
-                : themeMode === "dark"
-                ? "border-zinc-800 text-zinc-300 hover:bg-zinc-800"
-                : "border-zinc-200 text-zinc-650 hover:bg-zinc-50"
-            } disabled:opacity-50`}
-          >
-            {busy === "clipboard" ? (
-              <>
-                <Loader2 className="animate-spin h-3.5 w-3.5" />
-                <span>Copie en cours...</span>
-              </>
-            ) : copied ? (
-              <>
-                <Check className="h-3.5 w-3.5 text-emerald-500" />
-                <span>Copié dans le presse-papiers !</span>
-              </>
-            ) : (
-              <>
-                <Copy className="h-3.5 w-3.5" />
-                <span>Copier l'image (presse-papiers)</span>
-              </>
-            )}
-          </button>
-
           <button
             onClick={onClose}
-            className="mt-2 text-center text-xs font-semibold text-zinc-400 dark:text-zinc-500 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors cursor-pointer"
+            className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-650 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 transition-all cursor-pointer"
+          >
+            <X className="h-4.5 w-4.5" />
+          </button>
+        </div>
+
+        {/* Corps défilable : Double Colonne */}
+        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Colonne Gauche : Configuration de la page */}
+            <div className="flex flex-col gap-5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 border-b border-zinc-100 dark:border-zinc-900 pb-2">
+                1. Mise en page & Contenu
+              </h3>
+
+              {/* Format de page & Orientation */}
+              <div className="grid grid-cols-2 gap-3">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-455 dark:text-zinc-500">
+                    Format de page
+                  </span>
+                  <div className="relative">
+                    <select
+                      value={format}
+                      onChange={(e) => setFormat(e.target.value as PdfFormat)}
+                      className={selectClass}
+                    >
+                      <option value="a4">A4</option>
+                      <option value="a3">A3</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                  </div>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-455 dark:text-zinc-500">
+                    Orientation
+                  </span>
+                  <div className="relative">
+                    <select
+                      value={orientation}
+                      onChange={(e) => setOrientation(e.target.value as PdfOrientation)}
+                      className={selectClass}
+                    >
+                      <option value="landscape">Paysage</option>
+                      <option value="portrait">Portrait</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                  </div>
+                </label>
+              </div>
+
+              {/* Marge */}
+              <div className="flex flex-col gap-1.5">
+                <span className="flex justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-455 dark:text-zinc-500">
+                  <span>Marges du document</span>
+                  <span className="font-mono text-zinc-500 dark:text-zinc-400">{margin} mm</span>
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={30}
+                  value={margin}
+                  onChange={(e) => setMargin(Number(e.target.value))}
+                  className="w-full accent-primary-600 dark:accent-primary-400 cursor-pointer bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none h-1"
+                />
+              </div>
+
+              {/* Options de contenu */}
+              <div className="flex flex-col gap-3 rounded-xl border border-zinc-150/80 dark:border-zinc-800/80 bg-zinc-50/30 dark:bg-zinc-900/10 p-3.5">
+                <label className="flex items-center gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeTitle}
+                    onChange={(e) => setIncludeTitle(e.target.checked)}
+                    className={checkboxClass}
+                  />
+                  <span className="font-medium">Inclure le titre et en-tête</span>
+                </label>
+                <label className="flex items-center gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeLogos}
+                    onChange={(e) => setIncludeLogos(e.target.checked)}
+                    className={checkboxClass}
+                  />
+                  <span className="font-medium">Inclure les logos</span>
+                </label>
+                <label className="flex items-center gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={includeFooter}
+                    onChange={(e) => setIncludeFooter(e.target.checked)}
+                    className={checkboxClass}
+                  />
+                  <span className="font-medium">Inclure le pied de page</span>
+                </label>
+                <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer border-t border-zinc-150/50 dark:border-zinc-800 pt-2.5 mt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={multiPage}
+                    onChange={(e) => setMultiPage(e.target.checked)}
+                    className={`${checkboxClass} mt-0.5`}
+                  />
+                  <span className="font-medium">
+                    Répartir sur plusieurs pages <span className="text-[10px] text-zinc-450 dark:text-zinc-500 font-normal">(Grand Format)</span>
+                    <span className="mt-0.5 block text-[10px] font-normal text-zinc-400 dark:text-zinc-500 leading-normal">
+                      Découpé pour impression sur plusieurs feuilles.
+                    </span>
+                  </span>
+                </label>
+              </div>
+
+              {/* Jauge de lisibilité */}
+              {readability && (
+                <div
+                  className={`rounded-xl border p-3.5 transition-all ${
+                    readability.rating === "good"
+                      ? "border-emerald-500/20 bg-emerald-500/5"
+                      : readability.rating === "warn"
+                      ? "border-amber-500/20 bg-amber-500/5"
+                      : "border-red-500/20 bg-red-500/5"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        readability.rating === "good"
+                          ? "bg-emerald-500 animate-pulse"
+                          : readability.rating === "warn"
+                          ? "bg-amber-500"
+                          : "bg-red-500"
+                      }`}
+                    />
+                    <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                      {readability.rating === "good"
+                        ? "Document très lisible"
+                        : readability.rating === "warn"
+                        ? "Lisibilité limite"
+                        : "Document illisible à cette échelle"}
+                    </span>
+                    <span className="ml-auto font-mono text-[9px] text-zinc-450 dark:text-zinc-500">
+                      texte ≈ {readability.fontPt} pt · carte ≈ {readability.cardWidthMm} mm
+                    </span>
+                  </div>
+                  {readability.rating !== "good" && (
+                    <div className="mt-2.5 flex flex-col gap-2">
+                      <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                        L'organigramme est grand. L'optimiseur recherche les dispositions pour maximiser la taille du texte.
+                      </p>
+                      <button
+                        onClick={handleOptimize}
+                        disabled={busy !== null}
+                        className={`self-start rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all hover:scale-102 active:scale-98 cursor-pointer disabled:opacity-50 ${
+                          themeMode === "dark"
+                            ? "bg-primary-600 text-white hover:bg-primary-500"
+                            : "bg-primary-700 text-white hover:bg-primary-600"
+                        }`}
+                      >
+                        {busy === "optimize" ? (
+                          <span className="flex items-center gap-1.5">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            <span>Optimisation…</span>
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1.5">
+                            <Sparkles className="h-3.5 w-3.5" />
+                            <span>Optimiser la disposition</span>
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                  {optimizeNotice && (
+                    <p className="mt-2.5 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300 border-t border-zinc-200/60 dark:border-zinc-800 pt-2.5">
+                      {optimizeNotice}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Exclusion par repli */}
+              {hiddenIds.size > 0 && (
+                <div className="flex items-start gap-2.5 rounded-xl border border-primary-600/20 bg-primary-600/5 dark:border-primary-400/20 dark:bg-primary-400/5 p-3">
+                  <Info className="h-4 w-4 shrink-0 mt-0.5 text-primary-750 dark:text-primary-300" />
+                  <p className="text-[11px] leading-relaxed text-primary-800 dark:text-primary-200">
+                    L'export est partiel : {hiddenIds.size} membre{hiddenIds.size > 1 ? "s" : ""} de branches repliées ser{hiddenIds.size > 1 ? "ont" : "a"} exclu{hiddenIds.size > 1 ? "s" : ""}.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Colonne Droite : Formats d'exportation */}
+            <div className="flex flex-col gap-5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 border-b border-zinc-100 dark:border-zinc-900 pb-2">
+                2. Format d'export & Téléchargement
+              </h3>
+
+              {/* Segmented control / Onglets */}
+              <div className="flex rounded-xl bg-zinc-100 p-1 dark:bg-zinc-900/60 border border-zinc-200/50 dark:border-zinc-800/85 shadow-inner">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("pdf")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                    activeTab === "pdf"
+                      ? "bg-white text-zinc-850 shadow-sm dark:bg-zinc-800 dark:text-zinc-100 font-bold"
+                      : "text-zinc-400 hover:text-zinc-650 dark:text-zinc-500 dark:hover:text-zinc-300"
+                  }`}
+                >
+                  <FileText className="h-3.5 w-3.5" />
+                  <span>PDF</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("pptx")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                    activeTab === "pptx"
+                      ? "bg-white text-zinc-850 shadow-sm dark:bg-zinc-800 dark:text-zinc-100 font-bold"
+                      : "text-zinc-400 hover:text-zinc-650 dark:text-zinc-500 dark:hover:text-zinc-300"
+                  }`}
+                >
+                  <Presentation className="h-3.5 w-3.5" />
+                  <span>PowerPoint</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("image")}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+                    activeTab === "image"
+                      ? "bg-white text-zinc-850 shadow-sm dark:bg-zinc-800 dark:text-zinc-100 font-bold"
+                      : "text-zinc-400 hover:text-zinc-650 dark:text-zinc-500 dark:hover:text-zinc-300"
+                  }`}
+                >
+                  <Image className="h-3.5 w-3.5" />
+                  <span>Image</span>
+                </button>
+              </div>
+
+              {/* Contenu de l'onglet actif */}
+              <div className="flex-1 flex flex-col justify-between min-h-[220px]">
+                {activeTab === "pdf" && (
+                  <div className="flex flex-col gap-4">
+                    <div className="rounded-xl border border-zinc-150 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/10 p-3.5 flex flex-col gap-3">
+                      <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">Options PDF</span>
+                      <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={pdfVector && !multiPage}
+                          disabled={multiPage}
+                          onChange={(e) => setPdfVector(e.target.checked)}
+                          className={`${checkboxClass} mt-0.5`}
+                        />
+                        <span className={multiPage ? "opacity-50" : ""}>
+                          PDF vectoriel natif (texte net)
+                          <span className="mt-0.5 block text-[10px] leading-normal font-normal text-zinc-400 dark:text-zinc-500">
+                            Texte infiniment net et fichier très léger. Photos non incluses.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+
+                    <button
+                      onClick={() => run("pdf")}
+                      disabled={busy !== null}
+                      className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
+                        themeMode === "dark"
+                          ? "bg-primary-600 text-white hover:bg-primary-500"
+                          : "bg-primary-700 text-white hover:bg-primary-600"
+                      } disabled:opacity-50 mt-2`}
+                    >
+                      {busy === "pdf" ? (
+                        <>
+                          <Loader2 className="animate-spin h-4 w-4" />
+                          <span>Génération PDF en cours...</span>
+                        </>
+                      ) : (
+                        <>
+                          <FileText className="h-4 w-4" />
+                          <span>Télécharger le PDF</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {activeTab === "pptx" && (
+                  <div className="flex flex-col gap-4">
+                    <div className="rounded-xl border border-zinc-150 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/10 p-3.5 flex flex-col gap-3">
+                      <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">Options PowerPoint</span>
+                      <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={pptxEditable}
+                          onChange={(e) => setPptxEditable(e.target.checked)}
+                          className={`${checkboxClass} mt-0.5`}
+                        />
+                        <span>
+                          Éléments modifiables dans PowerPoint
+                          <span className="mt-0.5 block text-[10px] leading-normal font-normal text-zinc-400 dark:text-zinc-500">
+                            Les cartes et liens deviennent des formes éditables natives PowerPoint.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+
+                    <button
+                      onClick={() => run("pptx")}
+                      disabled={busy !== null}
+                      className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
+                        themeMode === "dark"
+                          ? "bg-orange-700/80 text-white hover:bg-orange-600/80"
+                          : "bg-[#C43E1C] text-white hover:bg-[#a83419]"
+                      } disabled:opacity-50 mt-2`}
+                    >
+                      {busy === "pptx" ? (
+                        <>
+                          <Loader2 className="animate-spin h-4 w-4" />
+                          <span>Génération PPTX en cours...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Presentation className="h-4 w-4" />
+                          <span>Télécharger le diaporama (.pptx)</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+
+                {activeTab === "image" && (
+                  <div className="flex flex-col gap-4">
+                    <div className="rounded-xl border border-zinc-150 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/10 p-3.5 flex flex-col gap-3">
+                      <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">Options Image</span>
+                      <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={transparentBg}
+                          onChange={(e) => setTransparentBg(e.target.checked)}
+                          className={`${checkboxClass} mt-0.5`}
+                        />
+                        <span>
+                          Fond transparent
+                          <span className="mt-0.5 block text-[10px] leading-normal font-normal text-zinc-400 dark:text-zinc-500">
+                            Idéal pour insérer l'image sur une présentation ou un fond coloré externe.
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+
+                    <div className="flex flex-col gap-2.5 mt-2">
+                      <div className="flex gap-2.5">
+                        <button
+                          onClick={() => run("png")}
+                          disabled={busy !== null}
+                          className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border py-2.5 text-xs font-semibold transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
+                            themeMode === "dark"
+                              ? "border-zinc-850 text-zinc-300 hover:bg-zinc-800"
+                              : "border-zinc-200 text-zinc-650 hover:bg-zinc-50"
+                          } disabled:opacity-50`}
+                        >
+                          <Image className="h-3.5 w-3.5" />
+                          <span>{busy === "png" ? "Génération..." : "Télécharger PNG"}</span>
+                        </button>
+                        <button
+                          onClick={() => run("svg")}
+                          disabled={busy !== null}
+                          className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border py-2.5 text-xs font-semibold transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
+                            themeMode === "dark"
+                              ? "border-zinc-850 text-zinc-300 hover:bg-zinc-800"
+                              : "border-zinc-200 text-zinc-650 hover:bg-zinc-50"
+                          } disabled:opacity-50`}
+                        >
+                          <FileCode className="h-3.5 w-3.5" />
+                          <span>{busy === "svg" ? "Génération..." : "Télécharger SVG"}</span>
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={() => run("clipboard")}
+                        disabled={busy !== null}
+                        className={`flex w-full items-center justify-center gap-1.5 rounded-xl border py-2.5 text-xs font-semibold transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
+                          copied
+                            ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5"
+                            : themeMode === "dark"
+                            ? "border-zinc-850 text-zinc-300 hover:bg-zinc-800"
+                            : "border-zinc-200 text-zinc-650 hover:bg-zinc-50"
+                        } disabled:opacity-50`}
+                      >
+                        {busy === "clipboard" ? (
+                          <>
+                            <Loader2 className="animate-spin h-3.5 w-3.5" />
+                            <span>Copie...</span>
+                          </>
+                        ) : copied ? (
+                          <>
+                            <Check className="h-3.5 w-3.5 text-emerald-500" />
+                            <span>Copié dans le presse-papiers !</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="h-3.5 w-3.5" />
+                            <span>Copier l'image</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {error && <p className="text-xs text-red-500 font-semibold">{error}</p>}
+            </div>
+          </div>
+        </div>
+
+        {/* Pied de page fixe */}
+        <div className="px-6 py-3.5 border-t border-zinc-200/60 dark:border-zinc-800 flex justify-end bg-zinc-50/50 dark:bg-zinc-950/20">
+          <button
+            onClick={onClose}
+            className={`rounded-lg px-4 py-2 text-xs font-semibold shadow-sm transition-all border cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 ${
+              themeMode === "dark"
+                ? "border-zinc-800 bg-zinc-900 text-zinc-300"
+                : "border-zinc-200 bg-white text-zinc-650"
+            }`}
           >
             Fermer la fenêtre
           </button>
