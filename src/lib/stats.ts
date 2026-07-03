@@ -1,4 +1,4 @@
-import type { OrgEdge, OrgNode } from "../types/orgchart";
+import { isHierarchyEdge, type OrgEdge, type OrgNode } from "../types/orgchart";
 import { computeLevels } from "./nodeStyle";
 import { buildChildrenMap, computeDescendants } from "./hierarchy";
 
@@ -51,8 +51,8 @@ export interface TeamSize {
   total: number;
 }
 
-/** Taille de l'équipe d'un membre. Fonction pure. */
+/** Taille de l'équipe d'un membre (liens hiérarchiques uniquement). Fonction pure. */
 export function computeTeamSize(edges: OrgEdge[], id: string): TeamSize {
-  const direct = edges.filter((e) => e.source === id).length;
+  const direct = edges.filter((e) => isHierarchyEdge(e) && e.source === id).length;
   return { direct, total: computeDescendants(edges, id).size };
 }

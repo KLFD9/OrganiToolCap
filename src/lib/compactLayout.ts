@@ -1,4 +1,4 @@
-import type { OrgEdge, OrgNode } from "../types/orgchart";
+import { isHierarchyEdge, type OrgEdge, type OrgNode } from "../types/orgchart";
 
 /**
  * Disposition « compacte » : les équipes terrain (groupes de feuilles) sont
@@ -32,6 +32,7 @@ function buildChildrenMap(nodes: OrgNode[], edges: OrgEdge[]): Map<string, strin
   const order = new Map(nodes.map((n, i) => [n.id, i]));
   const children = new Map<string, string[]>();
   for (const e of edges) {
+    if (!isHierarchyEdge(e)) continue;
     if (!order.has(e.source) || !order.has(e.target)) continue;
     const list = children.get(e.source) ?? [];
     list.push(e.target);
@@ -68,7 +69,11 @@ interface SubtreeSize {
 /** Calcule les nouvelles positions. Les positions d'origine ne sont pas mutées. */
 export function layoutCompact(nodes: OrgNode[], edges: OrgEdge[]): CompactLayoutResult {
   const children = buildChildrenMap(nodes, edges);
-  const hasParent = new Set(edges.filter((e) => nodes.some((n) => n.id === e.source)).map((e) => e.target));
+  const hasParent = new Set(
+    edges
+      .filter((e) => isHierarchyEdge(e) && nodes.some((n) => n.id === e.source))
+      .map((e) => e.target)
+  );
   const roots = nodes.filter((n) => !hasParent.has(n.id));
   const stackedIds = computeStackedIds(nodes, edges);
 

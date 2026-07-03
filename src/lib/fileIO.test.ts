@@ -15,7 +15,7 @@ describe("parseOrgChartFile", () => {
   });
 
   it("rejects a file from a future/incompatible version", () => {
-    const file = { ...createBlankChart("blank"), version: 2 };
+    const file = { ...createBlankChart("blank"), version: 3 };
     expect(() => parseOrgChartFile(JSON.stringify(file))).toThrow(FileFormatError);
   });
 

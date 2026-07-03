@@ -7,7 +7,7 @@ export function createBlankChart(templateId: string): OrgChartFile {
 
   return {
     format: "orgchart",
-    version: 1,
+    version: 2,
     meta: {
       title: "Nouvel organigramme",
       createdAt: now,

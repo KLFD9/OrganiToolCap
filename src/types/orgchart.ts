@@ -61,16 +61,47 @@ export const OrgNodeSchema = z.object({
 });
 export type OrgNode = z.infer<typeof OrgNodeSchema>;
 
+/**
+ * Nature d'un lien (format v2) :
+ * - "hierarchy" (ou absent, pour les fichiers v1) : rattachement hiérarchique
+ *   — un seul responsable par personne, anti-cycle, structure les layouts,
+ *   le repli, les statistiques et la colonne Responsable du CSV.
+ * - "dotted" : rattachement fonctionnel (dotted line) — trait pointillé,
+ *   plusieurs autorisés par personne, ignoré par toute la logique d'arbre.
+ */
+export const OrgEdgeKindSchema = z.enum(["hierarchy", "dotted"]);
+export type OrgEdgeKind = z.infer<typeof OrgEdgeKindSchema>;
+
 export const OrgEdgeSchema = z.object({
   id: z.string(),
   source: z.string(),
   target: z.string(),
+  kind: OrgEdgeKindSchema.optional(),
 });
 export type OrgEdge = z.infer<typeof OrgEdgeSchema>;
 
+/** Vrai pour un lien hiérarchique (l'absence de `kind` vaut hiérarchique — fichiers v1). */
+export function isHierarchyEdge(edge: OrgEdge): boolean {
+  return edge.kind !== "dotted";
+}
+
+/** Sous-ensemble hiérarchique des liens : la seule entrée valide pour la logique d'arbre. */
+export function hierarchyEdges(edges: OrgEdge[]): OrgEdge[] {
+  return edges.filter(isHierarchyEdge);
+}
+
+/** Liens fonctionnels (pointillés). */
+export function dottedEdges(edges: OrgEdge[]): OrgEdge[] {
+  return edges.filter((e) => e.kind === "dotted");
+}
+
+/** Version courante du format de fichier. */
+export const ORG_CHART_VERSION = 2;
+
 export const OrgChartFileSchema = z.object({
   format: z.literal("orgchart"),
-  version: z.literal(1),
+  // v1 : liens sans `kind`. v2 : liens hiérarchiques ou pointillés.
+  version: z.union([z.literal(1), z.literal(2)]),
   meta: z.object({
     title: z.string(),
     subtitle: z.string().optional(),  // ex: groupe / entité affichée sous le titre à l'export
@@ -92,3 +123,13 @@ export const OrgChartFileSchema = z.object({
   }),
 });
 export type OrgChartFile = z.infer<typeof OrgChartFileSchema>;
+
+/**
+ * Migration à l'ouverture : porte un fichier valide vers la version courante.
+ * v1 → v2 : aucune transformation de données nécessaire — l'absence de `kind`
+ * sur un lien vaut « hiérarchique », seule la version est relevée.
+ */
+export function migrateOrgChartFile(file: OrgChartFile): OrgChartFile {
+  if (file.version === ORG_CHART_VERSION) return file;
+  return { ...file, version: ORG_CHART_VERSION };
+}

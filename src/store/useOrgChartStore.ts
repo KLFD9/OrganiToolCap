@@ -1,9 +1,18 @@
 import { create } from "zustand";
-import type { OrgChartFile, OrgEdge, OrgNode, OrgNodeData, OrgNodeStyle, OrgTheme } from "../types/orgchart";
+import {
+  ORG_CHART_VERSION,
+  isHierarchyEdge,
+  type OrgChartFile,
+  type OrgEdge,
+  type OrgNode,
+  type OrgNodeData,
+  type OrgNodeStyle,
+  type OrgTheme,
+} from "../types/orgchart";
 import { athanorDemo } from "../templates/athanorDemo";
 import { layoutWithElk } from "../lib/elkLayout";
 import { layoutCompact } from "../lib/compactLayout";
-import { computeHiddenNodeIds } from "../lib/hierarchy";
+import { computeHiddenNodeIds, wouldCreateHierarchyCycle } from "../lib/hierarchy";
 
 let nodeCounter = 0;
 function generateId(prefix: string): string {
@@ -67,6 +76,10 @@ interface OrgChartState {
 
   // -- arêtes --
   addEdge: (source: string, target: string) => void;
+  /** Rattachement fonctionnel (pointillé) : plusieurs autorisés, hors hiérarchie. */
+  addDottedEdge: (source: string, target: string) => void;
+  /** Convertit un lien hiérarchique ⇄ fonctionnel (avec garde anti-cycle et parent unique). */
+  setEdgeKind: (id: string, kind: "hierarchy" | "dotted") => void;
   deleteEdge: (id: string) => void;
 
   // -- layout --
@@ -109,21 +122,6 @@ function pushHistory(s: OrgChartState): Pick<OrgChartState, "past" | "future"> {
   return { past: [...s.past, snapshot].slice(-MAX_HISTORY), future: [] };
 }
 
-/** Vrai si `target` est un ancêtre de `source` (i.e. relier source -> target créerait un cycle). */
-function wouldCreateCycle(edges: OrgEdge[], source: string, target: string): boolean {
-  const parentOf = new Map<string, string>();
-  for (const e of edges) parentOf.set(e.target, e.source);
-
-  let current: string | undefined = source;
-  const seen = new Set<string>();
-  while (current) {
-    if (current === target) return true;
-    if (seen.has(current)) break;
-    seen.add(current);
-    current = parentOf.get(current);
-  }
-  return false;
-}
 
 export const useOrgChartStore = create<OrgChartState>((set, get) => ({
   meta: athanorDemo.meta,
@@ -203,7 +201,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
     const s = get();
     return {
       format: "orgchart",
-      version: 1,
+      version: ORG_CHART_VERSION,
       meta: s.meta,
       templateId: s.templateId,
       theme: s.theme,
@@ -401,15 +399,57 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
   addEdge: (source, target) =>
     set((s) => {
       if (source === target) return s;
-      // Empêche les doublons et les liens entrants multiples sur une cible (un seul parent)
+      // Empêche les doublons (toutes natures confondues sur la même paire)
       const exists = s.edges.some((e) => e.source === source && e.target === target);
       if (exists) return s;
       // Empêche de créer un cycle (un responsable ne peut pas dépendre de l'un de ses subordonnés)
-      if (wouldCreateCycle(s.edges, source, target)) return s;
-      const filtered = s.edges.filter((e) => e.target !== target);
+      if (wouldCreateHierarchyCycle(s.edges, source, target)) return s;
+      // Un seul responsable hiérarchique par personne — les liens pointillés restent
+      const filtered = s.edges.filter((e) => e.target !== target || !isHierarchyEdge(e));
       return {
         ...pushHistory(s),
         edges: [...filtered, { id: generateId("edge"), source, target }],
+        isDirty: true,
+      };
+    }),
+
+  addDottedEdge: (source, target) =>
+    set((s) => {
+      if (source === target) return s;
+      const exists = s.edges.some((e) => e.source === source && e.target === target);
+      if (exists) return s;
+      return {
+        ...pushHistory(s),
+        edges: [...s.edges, { id: generateId("edge"), source, target, kind: "dotted" as const }],
+        isDirty: true,
+      };
+    }),
+
+  setEdgeKind: (id, kind) =>
+    set((s) => {
+      const edge = s.edges.find((e) => e.id === id);
+      if (!edge || (edge.kind === "dotted" ? "dotted" : "hierarchy") === kind) return s;
+
+      if (kind === "hierarchy") {
+        // Conversion pointillé → hiérarchique : garde anti-cycle (calculée sans
+        // l'ancien parent, qui sera remplacé), puis parent unique.
+        const others = s.edges.filter(
+          (e) => e.id !== id && !(isHierarchyEdge(e) && e.target === edge.target)
+        );
+        if (wouldCreateHierarchyCycle(others, edge.source, edge.target)) return s;
+        return {
+          ...pushHistory(s),
+          edges: [
+            ...others,
+            { id: edge.id, source: edge.source, target: edge.target },
+          ],
+          isDirty: true,
+        };
+      }
+
+      return {
+        ...pushHistory(s),
+        edges: s.edges.map((e) => (e.id === id ? { ...e, kind: "dotted" as const } : e)),
         isDirty: true,
       };
     }),

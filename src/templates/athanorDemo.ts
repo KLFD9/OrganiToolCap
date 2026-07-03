@@ -5,7 +5,7 @@ const now = new Date().toISOString();
 
 export const athanorDemo: OrgChartFile = {
   format: "orgchart",
-  version: 1,
+  version: 2,
   meta: {
     title: "Organigramme ATHANOR",
     createdAt: now,

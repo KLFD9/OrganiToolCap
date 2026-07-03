@@ -31,12 +31,15 @@ Notre limite assumée face aux concurrents : pas de collaboration temps réel ni
 |---|---|---|---|---|
 | Hiérarchie automatique (layout) | ✅ | ✅ | ❌ | ✅ (elkjs, TB/LR) |
 | Import CSV | ✅ | ✅ (cœur d'offre) | ❌ | ✅ (séparateur auto, accents, responsable par nom/e-mail) |
+| Export CSV / annuaire | ✅ | ✅ | ❌ | ✅ (round-trip complet avec l'import) |
+| Vue annuaire / liste | ✅ | ✅ (cœur d'offre) | ❌ | ✅ (triable, filtrable, synchronisée au canvas) |
 | Photos / fiches membres | ✅ | ✅ | ✅ | ✅ (data-URI autonome) |
 | Export PDF | ✅ | ✅ | ✅ | ✅ (multi-pages, logos, garde-fous canvas) |
 | Export PowerPoint | ✅ | ✅ (premium) | ✅ | ✅ (.pptx 16:9, client-side) |
 | Copie presse-papiers | ✅ | — | ✅ | ✅ |
 | Undo/redo | ✅ | ✅ | ✅ | ✅ (50 niveaux) |
 | Regroupement par département | ✅ | ✅ | ❌ | ✅ |
+| Liens en pointillés (dotted line) | ✅ | ✅ (premium) | ❌ | ✅ (conversion ⇄ hiérarchique en un clic) |
 | Replier/déplier les branches | ✅ | ✅ | ❌ | ✅ (badge effectif + export partiel) |
 | Statistiques d'effectifs | ✅ | ✅ | ❌ | ✅ |
 | Recherche de membre | ✅ | ✅ | ❌ | ✅ |
@@ -63,13 +66,14 @@ Notre limite assumée face aux concurrents : pas de collaboration temps réel ni
 - **Métadonnées d'accessibilité PDF** (juillet 2026) : titre, sujet, créateur et langue (fr-FR) déclarés dans le document exporté.
 - **Édition rapide au canvas** (juillet 2026) : clic droit contextuel (membre et fond), « add node on edge drop » (tirer une poignée dans le vide crée le subordonné à cet endroit), raccourcis Tab/Entrée façon Miro/FigJam. Répond au critère n° 1 des avis utilisateurs du segment : la fluidité d'édition drag & drop (« intuitive, minimal training »).
 - **Grille ajustée à la page** (juillet 2026) : 5ᵉ candidat de l'optimiseur — les sous-arbres de premier niveau sont réagencés en rangées (shelf-packing) pour épouser le ratio du papier ; un arbre plat 5:1 devient 2-3 rangées proches du 1,4:1 de l'A4.
-- **PDF vectoriel natif** (juillet 2026, ex-piste n° 5 revisitée) : au lieu de svg2pdf (incompatible avec les captures html-to-image), les cartes sont dessinées nativement dans jsPDF en réutilisant le générateur de formes du PPTX éditable — texte net à toutes les échelles, ~20 Ko. Fallback image au pixel près (photos, multi-pages).
+- **PDF vectoriel natif** (juillet 2026, ex-piste n° 5 revisitée) : au lieu de svg2pdf (incompatible avec les captures html-to-image), les cartes sont dessinées nativement dans jsPDF en réutilisant le générateur de formes du PPTX éditable — texte net à toutes les échelles, ~20-30 Ko, pastilles d'initiales colorées au niveau hiérarchique. Fallback image au pixel près (photos, multi-pages).
+- **Vue annuaire + export CSV** (juillet 2026) : la « directory view » cœur d'offre d'Organimi, en 100 % local — table triable/filtrable synchronisée avec le canvas (sélection → fiche dans l'inspecteur, localisation → recentrage), export CSV au format exact de l'import : le round-trip Excel ↔ organigramme est complet.
+- **Rattachements fonctionnels — format v2** (juillet 2026, ex-piste n° 1) : liens en pointillés (dotted line), le dernier manque face à Lucidchart (et une fonction premium chez Organimi). Champ `kind` optionnel sur les liens, version 2 du format avec **migration transparente des fichiers v1** à l'ouverture. Gestion par la fiche membre et par clic droit sur un lien (conversion hiérarchique ⇄ fonctionnel avec gardes anti-cycle et parent unique). Ignorés par les layouts, le repli, les statistiques et le CSV ; rendus en pointillés dans les exports PDF vectoriel et PPTX éditable.
 
 ## 5. Pistes futures (non implémentées, par priorité)
 
-1. **Liens en pointillés** (rattachement fonctionnel / dotted line) — nécessite une évolution du schéma de fichier (version 2 avec migration).
-2. **PWA installable** (manifest + service worker) pour renforcer l'usage hors-ligne. Différée en juillet 2026 : compatibilité vite-plugin-pwa / Vite 8 (rolldown) non garantie, et un service worker mal invalidé bloque les mises à jour.
-3. **Vue annuaire / liste** (directory view, cœur d'offre Organimi) — table triable des membres synchronisée avec le canvas.
-4. **Photos dans le PDF vectoriel** (initiales dessinées, ou pastilles image rasterisées localement).
+1. **PWA installable** (manifest + service worker) pour renforcer l'usage hors-ligne. Différée en juillet 2026 : compatibilité vite-plugin-pwa / Vite 8 (rolldown) non garantie, et un service worker mal invalidé bloque les mises à jour.
+2. **Photos (images) dans le PDF vectoriel** — les initiales y sont ; les photos nécessitent un découpage circulaire (clip jsPDF) à prototyper.
+3. **Édition inline dans la vue annuaire** (double-clic sur une cellule).
 
-*Réalisées depuis l'audit initial : replier/déplier les branches, statistiques d'effectifs, PDF nativement vectoriel (ex-n° 5, approche jsPDF natif plutôt que svg2pdf) — voir § 4.*
+*Réalisées depuis l'audit initial : replier/déplier les branches, statistiques d'effectifs, PDF nativement vectoriel (ex-n° 5, approche jsPDF natif plutôt que svg2pdf), vue annuaire + export CSV, liens en pointillés / format v2 (ex-n° 1) — voir § 4. La matrice fonctionnelle face à Lucidchart/Organimi est désormais complète, hors collaboration temps réel et sync SIRH (limites assumées du 100 % local).*

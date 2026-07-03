@@ -16,23 +16,25 @@ Toujours lancer `npm test` et `npm run lint` avant de considérer une modificati
 ## Invariants produit (ne jamais casser)
 
 1. **Aucun appel réseau, aucune télémétrie.** La souveraineté des données (noms, e-mails, photos RH) est l'argument n° 1 du produit. N'introduire ni fetch externe, ni CDN, ni analytics. Les polices sont bundlées via @fontsource (sous-ensembles latin + latin-ext uniquement).
-2. **Le fichier est la source de vérité.** Le format `.orgchart.json` est versionné et validé par zod (`src/types/orgchart.ts`). Évolution acceptée sur v1 : champs **optionnels additifs** dont l'absence a une sémantique claire (précédents : `layout.mode`, `theme.display`). Tout changement incompatible exige une montée de version avec migration à l'ouverture.
+2. **Le fichier est la source de vérité.** Le format `.orgchart.json` est versionné (v2 courante, `ORG_CHART_VERSION`) et validé par zod (`src/types/orgchart.ts`). Les fichiers v1 sont migrés à l'ouverture (`migrateOrgChartFile`, appelée par `parseOrgChartFile`). Évolution acceptée sans montée de version : champs **optionnels additifs** dont l'absence a une sémantique claire (précédents : `layout.mode`, `theme.display`, `edge.kind`). Tout changement incompatible exige une montée de version avec migration.
    Le repli de branches (`collapsedNodeIds`) est un état de vue **non persisté** — mais l'export est WYSIWYG : il exclut les branches repliées.
-3. **IndexedDB n'est qu'un brouillon de confort** (restauration après fermeture accidentelle), pas un stockage principal.
-4. **Round-trip PowerPoint** : l'export .pptx embarque le `.orgchart.json` complet et doit toujours se réimporter à l'identique (`pptxEditable.ts` / `pptxImport.ts`).
-5. **Accessibilité** : `prefers-reduced-motion` respecté (voir `motionDuration()` dans Toolbar), focus visible, `aria-label` sur les boutons icône. Les raccourcis Tab/Entrée du canvas ne s'activent que si le focus est sur le canvas (jamais sur la toolbar ou un champ). PDF exporté : métadonnées + langue fr-FR (`applyPdfMetadata`).
-6. **Piège de layout NodeCard** : la poignée source React Flow est au bas-centre des cartes — tout élément ajouté à cet endroit doit être décalé et porter la classe `nodrag`, sinon il intercepte l'edge-drop et déclenche un déplacement de carte (bug corrigé sur la pastille de repli).
+3. **Liens : deux natures (v2).** `edge.kind` absent ou `"hierarchy"` = rattachement hiérarchique (parent unique, anti-cycle) ; `"dotted"` = rattachement fonctionnel (plusieurs autorisés, trait pointillé). **Toute logique d'arbre doit filtrer via `isHierarchyEdge`/`hierarchyEdges`** (types/orgchart.ts) — `lib/hierarchy.ts` le fait déjà pour ses consommateurs ; attention aux parcours d'edges directs (parentOf, `e.target === id`…).
+4. **IndexedDB n'est qu'un brouillon de confort** (restauration après fermeture accidentelle), pas un stockage principal.
+5. **Round-trip PowerPoint** : l'export .pptx embarque le `.orgchart.json` complet et doit toujours se réimporter à l'identique (`pptxEditable.ts` / `pptxImport.ts`).
+6. **Accessibilité** : `prefers-reduced-motion` respecté (voir `motionDuration()` dans Toolbar), focus visible, `aria-label` sur les boutons icône. Les raccourcis Tab/Entrée du canvas ne s'activent que si le focus est sur le canvas (jamais sur la toolbar ou un champ). PDF exporté : métadonnées + langue fr-FR (`applyPdfMetadata`).
+7. **Piège de layout NodeCard** : la poignée source React Flow est au bas-centre des cartes — tout élément ajouté à cet endroit doit être décalé et porter la classe `nodrag`, sinon il intercepte l'edge-drop et déclenche un déplacement de carte (bug corrigé sur la pastille de repli).
 
 ## Architecture
 
 ```
 src/
   components/   Canvas (React Flow : edge-drop, menus contextuels), NodeCard,
-                Toolbar, Inspector, TemplatePicker, ExportDialog,
-                ContextMenu, GroupBackground, ErrorBoundary
+                Toolbar, Inspector, Directory (vue annuaire), TemplatePicker,
+                ExportDialog, ContextMenu, GroupBackground, ErrorBoundary
   store/        useOrgChartStore (Zustand) — undo/redo 50 niveaux,
                 sérialise vers/depuis OrgChartFile sans perte
-  lib/          fileIO (ouvrir/enregistrer + zod), csvImport, pdfExport,
+  lib/          fileIO (ouvrir/enregistrer + zod), csvImport, csvExport
+                (round-trip annuaire ↔ Excel), pdfExport,
                 pdfVector (PDF natif via buildEditableSpec), pptxExport/
                 pptxEditable/pptxImport, elkLayout, compactLayout,
                 readability, exportLayout (optimiseur + grille page-aware),

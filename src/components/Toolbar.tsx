@@ -13,6 +13,8 @@ interface ToolbarProps {
   showGroups: boolean;
   onToggleGroups: () => void;
   onTogglePresentation: () => void;
+  directoryOpen: boolean;
+  onToggleDirectory: () => void;
 }
 
 function motionDuration(ms: number): number {
@@ -30,6 +32,8 @@ export function Toolbar({
   showGroups,
   onToggleGroups,
   onTogglePresentation,
+  directoryOpen,
+  onToggleDirectory,
 }: ToolbarProps) {
   const title = useOrgChartStore((s) => s.meta.title);
   const isDirty = useOrgChartStore((s) => s.isDirty);
@@ -600,6 +604,31 @@ export function Toolbar({
           </button>
           <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
             {showGroups ? "Masquer les pôles" : "Afficher les pôles"}
+          </div>
+        </div>
+
+        {/* Vue annuaire (table triable des membres) */}
+        <div className="relative group">
+          <button
+            aria-label="Vue annuaire"
+            onClick={onToggleDirectory}
+            aria-pressed={directoryOpen}
+            className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-all ${
+              directoryOpen
+                ? themeMode === "dark"
+                  ? "border-primary-400/40 bg-primary-500/15 text-primary-300"
+                  : "border-primary-600/40 bg-primary-600/10 text-primary-700"
+                : themeMode === "dark"
+                ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                : "border-border-light bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+            }`}
+          >
+            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 6h16M4 10h16M4 14h16M4 18h10" />
+            </svg>
+          </button>
+          <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
+            {directoryOpen ? "Retour à l'organigramme" : "Vue annuaire (liste des membres)"}
           </div>
         </div>
 

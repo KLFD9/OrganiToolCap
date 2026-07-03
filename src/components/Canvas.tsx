@@ -18,7 +18,8 @@ import { useOrgChartStore } from "../store/useOrgChartStore";
 import { computeLevels } from "../lib/nodeStyle";
 import { computeDepartmentGroups, buildGroupTheme } from "../lib/groups";
 import { computeStackedIds, CARD_WIDTH, CARD_HEIGHT } from "../lib/compactLayout";
-import { buildChildrenMap, computeDescendantCounts, computeHiddenNodeIds } from "../lib/hierarchy";
+import { buildChildrenMap, computeDescendantCounts, computeHiddenNodeIds, wouldCreateHierarchyCycle } from "../lib/hierarchy";
+import { isHierarchyEdge } from "../types/orgchart";
 import { NodeCard, type NodeCardData } from "./NodeCard";
 import { GroupBackground, type GroupBackgroundData } from "./GroupBackground";
 import { OrgEdge } from "./OrgEdge";
@@ -29,6 +30,8 @@ interface MenuState {
   y: number;
   /** Menu d'un membre (clic droit sur une carte). */
   nodeId?: string;
+  /** Menu d'un lien (clic droit sur une arête). */
+  edgeId?: string;
   /** Menu du fond de canvas : position d'insertion en coordonnées flow. */
   flowPos?: { x: number; y: number };
 }
@@ -56,6 +59,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const duplicateNode = useOrgChartStore((s) => s.duplicateNode);
   const deleteNode = useOrgChartStore((s) => s.deleteNode);
   const deleteEdge = useOrgChartStore((s) => s.deleteEdge);
+  const setEdgeKind = useOrgChartStore((s) => s.setEdgeKind);
   const toggleCollapsed = useOrgChartStore((s) => s.toggleCollapsed);
   const expandAll = useOrgChartStore((s) => s.expandAll);
   const applyAutoLayout = useOrgChartStore((s) => s.applyAutoLayout);
@@ -148,13 +152,14 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         .filter((e) => !hiddenIds.has(e.source) && !hiddenIds.has(e.target))
         .map((e) => {
         const isSelected = selectedNodeIds.includes(e.source) || selectedNodeIds.includes(e.target);
+        const isDotted = e.kind === "dotted";
         return {
           id: e.id,
           source: e.source,
           target: e.target,
           type: "org",
           animated: isSelected, // anime le flux des connexions liées au nœud sélectionné
-          data: { spine: stackedIds.has(e.target) },
+          data: { spine: !isDotted && stackedIds.has(e.target) },
           style: {
             stroke: isSelected
               ? theme.accent
@@ -162,6 +167,8 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
               ? "rgba(161, 161, 170, 0.25)"
               : "rgba(39, 39, 42, 0.15)",
             strokeWidth: isSelected ? 2 : 1.25,
+            // Rattachement fonctionnel : trait pointillé (format v2)
+            strokeDasharray: isDotted ? "6 5" : undefined,
           },
         };
       }),
@@ -219,6 +226,11 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     [selectNodes]
   );
 
+  const onEdgeContextMenu = useCallback((event: React.MouseEvent, edge: Edge) => {
+    event.preventDefault();
+    setMenu({ x: event.clientX, y: event.clientY, edgeId: edge.id });
+  }, []);
+
   const onPaneContextMenu = useCallback(
     (event: React.MouseEvent | MouseEvent) => {
       event.preventDefault();
@@ -238,12 +250,38 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const menuItems = useMemo<ContextMenuItem[]>(() => {
     if (!menu) return [];
 
+    if (menu.edgeId) {
+      const edge = storeEdges.find((e) => e.id === menu.edgeId);
+      if (!edge) return [];
+      const isDotted = !isHierarchyEdge(edge);
+      // La conversion vers hiérarchique remplace l'ancien responsable ;
+      // elle est bloquée si elle créerait un cycle.
+      const conversionBase = storeEdges.filter(
+        (e) => e.id !== edge.id && !(isHierarchyEdge(e) && e.target === edge.target)
+      );
+      const cycleBlocked = isDotted && wouldCreateHierarchyCycle(conversionBase, edge.source, edge.target);
+      return [
+        {
+          label: isDotted ? "Convertir en lien hiérarchique" : "Convertir en lien fonctionnel",
+          hint: isDotted ? (cycleBlocked ? "créerait un cycle" : undefined) : "pointillé",
+          disabled: cycleBlocked,
+          onClick: () => setEdgeKind(edge.id, isDotted ? "hierarchy" : "dotted"),
+        },
+        {
+          label: "Supprimer le lien",
+          danger: true,
+          separator: true,
+          onClick: () => deleteEdge(edge.id),
+        },
+      ];
+    }
+
     if (menu.nodeId) {
       const nodeId = menu.nodeId;
       const childCount = childrenMap.get(nodeId)?.length ?? 0;
       const isCollapsed = collapsedNodeIds.includes(nodeId);
       const teamCount = descendantCounts.get(nodeId) ?? 0;
-      const parentEdge = storeEdges.find((e) => e.target === nodeId);
+      const parentEdge = storeEdges.find((e) => e.kind !== "dotted" && e.target === nodeId);
       const items: ContextMenuItem[] = [
         { label: "Ajouter un subordonné", hint: "Tab", onClick: () => addNode(nodeId) },
         { label: "Ajouter un collègue", hint: "Entrée", onClick: () => addNode(parentEdge?.source) },
@@ -308,6 +346,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     toggleCollapsed,
     expandAll,
     applyAutoLayout,
+    setEdgeKind,
     fitView,
   ]);
 
@@ -330,6 +369,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         onConnect={onConnect}
         onConnectEnd={onConnectEnd}
         onNodeContextMenu={onNodeContextMenu}
+        onEdgeContextMenu={onEdgeContextMenu}
         onPaneContextMenu={onPaneContextMenu}
         onSelectionChange={onSelectionChange}
         nodeTypes={nodeTypes}

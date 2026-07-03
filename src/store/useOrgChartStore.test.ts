@@ -54,6 +54,80 @@ describe("useOrgChartStore", () => {
     expect(edgesToA[0].source).toBe(bId);
   });
 
+  it("addDottedEdge autorise plusieurs rattachements fonctionnels sans toucher au parent", () => {
+    const { addNode, addDottedEdge } = useOrgChartStore.getState();
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+
+    addNode(rootId); // root -> A (hiérarchique)
+    const aId = useOrgChartStore.getState().nodes[1].id;
+    addNode(); // B sans parent
+    const bId = useOrgChartStore.getState().nodes[2].id;
+    addNode(); // C sans parent
+    const cId = useOrgChartStore.getState().nodes[3].id;
+
+    addDottedEdge(bId, aId);
+    addDottedEdge(cId, aId);
+
+    const edges = useOrgChartStore.getState().edges;
+    // Le parent hiérarchique est conservé, les deux pointillés coexistent
+    expect(edges.filter((e) => e.target === aId && e.kind !== "dotted")).toHaveLength(1);
+    expect(edges.filter((e) => e.target === aId && e.kind === "dotted")).toHaveLength(2);
+
+    // Un doublon sur la même paire est refusé
+    addDottedEdge(bId, aId);
+    expect(useOrgChartStore.getState().edges).toHaveLength(edges.length);
+  });
+
+  it("setEdgeKind convertit un pointillé en hiérarchique en remplaçant l'ancien parent", () => {
+    const { addNode, addDottedEdge, setEdgeKind } = useOrgChartStore.getState();
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+
+    addNode(rootId); // root -> A
+    const aId = useOrgChartStore.getState().nodes[1].id;
+    addNode(); // B
+    const bId = useOrgChartStore.getState().nodes[2].id;
+
+    addDottedEdge(bId, aId);
+    const dotted = useOrgChartStore.getState().edges.find((e) => e.kind === "dotted")!;
+
+    setEdgeKind(dotted.id, "hierarchy");
+
+    const edgesToA = useOrgChartStore.getState().edges.filter((e) => e.target === aId);
+    expect(edgesToA).toHaveLength(1);
+    expect(edgesToA[0].source).toBe(bId);
+    expect(edgesToA[0].kind).toBeUndefined(); // hiérarchique
+  });
+
+  it("setEdgeKind refuse une conversion qui créerait un cycle hiérarchique", () => {
+    const { addNode, addDottedEdge, setEdgeKind } = useOrgChartStore.getState();
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+
+    addNode(rootId); // root -> A
+    const aId = useOrgChartStore.getState().nodes[1].id;
+
+    addDottedEdge(aId, rootId); // A --pointillé--> root (autorisé)
+    const dotted = useOrgChartStore.getState().edges.find((e) => e.kind === "dotted")!;
+    const before = useOrgChartStore.getState().edges;
+
+    setEdgeKind(dotted.id, "hierarchy"); // root deviendrait subordonné de A : cycle
+
+    expect(useOrgChartStore.getState().edges).toEqual(before);
+  });
+
+  it("setEdgeKind convertit un hiérarchique en pointillé (le nœud devient racine)", () => {
+    const { addNode, setEdgeKind } = useOrgChartStore.getState();
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+
+    addNode(rootId);
+    const edge = useOrgChartStore.getState().edges[0];
+
+    setEdgeKind(edge.id, "dotted");
+
+    const updated = useOrgChartStore.getState().edges.find((e) => e.id === edge.id)!;
+    expect(updated.kind).toBe("dotted");
+    expect(updated.source).toBe(rootId);
+  });
+
   it("duplicateNode clones the node and reattaches it to the same parent", () => {
     const { addNode, duplicateNode } = useOrgChartStore.getState();
     const rootId = useOrgChartStore.getState().nodes[0].id;

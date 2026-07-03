@@ -1,4 +1,4 @@
-import type { OrgChartFile, OrgEdge, OrgNode } from "../types/orgchart";
+import { isHierarchyEdge, type OrgChartFile, type OrgEdge, type OrgNode } from "../types/orgchart";
 import { estimateReadability, type ReadabilityEstimate } from "./readability";
 import { CARD_HEIGHT, CARD_WIDTH, layoutCompact } from "./compactLayout";
 import { layoutWithElk } from "./elkLayout";
@@ -87,7 +87,9 @@ export function layoutGridForRatio(nodes: OrgNode[], edges: OrgEdge[], targetRat
   const nodeIds = new Set(nodes.map((n) => n.id));
 
   const children = buildChildrenMap(edges);
-  const hasParent = new Set(edges.filter((e) => nodeIds.has(e.source)).map((e) => e.target));
+  const hasParent = new Set(
+    edges.filter((e) => isHierarchyEdge(e) && nodeIds.has(e.source)).map((e) => e.target)
+  );
   const roots = nodes.filter((n) => !hasParent.has(n.id));
 
   // Blocs à réagencer : sous-arbres des enfants de la racine unique,

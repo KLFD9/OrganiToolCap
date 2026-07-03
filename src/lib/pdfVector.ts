@@ -1,4 +1,4 @@
-import type { OrgEdge, OrgNode, OrgTheme } from "../types/orgchart";
+import { resolveDisplay, type OrgEdge, type OrgNode, type OrgTheme } from "../types/orgchart";
 import { buildEditableSpec } from "./pptxEditable";
 import {
   applyPdfMetadata,
@@ -30,6 +30,18 @@ export function blendHex(fg: string, bg: string, fgRatio: number): string {
   return [mix(fr, br), mix(fgG, bgG), mix(fb, bb)]
     .map((v) => v.toString(16).padStart(2, "0"))
     .join("");
+}
+
+/** Initiales d'un nom (mêmes règles que la carte à l'écran). */
+export function nameInitials(name: string): string {
+  return name
+    .trim()
+    .split(/\s+/)
+    .map((part) => part[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 }
 
 /** Tronque un libellé à la largeur donnée (mm) pour la taille de police courante. */
@@ -70,11 +82,14 @@ export async function exportFlowToPdfVector(
   };
   const spec = buildEditableSpec(nodes, edges, theme, areaIn);
   const mm = (inches: number) => inches * MM_PER_IN;
+  const showAvatars = resolveDisplay(theme).showPhotos;
 
   // Connecteurs d'abord (les cartes passent au-dessus), en coude à mi-hauteur
   pdf.setDrawColor(CONNECTOR_COLOR);
   pdf.setLineWidth(0.25);
   for (const c of spec.connectors) {
+    // Rattachement fonctionnel : trait pointillé
+    pdf.setLineDashPattern(c.dashed ? [1.4, 1.1] : [], 0);
     const sx = mm(c.flipH ? c.x + c.w : c.x);
     const sy = mm(c.flipV ? c.y + c.h : c.y);
     const ex = mm(c.flipH ? c.x : c.x + c.w);
@@ -94,6 +109,8 @@ export async function exportFlowToPdfVector(
       );
     }
   }
+  // Retour au trait plein pour les bordures de cartes
+  pdf.setLineDashPattern([], 0);
 
   for (const card of spec.cards) {
     const x = mm(card.x);
@@ -107,9 +124,27 @@ export async function exportFlowToPdfVector(
     pdf.setLineWidth(card.lineWidth * MM_PER_PT);
     pdf.roundedRect(x, y, w, h, radius, radius, "FD");
 
+    // Pastille d'initiales à gauche (parité avec la carte à l'écran),
+    // colorée à l'accent du niveau hiérarchique
+    let avatarWidth = 0;
+    if (showAvatars) {
+      const d = h * 0.46;
+      const cx = x + CARD_PADDING_MM + d / 2;
+      const cy = y + h / 2;
+      pdf.setFillColor(`#${card.lineColor}`);
+      pdf.circle(cx, cy, d / 2, "F");
+
+      const label = nameInitials(card.name) || "?";
+      pdf.setFont("helvetica", "bold");
+      pdf.setFontSize(Math.max(4, d * 2.835 * 0.42));
+      pdf.setTextColor("#ffffff");
+      pdf.text(label, cx, cy, { align: "center", baseline: "middle" });
+      avatarWidth = d + 1.6;
+    }
+
     // Bloc de texte centré verticalement : pôle / nom / poste
-    const textX = x + CARD_PADDING_MM;
-    const maxTextWidth = Math.max(1, w - CARD_PADDING_MM * 2);
+    const textX = x + CARD_PADDING_MM + avatarWidth;
+    const maxTextWidth = Math.max(1, w - CARD_PADDING_MM * 2 - avatarWidth);
     const lineGap = 0.8;
 
     interface Line {

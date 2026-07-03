@@ -1,20 +1,45 @@
-import type { OrgEdge } from "../types/orgchart";
+import { isHierarchyEdge, type OrgEdge } from "../types/orgchart";
 
 /**
- * Utilitaires de parcours de la hiérarchie. Les arêtes forment une forêt
- * (un seul responsable par personne, anti-cycle garanti par le store), mais
- * chaque fonction se protège quand même contre un fichier malformé.
+ * Utilitaires de parcours de la hiérarchie. Seuls les liens hiérarchiques
+ * sont considérés — les rattachements fonctionnels (pointillés, format v2)
+ * sont ignorés par toute la logique d'arbre. Les arêtes hiérarchiques forment
+ * une forêt (un seul responsable par personne, anti-cycle garanti par le
+ * store), mais chaque fonction se protège quand même contre un fichier
+ * malformé.
  */
 
-/** Map responsable → subordonnés directs. */
+/** Map responsable → subordonnés directs (liens hiérarchiques uniquement). */
 export function buildChildrenMap(edges: OrgEdge[]): Map<string, string[]> {
   const children = new Map<string, string[]>();
   for (const e of edges) {
+    if (!isHierarchyEdge(e)) continue;
     const list = children.get(e.source);
     if (list) list.push(e.target);
     else children.set(e.source, [e.target]);
   }
   return children;
+}
+
+/**
+ * Vrai si relier `source → target` (hiérarchiquement) créerait un cycle,
+ * c'est-à-dire si `target` est déjà un ancêtre hiérarchique de `source`.
+ */
+export function wouldCreateHierarchyCycle(edges: OrgEdge[], source: string, target: string): boolean {
+  const parentOf = new Map<string, string>();
+  for (const e of edges) {
+    if (isHierarchyEdge(e)) parentOf.set(e.target, e.source);
+  }
+
+  let current: string | undefined = source;
+  const seen = new Set<string>();
+  while (current) {
+    if (current === target) return true;
+    if (seen.has(current)) break;
+    seen.add(current);
+    current = parentOf.get(current);
+  }
+  return false;
 }
 
 /** Ensemble de tous les descendants (directs et indirects) d'un nœud. */

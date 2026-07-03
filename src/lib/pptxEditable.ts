@@ -44,6 +44,8 @@ export interface ConnectorSpec {
   flipH: boolean;
   flipV: boolean;
   color: string;
+  /** Rattachement fonctionnel : trait pointillé. */
+  dashed: boolean;
 }
 
 export interface EditableSlideSpec {
@@ -126,9 +128,10 @@ export function buildEditableSpec(
 
     // Départ : bas-centre du responsable. Arrivée : haut-centre du subordonné,
     // ou côté gauche pour les subordonnés empilés (disposition compacte).
+    const dashed = e.kind === "dotted";
     const sx = posX(source.position.x + CARD_WIDTH / 2);
     const sy = posY(source.position.y + CARD_HEIGHT);
-    const stacked = stackedIds.has(e.target);
+    const stacked = !dashed && stackedIds.has(e.target);
     const tx = stacked ? posX(target.position.x) : posX(target.position.x + CARD_WIDTH / 2);
     const ty = stacked ? posY(target.position.y + CARD_HEIGHT / 2) : posY(target.position.y);
 
@@ -140,6 +143,7 @@ export function buildEditableSpec(
       flipH: tx < sx,
       flipV: ty < sy,
       color: "B5B5C0",
+      dashed,
     });
   }
 
@@ -182,7 +186,7 @@ export async function exportFlowToPptxEditable(
       h: c.h,
       flipH: c.flipH,
       flipV: c.flipV,
-      line: { color: c.color, width: 1 },
+      line: { color: c.color, width: 1, dashType: c.dashed ? "dash" : "solid" },
     });
   }
 

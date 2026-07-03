@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
-import { NodeStyleVariantSchema, resolveDisplay, type OrgDisplayOptions } from "../types/orgchart";
+import { isHierarchyEdge, NodeStyleVariantSchema, resolveDisplay, type OrgDisplayOptions } from "../types/orgchart";
 import { computeOrgStats, computeTeamSize } from "../lib/stats";
 
 const NODE_STYLE_LABELS: Record<string, string> = {
@@ -181,6 +181,7 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
   const deleteNode = useOrgChartStore((s) => s.deleteNode);
   const deleteNodes = useOrgChartStore((s) => s.deleteNodes);
   const deleteEdge = useOrgChartStore((s) => s.deleteEdge);
+  const addDottedEdge = useOrgChartStore((s) => s.addDottedEdge);
   const setTheme = useOrgChartStore((s) => s.setTheme);
   const setSubtitle = useOrgChartStore((s) => s.setSubtitle);
   const setFooter = useOrgChartStore((s) => s.setFooter);
@@ -188,13 +189,29 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selected = selectedNodeIds.length === 1 ? nodes.find((n) => n.id === selectedNodeIds[0]) : undefined;
-  const parentEdge = selected ? edges.find((e) => e.target === selected.id) : undefined;
+  const parentEdge = selected
+    ? edges.find((e) => isHierarchyEdge(e) && e.target === selected.id)
+    : undefined;
 
   const stats = computeOrgStats(nodes, edges);
   const display = resolveDisplay(theme);
   const setDisplay = (patch: Partial<OrgDisplayOptions>) =>
     setTheme({ display: { ...theme.display, ...patch } });
   const teamSize = selected ? computeTeamSize(edges, selected.id) : null;
+
+  // Rattachements fonctionnels (liens pointillés, format v2) du membre sélectionné
+  const dottedManagers = selected
+    ? edges
+        .filter((e) => e.kind === "dotted" && e.target === selected.id)
+        .map((e) => ({ edge: e, manager: nodes.find((n) => n.id === e.source) }))
+    : [];
+  const dottedCandidates = selected
+    ? nodes.filter(
+        (n) =>
+          n.id !== selected.id &&
+          !edges.some((e) => e.source === n.id && e.target === selected.id)
+      )
+    : [];
 
   const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!selected) return;
@@ -690,6 +707,64 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
             />
           ))}
         </div>
+      </div>
+
+      <hr className="border-zinc-100 dark:border-zinc-900" />
+
+      {/* Rattachements fonctionnels (liens pointillés, format v2) */}
+      <div className="flex flex-col gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+          Rattachements fonctionnels
+        </span>
+        {dottedManagers.map(({ edge, manager }) => (
+          <div
+            key={edge.id}
+            className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 px-2.5 py-1.5"
+          >
+            <span className="truncate text-xs text-zinc-700 dark:text-zinc-300">
+              {manager?.data.name || "Membre supprimé"}
+            </span>
+            <button
+              onClick={() => deleteEdge(edge.id)}
+              title="Retirer ce rattachement fonctionnel"
+              aria-label={`Retirer le rattachement fonctionnel à ${manager?.data.name ?? "ce membre"}`}
+              className="shrink-0 rounded-md p-0.5 text-zinc-400 transition-colors hover:text-red-500 hover:bg-red-500/10 cursor-pointer"
+            >
+              <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        ))}
+        {dottedCandidates.length > 0 && (
+          <div className="relative">
+            <select
+              value=""
+              aria-label="Ajouter un rattachement fonctionnel"
+              onChange={(e) => {
+                if (e.target.value) addDottedEdge(e.target.value, selected.id);
+              }}
+              className={selectClass}
+            >
+              <option value="">Ajouter un rattachement…</option>
+              {dottedCandidates.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.data.name || "Sans nom"}
+                  {n.data.role ? ` — ${n.data.role}` : ""}
+                </option>
+              ))}
+            </select>
+            <div className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-zinc-400">
+              <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+        )}
+        <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+          Trait pointillé sur l'organigramme (n+1 fonctionnel, mission transverse). N'affecte ni la
+          hiérarchie, ni les statistiques, ni la colonne Responsable du CSV.
+        </p>
       </div>
 
       <hr className="border-zinc-100 dark:border-zinc-900" />

@@ -8,6 +8,7 @@ import { useOrgChartStore } from "./store/useOrgChartStore";
 import { saveDraft, loadDraft, clearDraft } from "./lib/db";
 import { computeHiddenNodeIds } from "./lib/hierarchy";
 import { TemplatePicker } from "./components/TemplatePicker";
+import { Directory } from "./components/Directory";
 import { createBlankChart } from "./templates/blank";
 
 const AUTOSAVE_DEBOUNCE_MS = 1500;
@@ -20,6 +21,7 @@ function App() {
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [showGroups, setShowGroups] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
+  const [directoryOpen, setDirectoryOpen] = useState(false);
 
   // Gestion du thème de l'éditeur (clair / sombre)
   const [themeMode, setThemeMode] = useState<"light" | "dark">(() => {
@@ -103,6 +105,12 @@ function App() {
         return;
       }
 
+      if (e.key === "Escape" && directoryOpen) {
+        e.preventDefault();
+        setDirectoryOpen(false);
+        return;
+      }
+
       if (mod && (e.key === "s" || e.key === "o")) {
         e.preventDefault();
         document
@@ -143,8 +151,8 @@ function App() {
           if (e.key === "Tab") {
             addNode(id);
           } else {
-            // Collègue : même responsable que le membre sélectionné (racine si aucun)
-            addNode(edges.find((ed) => ed.target === id)?.source);
+            // Collègue : même responsable hiérarchique que le membre sélectionné (racine si aucun)
+            addNode(edges.find((ed) => ed.kind !== "dotted" && ed.target === id)?.source);
           }
           return;
         }
@@ -171,7 +179,7 @@ function App() {
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [undo, redo, selectedNodeIds, deleteNodes, nodes, setNodePosition, presentationMode, addNode, edges]);
+  }, [undo, redo, selectedNodeIds, deleteNodes, nodes, setNodePosition, presentationMode, directoryOpen, addNode, edges]);
 
   const handleRestoreDraft = async () => {
     const draft = await loadDraft();
@@ -212,7 +220,12 @@ function App() {
             onToggleTheme={() => setThemeMode((m) => (m === "light" ? "dark" : "light"))}
             showGroups={showGroups}
             onToggleGroups={() => setShowGroups((v) => !v)}
-            onTogglePresentation={() => setPresentationMode(true)}
+            onTogglePresentation={() => {
+              setDirectoryOpen(false);
+              setPresentationMode(true);
+            }}
+            directoryOpen={directoryOpen}
+            onToggleDirectory={() => setDirectoryOpen((v) => !v)}
           />
         )}
 
@@ -276,6 +289,11 @@ function App() {
         <div className="flex min-h-0 flex-1 relative">
           <div className="relative min-w-0 flex-1 h-full">
             <Canvas ref={canvasRef} themeMode={themeMode} showGroups={showGroups} />
+
+            {/* Vue annuaire : surcouche du canvas (le canvas reste monté) */}
+            {directoryOpen && !presentationMode && (
+              <Directory themeMode={themeMode} onClose={() => setDirectoryOpen(false)} />
+            )}
 
             {/* Chip « branches repliées » : rappel + tout déplier en un clic */}
             {hiddenCount > 0 && (

@@ -1,11 +1,16 @@
-import type { OrgEdge, OrgNode, OrgNodeStyle, OrgTheme } from "../types/orgchart";
+import { isHierarchyEdge, type OrgEdge, type OrgNode, type OrgNodeStyle, type OrgTheme } from "../types/orgchart";
 
-/** Calcule la profondeur de chaque nœud par BFS depuis les racines (nœuds sans parent). */
+/**
+ * Calcule la profondeur de chaque nœud par BFS depuis les racines (nœuds sans
+ * parent). Seuls les liens hiérarchiques comptent — un rattachement
+ * fonctionnel ne change ni le niveau ni la couleur de palette.
+ */
 export function computeLevels(nodes: OrgNode[], edges: OrgEdge[]): Map<string, number> {
   const childrenOf = new Map<string, string[]>();
   const hasParent = new Set<string>();
 
   for (const e of edges) {
+    if (!isHierarchyEdge(e)) continue;
     if (!childrenOf.has(e.source)) childrenOf.set(e.source, []);
     childrenOf.get(e.source)!.push(e.target);
     hasParent.add(e.target);

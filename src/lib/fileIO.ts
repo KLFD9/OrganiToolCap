@@ -1,4 +1,4 @@
-import { OrgChartFileSchema, type OrgChartFile } from "../types/orgchart";
+import { migrateOrgChartFile, OrgChartFileSchema, type OrgChartFile } from "../types/orgchart";
 
 declare global {
   interface Window {
@@ -89,7 +89,8 @@ export function parseOrgChartFile(raw: string): OrgChartFile {
     "format" in json &&
     "version" in json &&
     (json as { format?: unknown }).format === "orgchart" &&
-    (json as { version?: unknown }).version !== 1
+    (json as { version?: unknown }).version !== 1 &&
+    (json as { version?: unknown }).version !== 2
   ) {
     throw new FileFormatError(
       "Ce fichier a été créé avec une version plus récente (ou incompatible) du format. Mise à jour de l'application requise."
@@ -101,7 +102,8 @@ export function parseOrgChartFile(raw: string): OrgChartFile {
     throw new FileFormatError("Fichier non reconnu : le format ne correspond pas à un organigramme valide.");
   }
 
-  return result.data;
+  // Migration transparente des fichiers v1 vers la version courante
+  return migrateOrgChartFile(result.data);
 }
 
 function isPptx(name: string): boolean {
