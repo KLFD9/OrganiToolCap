@@ -16,7 +16,7 @@ Toujours lancer `npm test` et `npm run lint` avant de considérer une modificati
 ## Invariants produit (ne jamais casser)
 
 1. **Aucun appel réseau, aucune télémétrie.** La souveraineté des données (noms, e-mails, photos RH) est l'argument n° 1 du produit. N'introduire ni fetch externe, ni CDN, ni analytics. Les polices sont bundlées via @fontsource (sous-ensembles latin + latin-ext uniquement).
-2. **Le fichier est la source de vérité.** Le format `.orgchart.json` est versionné (v2 courante, `ORG_CHART_VERSION`) et validé par zod (`src/types/orgchart.ts`). Les fichiers v1 sont migrés à l'ouverture (`migrateOrgChartFile`, appelée par `parseOrgChartFile`). Évolution acceptée sans montée de version : champs **optionnels additifs** dont l'absence a une sémantique claire (précédents : `layout.mode`, `theme.display`, `edge.kind`). Tout changement incompatible exige une montée de version avec migration.
+2. **Le fichier est la source de vérité.** Le format `.orgchart.json` est versionné (v2 courante, `ORG_CHART_VERSION`) et validé par zod (`src/types/orgchart.ts`). Les fichiers v1 sont migrés à l'ouverture (`migrateOrgChartFile`, appelée par `parseOrgChartFile`). Évolution acceptée sans montée de version : champs **optionnels additifs** dont l'absence a une sémantique claire (précédents : `layout.mode`, `theme.display`, `edge.kind`, `layout.page`, `meta.chromeLayout`, `frames`). Tout changement incompatible exige une montée de version avec migration.
    Le repli de branches (`collapsedNodeIds`) est un état de vue **non persisté** — mais l'export est WYSIWYG : il exclut les branches repliées.
 3. **Liens : deux natures (v2).** `edge.kind` absent ou `"hierarchy"` = rattachement hiérarchique (parent unique, anti-cycle) ; `"dotted"` = rattachement fonctionnel (plusieurs autorisés, trait pointillé). **Toute logique d'arbre doit filtrer via `isHierarchyEdge`/`hierarchyEdges`** (types/orgchart.ts) — `lib/hierarchy.ts` le fait déjà pour ses consommateurs ; attention aux parcours d'edges directs (parentOf, `e.target === id`…).
 4. **IndexedDB n'est qu'un brouillon de confort** (restauration après fermeture accidentelle), pas un stockage principal.
@@ -25,14 +25,18 @@ Toujours lancer `npm test` et `npm run lint` avant de considérer une modificati
 7. **Piège de layout NodeCard** : la poignée source React Flow est au bas-centre des cartes — tout élément ajouté à cet endroit doit être décalé et porter la classe `nodrag`, sinon il intercepte l'edge-drop et déclenche un déplacement de carte (bug corrigé sur la pastille de repli).
 8. **WYSIWYG canvas ↔ PDF vectoriel** : `lib/pdfVector.ts` est une **réplique proportionnelle** de NodeCard (dimensions exprimées en px de la carte 240 px × échelle `mmPerPx`). Toute modification du design de NodeCard (paddings, tailles de police, badge, avatar) doit être répercutée dans pdfVector — et `NAME_FONT_PX` (readability.ts) doit rester la taille réelle du nom à l'écran, car la jauge, le cadre de page (`COMFORT_MM_PER_PX`) et l'optimiseur en dépendent.
 9. **Format de page** : `layout.page` (optionnel additif) est la cible unique partagée par le cadre de page (PageGuide), « Réorganiser pour la page » (`applyAutoLayoutForPage`) et les valeurs par défaut de l'ExportDialog. Ne pas réintroduire un état de format local non synchronisé.
+10. **Frames multi-pages** : `frames` (optionnel additif) — absence = page implicite historique. L'appartenance d'une carte à une page est **géométrique** (frame contenant le centre de la carte, `computeFrameMembership` dans `lib/frames.ts`) : ne jamais persister d'assignation carte → page. L'ordre du tableau `frames` est l'ordre des pages à l'export. Le chrome d'une page hérite de celui du document élément par élément (`frame.meta` / `frame.chromeLayout` priment).
 
 ## Architecture
 
 ```
 src/
-  components/   Canvas (React Flow : edge-drop, menus contextuels), NodeCard,
-                Toolbar, Inspector, Directory (annuaire éditable), TemplatePicker,
-                ExportDialog, ContextMenu, GroupBackground, ErrorBoundary
+  components/   Canvas (React Flow : edge-drop, menus contextuels, frames,
+                guides magnétiques), NodeCard, PageGuide (feuille implicite ou
+                frame), ChromeElement (titre/logos/footer manipulables),
+                PageRail (navigateur de pages), Toolbar, Inspector,
+                Directory (annuaire éditable), TemplatePicker, ExportDialog,
+                ContextMenu, GroupBackground, ErrorBoundary
   store/        useOrgChartStore (Zustand) — undo/redo 50 niveaux,
                 sérialise vers/depuis OrgChartFile sans perte
   lib/          fileIO (ouvrir/enregistrer + zod), csvImport, csvExport
@@ -40,9 +44,12 @@ src/
                 pdfVector (PDF natif via buildEditableSpec), pptxExport/
                 pptxEditable/pptxImport, elkLayout, compactLayout,
                 readability, exportLayout (optimiseur + grille page-aware),
+                chromeLayout (résolveur en-tête/pied partagé canvas ↔ PDF),
+                frames (multi-pages : géométrie, appartenance, pages d'export),
+                smartGuides (aimantation), diffusionPack (zip PDF+PNG+CSV),
                 nodeStyle, groups, hierarchy (repli de branches),
                 stats (effectifs), db (Dexie)
-  templates/    thèmes bundlés (themes.ts), page vierge, démo ATHANOR
+  templates/    thèmes bundlés (themes.ts), page vierge, démo Société Horizon
   types/        schéma zod OrgChartFile (format versionné)
 ```
 

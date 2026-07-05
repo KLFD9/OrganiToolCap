@@ -120,6 +120,38 @@ export const ChromeLayoutSchema = z.object({
 export type ChromeLayout = z.infer<typeof ChromeLayoutSchema>;
 export type ChromeKey = keyof ChromeLayout;
 
+/** Format de page cible (cadre de page, frames, export). */
+export const PageSetupSchema = z.object({
+  format: z.enum(["a4", "a3"]),
+  orientation: z.enum(["portrait", "landscape"]),
+  margin: z.number(),
+});
+
+/**
+ * Frame de page (multi-pages, optionnel additif v2) : une feuille A4/A3 posée
+ * sur le canvas infini. `position` est le coin haut-gauche de la feuille en px
+ * canvas (échelle « confort » : la feuille imprime son contenu à ≥ 6,5 pt s'il
+ * tient dans sa zone utile). Une carte appartient au frame qui contient son
+ * centre — pas d'assignation persistée. L'ordre du tableau est l'ordre des
+ * pages à l'export.
+ */
+export const OrgFrameSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  position: z.object({ x: z.number(), y: z.number() }),
+  page: PageSetupSchema,
+  // Titre / sous-titre propres à la page ; absents = hérités du document.
+  meta: z
+    .object({
+      title: z.string().optional(),
+      subtitle: z.string().optional(),
+    })
+    .optional(),
+  // Disposition d'en-tête propre à la page ; absente = celle du document.
+  chromeLayout: ChromeLayoutSchema.optional(),
+});
+export type OrgFrame = z.infer<typeof OrgFrameSchema>;
+
 export const OrgChartFileSchema = z.object({
   format: z.literal("orgchart"),
   // v1 : liens sans `kind`. v2 : liens hiérarchiques ou pointillés.
@@ -148,14 +180,11 @@ export const OrgChartFileSchema = z.object({
     // Format de page cible du document (cadre de page dans le canvas,
     // rangement automatique et valeurs par défaut de l'export).
     // Optionnel et additif : les fichiers antérieurs restent valides.
-    page: z
-      .object({
-        format: z.enum(["a4", "a3"]),
-        orientation: z.enum(["portrait", "landscape"]),
-        margin: z.number(),
-      })
-      .optional(),
+    page: PageSetupSchema.optional(),
   }),
+  // Pages explicites (multi-pages). Optionnel et additif : absence = document
+  // « à une page implicite » qui suit le contenu (comportement historique).
+  frames: z.array(OrgFrameSchema).optional(),
 });
 export type OrgChartFile = z.infer<typeof OrgChartFileSchema>;
 

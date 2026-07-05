@@ -9,6 +9,7 @@ import { saveDraft, loadDraft, clearDraft } from "./lib/db";
 import { computeHiddenNodeIds } from "./lib/hierarchy";
 import { TemplatePicker } from "./components/TemplatePicker";
 import { Directory } from "./components/Directory";
+import { PageRail } from "./components/PageRail";
 import { createBlankChart } from "./templates/blank";
 
 const AUTOSAVE_DEBOUNCE_MS = 1500;
@@ -296,6 +297,9 @@ function App() {
             {directoryOpen && !presentationMode && (
               <Directory themeMode={themeMode} onClose={() => setDirectoryOpen(false)} />
             )}
+
+            {/* Navigateur de pages (mode multi-pages) */}
+            {!presentationMode && !directoryOpen && <PageRail themeMode={themeMode} />}
 
             {/* Chip « branches repliées » : rappel + tout déplier en un clic */}
             {hiddenCount > 0 && (

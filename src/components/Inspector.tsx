@@ -17,7 +17,8 @@ import {
   Users,
   Briefcase,
   GitFork,
-  Trash
+  Trash,
+  RotateCcw
 } from "lucide-react";
 
 const NODE_STYLE_LABELS: Record<string, string> = {
@@ -203,6 +204,7 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
   const setTheme = useOrgChartStore((s) => s.setTheme);
   const setSubtitle = useOrgChartStore((s) => s.setSubtitle);
   const setFooter = useOrgChartStore((s) => s.setFooter);
+  const resetChromeLayout = useOrgChartStore((s) => s.resetChromeLayout);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -332,7 +334,7 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
               <input
                 type="text"
                 value={meta.subtitle ?? ""}
-                placeholder="ex : Groupe ATHANOR — Filiale Sud"
+                placeholder="ex : Groupe Horizon — Filiale Sud"
                 onChange={(e) => setSubtitle(e.target.value)}
                 className={inputClass}
               />
@@ -363,6 +365,20 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
               onChange={(url) => setTheme({ secondaryLogoUrl: url })}
               themeMode={themeMode}
             />
+
+            {meta.chromeLayout && (
+              <button
+                onClick={resetChromeLayout}
+                className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold transition-colors cursor-pointer ${
+                  themeMode === "dark"
+                    ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800"
+                    : "border-zinc-200 bg-zinc-50/60 text-zinc-600 hover:bg-zinc-100"
+                }`}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                <span>Réinitialiser la disposition de l'en-tête</span>
+              </button>
+            )}
           </div>
         </div>
 

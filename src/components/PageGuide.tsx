@@ -26,6 +26,14 @@ export interface PageGuideData extends Record<string, unknown> {
   fontPt: number;
   rating: ReadabilityRating;
   dark: boolean;
+  /**
+   * Nom de la page (mode multi-pages) : affiché en tête d'étiquette et
+   * utilisé comme poignée de déplacement de la feuille (classe
+   * frame-drag-handle, cf. dragHandle du nœud React Flow).
+   */
+  frameName?: string;
+  /** Nombre de cartes appartenant à la page (mode multi-pages). */
+  memberCount?: number;
 }
 
 const RATING_STYLE: Record<ReadabilityRating, { chip: string; text: string }> = {
@@ -40,7 +48,7 @@ const RATING_LABEL: Record<ReadabilityRating, string> = {
   bad: "illisible",
 };
 
-function PageGuideImpl({ data }: NodeProps & { data: PageGuideData }) {
+function PageGuideImpl({ data, selected }: NodeProps & { data: PageGuideData }) {
   const {
     width,
     height,
@@ -54,16 +62,36 @@ function PageGuideImpl({ data }: NodeProps & { data: PageGuideData }) {
     fontPt,
     rating,
     dark,
+    frameName,
+    memberCount,
   } = data;
   const ratingStyle = RATING_STYLE[rating];
+  const isFrame = frameName !== undefined;
 
   return (
     <div className="pointer-events-none relative select-none" style={{ width, height }}>
-      {/* Étiquette au-dessus de la feuille */}
+      {/* Étiquette au-dessus de la feuille — poignée de déplacement en mode multi-pages */}
       <div
-        className="absolute -top-12 left-0 flex items-center gap-2 font-mono text-[13px] tracking-wide"
+        className={`absolute -top-12 left-0 flex items-center gap-2 font-mono text-[13px] tracking-wide ${
+          isFrame ? "frame-drag-handle pointer-events-auto cursor-move" : ""
+        }`}
         style={{ color: dark ? "#71717a" : "#a1a1aa" }}
+        title={isFrame ? "Glisser pour déplacer la page et son contenu" : undefined}
       >
+        {isFrame && (
+          <span
+            className="rounded-lg px-2.5 py-1 font-bold transition-shadow hover:shadow-md"
+            style={{
+              background: dark ? "rgba(24, 24, 27, 0.92)" : "#ffffff",
+              border: `1px solid ${dark ? "rgba(157, 131, 203, 0.4)" : "rgba(109, 74, 174, 0.35)"}`,
+              color: dark ? "#c4b5e0" : "#6D4AAE",
+              boxShadow: dark ? "0 2px 8px rgba(0,0,0,0.4)" : "0 2px 8px rgba(24,24,27,0.08)",
+            }}
+          >
+            {frameName}
+            {memberCount !== undefined && memberCount > 0 ? ` · ${memberCount}` : ""}
+          </span>
+        )}
         <span>{label}</span>
         <span
           className="rounded-full px-2.5 py-0.5 font-bold"
@@ -78,42 +106,43 @@ function PageGuideImpl({ data }: NodeProps & { data: PageGuideData }) {
         className="absolute inset-0"
         style={{
           background: dark ? "rgba(255, 255, 255, 0.025)" : "rgba(255, 255, 255, 0.6)",
-          border: `1.5px solid ${dark ? "rgba(255,255,255,0.09)" : "rgba(24,24,27,0.10)"}`,
+          border: `1.5px solid ${
+            selected && isFrame
+              ? "rgba(109, 74, 174, 0.75)"
+              : dark
+              ? "rgba(255,255,255,0.09)"
+              : "rgba(24,24,27,0.10)"
+          }`,
           borderRadius: 6,
           boxShadow: dark ? "0 20px 60px -20px rgba(0,0,0,0.5)" : "0 20px 60px -25px rgba(24,24,27,0.15)",
         }}
       />
 
-      {/* Bande d'en-tête (titre / logos) */}
+      {/* Les bandes d'en-tête / pied ne portent plus de libellé : les vrais
+          éléments (titre, sous-titre, logos, footer) y sont rendus et
+          manipulables — un placeholder ferait doublon derrière eux. Un filet
+          discret délimite la bande d'en-tête quand elle existe. */}
       {hasHeader && (
         <div
-          className="absolute flex items-center justify-center font-mono text-[11px] uppercase tracking-widest"
+          className="absolute"
           style={{
             left: insetLeft,
             right: insetRight,
-            top: 0,
-            height: insetTop,
-            color: dark ? "rgba(255,255,255,0.16)" : "rgba(24,24,27,0.18)",
+            top: insetTop,
+            borderTop: `1px dashed ${dark ? "rgba(255,255,255,0.07)" : "rgba(24,24,27,0.07)"}`,
           }}
-        >
-          en-tête · titre &amp; logos
-        </div>
+        />
       )}
-
-      {/* Bande de pied de page */}
       {hasFooter && (
         <div
-          className="absolute flex items-center justify-center font-mono text-[10px] uppercase tracking-widest"
+          className="absolute"
           style={{
             left: insetLeft,
             right: insetRight,
-            bottom: 0,
-            height: insetBottom,
-            color: dark ? "rgba(255,255,255,0.13)" : "rgba(24,24,27,0.14)",
+            bottom: insetBottom,
+            borderBottom: `1px dashed ${dark ? "rgba(255,255,255,0.07)" : "rgba(24,24,27,0.07)"}`,
           }}
-        >
-          pied de page
-        </div>
+        />
       )}
 
       {/* Zone utile : le contenu doit tenir dans les pointillés */}

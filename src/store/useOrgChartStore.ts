@@ -6,16 +6,30 @@ import {
   type ChromeKey,
   type OrgChartFile,
   type OrgEdge,
+  type OrgFrame,
   type OrgNode,
   type OrgNodeData,
   type OrgNodeStyle,
   type OrgTheme,
 } from "../types/orgchart";
-import { athanorDemo } from "../templates/athanorDemo";
+import { demoCompany } from "../templates/demoCompany";
 import { layoutWithElk } from "../lib/elkLayout";
 import { layoutCompact } from "../lib/compactLayout";
-import { computeHiddenNodeIds, wouldCreateHierarchyCycle } from "../lib/hierarchy";
-import { availableAreaForSetup, DEFAULT_PAGE, type PageSetup } from "../lib/readability";
+import { computeDescendants, computeHiddenNodeIds, wouldCreateHierarchyCycle } from "../lib/hierarchy";
+import {
+  availableAreaForSetup,
+  chromeOffsetsForSetup,
+  COMFORT_MM_PER_PX,
+  DEFAULT_PAGE,
+  type PageSetup,
+} from "../lib/readability";
+import {
+  computeFrameMembership,
+  defaultFrameName,
+  FRAME_GAP_PX,
+  nextFramePosition,
+  nodesBounds,
+} from "../lib/frames";
 
 let nodeCounter = 0;
 function generateId(prefix: string): string {
@@ -30,6 +44,7 @@ interface HistorySnapshot {
   nodes: OrgNode[];
   edges: OrgEdge[];
   layout: OrgChartFile["layout"];
+  frames: OrgFrame[];
 }
 
 const MAX_HISTORY = 50;
@@ -41,6 +56,8 @@ interface OrgChartState {
   nodes: OrgNode[];
   edges: OrgEdge[];
   layout: OrgChartFile["layout"];
+  /** Pages explicites (multi-pages). Vide = page implicite historique. */
+  frames: OrgFrame[];
 
   fileHandle?: FileSystemFileHandle;
   isDirty: boolean;
@@ -125,6 +142,28 @@ interface OrgChartState {
   // -- repli de branches --
   toggleCollapsed: (id: string) => void;
   expandAll: () => void;
+
+  // -- frames multi-pages --
+  /** Ajoute une page (feuille posée à droite des pages ou du contenu). Renvoie son id. */
+  addFrame: (page?: PageSetup) => string;
+  updateFrame: (id: string, patch: Partial<Omit<OrgFrame, "id">>) => void;
+  /** Supprime la page ; les cartes restent sur le canvas (hors page). */
+  deleteFrame: (id: string) => void;
+  /** Déplace la feuille ET les cartes membres du même delta (une entrée d'historique). */
+  moveFrameWithContent: (id: string, position: { x: number; y: number }, memberIds: string[]) => void;
+  /** Réordonne la page dans l'ordre d'export (-1 = avancer, +1 = reculer). */
+  reorderFrame: (id: string, direction: -1 | 1) => void;
+  /** Duplique la page avec son contenu (cartes + liens internes). Renvoie l'id de la copie. */
+  duplicateFrame: (id: string) => string | undefined;
+  /** Position/taille d'un élément d'en-tête propre à une page. */
+  setFrameChromeElement: (frameId: string, key: ChromeKey, element: ChromeElement) => void;
+  /**
+   * « Créer une page pour cette branche » : nouvelle page contenant une copie
+   * du sous-arbre du responsable, rangée automatiquement dans la zone utile.
+   */
+  addFrameForBranch: (rootId: string) => Promise<string | undefined>;
+  /** Range le contenu d'une page (arbre vertical) dans sa zone utile. */
+  arrangeFrame: (frameId: string) => Promise<void>;
 }
 
 function touch(state: { meta: OrgChartFile["meta"] }) {
@@ -140,18 +179,20 @@ function pushHistory(s: OrgChartState): Pick<OrgChartState, "past" | "future"> {
     nodes: s.nodes,
     edges: s.edges,
     layout: s.layout,
+    frames: s.frames,
   };
   return { past: [...s.past, snapshot].slice(-MAX_HISTORY), future: [] };
 }
 
 
 export const useOrgChartStore = create<OrgChartState>((set, get) => ({
-  meta: athanorDemo.meta,
-  templateId: athanorDemo.templateId,
-  theme: athanorDemo.theme,
-  nodes: athanorDemo.nodes,
-  edges: athanorDemo.edges,
-  layout: athanorDemo.layout,
+  meta: demoCompany.meta,
+  templateId: demoCompany.templateId,
+  theme: demoCompany.theme,
+  nodes: demoCompany.nodes,
+  edges: demoCompany.edges,
+  layout: demoCompany.layout,
+  frames: demoCompany.frames ?? [],
 
   fileHandle: undefined,
   isDirty: false,
@@ -173,6 +214,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
         nodes: s.nodes,
         edges: s.edges,
         layout: s.layout,
+        frames: s.frames,
       };
       return {
         ...previous,
@@ -194,6 +236,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
         nodes: s.nodes,
         edges: s.edges,
         layout: s.layout,
+        frames: s.frames,
       };
       return {
         ...next,
@@ -212,6 +255,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       nodes: file.nodes,
       edges: file.edges,
       layout: file.layout,
+      frames: file.frames ?? [],
       fileHandle: handle,
       isDirty: false,
       selectedNodeIds: [],
@@ -231,6 +275,8 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       nodes: s.nodes,
       edges: s.edges,
       layout: s.layout,
+      // Additif : omis tant qu'aucune page explicite n'existe (fichiers stables)
+      ...(s.frames.length > 0 ? { frames: s.frames } : {}),
     };
   },
 
@@ -289,11 +335,17 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
   setTemplateId: (templateId) => set((s) => ({ ...pushHistory(s), templateId, isDirty: true })),
 
   setNodePosition: (id, position) =>
-    set((s) => ({
-      ...pushHistory(s),
-      nodes: s.nodes.map((n) => (n.id === id ? { ...n, position } : n)),
-      isDirty: true,
-    })),
+    set((s) => {
+      // Garde : la sélection peut contenir des nœuds d'édition (éléments de
+      // chrome, cadre de page) qui ne sont pas des membres — ne pas créer
+      // d'entrée d'historique vide pour eux.
+      if (!s.nodes.some((n) => n.id === id)) return s;
+      return {
+        ...pushHistory(s),
+        nodes: s.nodes.map((n) => (n.id === id ? { ...n, position } : n)),
+        isDirty: true,
+      };
+    }),
 
   updateNodeData: (id, data) =>
     set((s) => ({
@@ -429,6 +481,8 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
   deleteNodes: (ids) =>
     set((s) => {
       const idSet = new Set(ids);
+      // Rien à supprimer (sélection composée d'éléments d'édition uniquement)
+      if (!s.nodes.some((n) => idSet.has(n.id))) return s;
       return {
         ...pushHistory(s),
         nodes: s.nodes.filter((n) => !idSet.has(n.id)),
@@ -630,4 +684,281 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
     }),
 
   expandAll: () => set({ collapsedNodeIds: [] }),
+
+  addFrame: (page) => {
+    const id = generateId("frame");
+    set((s) => {
+      const framePage = page ?? s.layout.page ?? DEFAULT_PAGE;
+      const frame: OrgFrame = {
+        id,
+        name: defaultFrameName(s.frames),
+        position: nextFramePosition(s.frames, framePage, nodesBounds(s.nodes)),
+        page: framePage,
+      };
+      return {
+        ...pushHistory(s),
+        frames: [...s.frames, frame],
+        // Une page invisible n'aurait aucun sens : réaffiche le cadre de page
+        pageGuide: true,
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+      };
+    });
+    return id;
+  },
+
+  updateFrame: (id, patch) =>
+    set((s) => {
+      if (!s.frames.some((f) => f.id === id)) return s;
+      return {
+        ...pushHistory(s),
+        frames: s.frames.map((f) => (f.id === id ? { ...f, ...patch } : f)),
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+      };
+    }),
+
+  deleteFrame: (id) =>
+    set((s) => {
+      if (!s.frames.some((f) => f.id === id)) return s;
+      return {
+        ...pushHistory(s),
+        frames: s.frames.filter((f) => f.id !== id),
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+      };
+    }),
+
+  moveFrameWithContent: (id, position, memberIds) =>
+    set((s) => {
+      const frame = s.frames.find((f) => f.id === id);
+      if (!frame) return s;
+      const dx = position.x - frame.position.x;
+      const dy = position.y - frame.position.y;
+      if (dx === 0 && dy === 0) return s;
+      const members = new Set(memberIds);
+      return {
+        ...pushHistory(s),
+        frames: s.frames.map((f) => (f.id === id ? { ...f, position } : f)),
+        nodes: s.nodes.map((n) =>
+          members.has(n.id) ? { ...n, position: { x: n.position.x + dx, y: n.position.y + dy } } : n
+        ),
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+      };
+    }),
+
+  reorderFrame: (id, direction) =>
+    set((s) => {
+      const index = s.frames.findIndex((f) => f.id === id);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= s.frames.length) return s;
+      const frames = [...s.frames];
+      [frames[index], frames[target]] = [frames[target], frames[index]];
+      return {
+        ...pushHistory(s),
+        frames,
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+      };
+    }),
+
+  duplicateFrame: (id) => {
+    const s = get();
+    const source = s.frames.find((f) => f.id === id);
+    if (!source) return undefined;
+
+    const newFrameId = generateId("frame");
+    const framePage = source.page;
+    const position = nextFramePosition(s.frames, framePage);
+    const dx = position.x - source.position.x;
+    const dy = position.y - source.position.y;
+
+    // Contenu de la page source : appartenance géométrique (centre dans la feuille)
+    const membership = computeFrameMembership(s.frames, s.nodes);
+    const memberIds = new Set(membership.byFrame.get(id) ?? []);
+
+    const idMap = new Map<string, string>();
+    const clonedNodes: OrgNode[] = s.nodes
+      .filter((n) => memberIds.has(n.id))
+      .map((n) => {
+        const cloneId = generateId("node");
+        idMap.set(n.id, cloneId);
+        return {
+          ...n,
+          id: cloneId,
+          position: { x: n.position.x + dx, y: n.position.y + dy },
+          data: { ...n.data },
+          styleOverride: n.styleOverride ? { ...n.styleOverride } : undefined,
+        };
+      });
+    // Seuls les liens internes à la page sont clonés (les liens vers
+    // l'extérieur créeraient des doublons hiérarchiques).
+    const clonedEdges: OrgEdge[] = s.edges
+      .filter((e) => memberIds.has(e.source) && memberIds.has(e.target))
+      .map((e) => ({
+        id: generateId("edge"),
+        source: idMap.get(e.source)!,
+        target: idMap.get(e.target)!,
+        ...(e.kind ? { kind: e.kind } : {}),
+      }));
+
+    const clone: OrgFrame = {
+      ...source,
+      id: newFrameId,
+      name: `${source.name} (copie)`,
+      position,
+      meta: source.meta ? { ...source.meta } : undefined,
+      chromeLayout: source.chromeLayout ? { ...source.chromeLayout } : undefined,
+    };
+
+    set({
+      ...pushHistory(s),
+      frames: [...s.frames, clone],
+      nodes: [...s.nodes, ...clonedNodes],
+      edges: [...s.edges, ...clonedEdges],
+      pageGuide: true,
+      isDirty: true,
+      meta: { ...s.meta, updatedAt: new Date().toISOString() },
+    });
+    return newFrameId;
+  },
+
+  setFrameChromeElement: (frameId, key, element) =>
+    set((s) => {
+      const frame = s.frames.find((f) => f.id === frameId);
+      if (!frame) return s;
+      return {
+        ...pushHistory(s),
+        frames: s.frames.map((f) =>
+          f.id === frameId ? { ...f, chromeLayout: { ...f.chromeLayout, [key]: element } } : f
+        ),
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+      };
+    }),
+
+  addFrameForBranch: async (rootId) => {
+    const s = get();
+    const root = s.nodes.find((n) => n.id === rootId);
+    if (!root) return undefined;
+
+    const branchIds = new Set([rootId, ...computeDescendants(s.edges, rootId)]);
+    const branchNodes = s.nodes.filter((n) => branchIds.has(n.id));
+    const branchEdges = s.edges.filter((e) => branchIds.has(e.source) && branchIds.has(e.target));
+
+    // Copie du sous-arbre, rangée en arbre vertical
+    const idMap = new Map<string, string>();
+    const copies: OrgNode[] = branchNodes.map((n) => {
+      const cloneId = generateId("node");
+      idMap.set(n.id, cloneId);
+      return {
+        ...n,
+        id: cloneId,
+        data: { ...n.data },
+        styleOverride: n.styleOverride ? { ...n.styleOverride } : undefined,
+      };
+    });
+    const copiedEdges: OrgEdge[] = branchEdges.map((e) => ({
+      id: generateId("edge"),
+      source: idMap.get(e.source)!,
+      target: idMap.get(e.target)!,
+      ...(e.kind ? { kind: e.kind } : {}),
+    }));
+    const laidOut = await layoutWithElk(copies, copiedEdges, "TB");
+
+    // L'état a pu changer pendant le calcul elk : on repart du présent
+    const current = get();
+    const framePage = current.layout.page ?? DEFAULT_PAGE;
+    const frameId = generateId("frame");
+    // La page de branche est une page SUPPLÉMENTAIRE : toujours posée à côté
+    // (jamais sur le contenu existant, contrairement à la première page vide
+    // qui, elle, enveloppe l'organigramme).
+    const contentBounds = nodesBounds(current.nodes);
+    const position =
+      current.frames.length > 0
+        ? nextFramePosition(current.frames, framePage)
+        : contentBounds
+        ? { x: contentBounds.x + contentBounds.width + FRAME_GAP_PX, y: contentBounds.y }
+        : { x: 0, y: 0 };
+
+    // Cale la copie dans la zone utile de la nouvelle feuille (px canvas =
+    // mm / COMFORT, mêmes règles d'en-tête que l'export).
+    const offsets = chromeOffsetsForSetup(framePage, {
+      title: current.meta.title,
+      footer: current.meta.footer,
+      logoUrl: current.theme.logoUrl,
+      secondaryLogoUrl: current.theme.secondaryLogoUrl,
+    });
+    const bounds = nodesBounds(laidOut);
+    const insetX = position.x + framePage.margin / COMFORT_MM_PER_PX;
+    const insetY = position.y + offsets.topOffset / COMFORT_MM_PER_PX;
+    const shiftX = insetX - (bounds?.x ?? 0);
+    const shiftY = insetY - (bounds?.y ?? 0);
+    const placed = laidOut.map((n) => ({
+      ...n,
+      position: { x: n.position.x + shiftX, y: n.position.y + shiftY },
+    }));
+
+    const frame: OrgFrame = {
+      id: frameId,
+      name: root.data.name || defaultFrameName(current.frames),
+      position,
+      page: framePage,
+      meta: { title: root.data.name || undefined },
+    };
+
+    set({
+      ...pushHistory(current),
+      frames: [...current.frames, frame],
+      nodes: [...current.nodes, ...placed],
+      edges: [...current.edges, ...copiedEdges],
+      pageGuide: true,
+      isDirty: true,
+      meta: { ...current.meta, updatedAt: new Date().toISOString() },
+    });
+    return frameId;
+  },
+
+  arrangeFrame: async (frameId) => {
+    const s = get();
+    const frame = s.frames.find((f) => f.id === frameId);
+    if (!frame) return;
+
+    // Membres de la page (appartenance géométrique) et liens internes
+    const membership = computeFrameMembership(s.frames, s.nodes);
+    const memberIds = new Set(membership.byFrame.get(frameId) ?? []);
+    if (memberIds.size === 0) return;
+    const members = s.nodes.filter((n) => memberIds.has(n.id));
+    const memberEdges = s.edges.filter((e) => memberIds.has(e.source) && memberIds.has(e.target));
+
+    const laidOut = await layoutWithElk(members, memberEdges, "TB");
+
+    // Recale le résultat dans la zone utile de la feuille
+    const current = get();
+    const liveFrame = current.frames.find((f) => f.id === frameId);
+    if (!liveFrame) return;
+    const offsets = chromeOffsetsForSetup(liveFrame.page, {
+      title: liveFrame.meta?.title ?? current.meta.title,
+      footer: current.meta.footer,
+      logoUrl: current.theme.logoUrl,
+      secondaryLogoUrl: current.theme.secondaryLogoUrl,
+    });
+    const bounds = nodesBounds(laidOut);
+    const shiftX = liveFrame.position.x + liveFrame.page.margin / COMFORT_MM_PER_PX - (bounds?.x ?? 0);
+    const shiftY = liveFrame.position.y + offsets.topOffset / COMFORT_MM_PER_PX - (bounds?.y ?? 0);
+    const posById = new Map(
+      laidOut.map((n) => [n.id, { x: n.position.x + shiftX, y: n.position.y + shiftY }])
+    );
+
+    set({
+      ...pushHistory(current),
+      nodes: current.nodes.map((n) => {
+        const position = posById.get(n.id);
+        return position ? { ...n, position } : n;
+      }),
+      isDirty: true,
+      meta: { ...current.meta, updatedAt: new Date().toISOString() },
+    });
+  },
 }));

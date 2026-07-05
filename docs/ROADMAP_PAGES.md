@@ -19,7 +19,7 @@ Le cadre de page actuel est un « frame Figma » embryonnaire : unique, implicit
 
 ---
 
-## Phase 1 — Chrome manipulable sur la page (EN COURS)
+## Phase 1 — Chrome manipulable sur la page (LIVRÉE)
 
 Le chaînon manquant du WYSIWYG : aujourd'hui titre/logos/footer sont dessinés par l'export à des positions codées en dur, et le cadre ne montre que des bandes grises.
 
@@ -34,22 +34,25 @@ Le chaînon manquant du WYSIWYG : aujourd'hui titre/logos/footer sont dessinés 
 - Le PPTX 16:9 garde ses positions par défaut en phase 1 (ratio différent du papier ; le mapping proportionnel est en 1.1).
 - Les défauts « centrés » sont mesurés par chaque moteur de rendu (canvas 2D vs jsPDF) : écart < 1 mm possible tant que l'élément n'a pas été déplacé ; dès qu'il l'est, la position stockée fait foi au dixième de mm.
 
-## Phase 2 — Frames multi-pages
+## Phase 2 — Frames multi-pages (LIVRÉE)
 
-- **Schéma** : `frames?: [{ id, name, position, page: PageSetup, chromeLayout?, meta? (titre/sous-titre par page) }]`. Le document sans frames = comportement actuel (page implicite qui suit le contenu).
-- **Appartenance géométrique** : une carte appartient au frame qui contient son centre — pas d'assignation à maintenir, déterministe, et « glisser une carte dans une page » suffit.
-- **Déplacement solidaire** : le frame déplacé emporte ses cartes (sous-flux React Flow `parentId`/`extent`, natif).
-- **Hors-page dimmé** : toute carte hors de tout frame s'affiche estompée avec badge « hors page » — rien n'est oublié à l'export par accident.
-- **Export à périmètre** : « Cette page » (frame sélectionné) ou « Toutes les pages » — PDF multi-pages (chrome par page), PPTX multi-diapositives. Jauge de lisibilité et « Réorganiser pour la page » deviennent **par frame**.
-- **Navigateur de pages** : rail de miniatures (nommer, réordonner = ordre du PDF, sauter à la page). Double usage : sommaire visuel et contrôle de l'ordre d'export.
+- ✅ **Schéma** : `frames?: [{ id, name, position, page: PageSetup, chromeLayout?, meta? (titre/sous-titre par page) }]`. Le document sans frames = comportement actuel (page implicite qui suit le contenu). Géométrie et appartenance dans `lib/frames.ts` (testé).
+- ✅ **Appartenance géométrique** : une carte appartient au frame qui contient son centre (`computeFrameMembership`) — pas d'assignation à maintenir, déterministe, et « glisser une carte dans une page » suffit.
+- ✅ **Déplacement solidaire** : le frame déplacé (par son étiquette, `dragHandle`) emporte ses cartes ; commit en une entrée d'historique (`moveFrameWithContent`). *Écart avec le plan initial : pas de `parentId` React Flow pour les cartes — l'appartenance étant géométrique, les positions restent absolues dans le fichier ; le suivi visuel pendant le drag est fait à la main.*
+- ✅ **Hors-page dimmé** : carte hors de tout frame estompée avec badge « hors page » (masqué quand le cadre de page est masqué — les captures d'export restent propres).
+- ✅ **Export à périmètre** : « Cette page » / « Toutes les pages » — PDF vectoriel multi-pages (`exportFramesToPdfVector`), PDF image multi-pages, PPTX éditable multi-diapositives, chrome et format papier par page. Jauge de lisibilité **par frame** (canvas + dialogue d'export, « page la moins lisible ») ; « Ranger le contenu de la page » par frame (`arrangeFrame`, menu contextuel de la feuille).
+- ✅ **Navigateur de pages** : rail de miniatures (`PageRail`) **permanent** (repliable), entrée principale du multi-pages — état d'accueil « Créer la première page » (la première feuille **enveloppe** l'organigramme existant), nommer (double-clic), **format A4/A3 et orientation par page**, réordonner (= ordre du PDF), sauter à la page (fitBounds), dupliquer, supprimer, ajouter.
+- ✅ **Fluidité (retours d'usage)** : la feuille est transparente aux événements (pan au clic droit, lasso et menu de fond fonctionnent au-dessus d'une page) ; les frames ne sont pas sélectionnables (jamais entraînés dans un drag de groupe, les cartes restent manipulables) — l'étiquette de la page est l'unique poignée (déplacer, menu contextuel), comme un frame Figma.
 
-## Phase 3 — Confort de conception
+**Décision assumée (phase 2)** : l'export d'une page reste en **fit-contain centré** dans sa zone utile (comme la page implicite historique, via `buildEditableSpec`) — la garantie « dans les pointillés = ≥ 6,5 pt » est préservée (le fit ne peut qu'agrandir un contenu qui tient). Le placement au millimètre (position sur la feuille = position sur le papier, mapping linéaire à l'échelle confort) est l'étape suivante si le besoin émerge ; elle exigera un clipping au rectangle de page.
 
-- **Guides magnétiques** (smart guides) : aimantation aux axes des cartes voisines **et aux marges/centre de la page**, traits violets — n'a de sens que maintenant que la page est visible.
-- **Dupliquer une page** avec son contenu (variantes : version anonymisée e-mails masqués vs version RH).
-- **« Créer une page pour cette branche »** (clic droit sur un responsable) : nouveau frame avec le sous-arbre copié et rangé — le pont entre repli de branches et multi-pages (page 1 : direction avec branches repliées ; pages suivantes : le détail de chaque pôle).
-- **Pack de diffusion** : un export « tout-en-un » (PDF multi-pages + un PNG par page + CSV annuaire) dans un zip — un seul geste pour l'envoi mensuel.
-- **Presets de page** : « Affiche A3 », « Page de pôle », « Une page par direction » (génération assistée).
+## Phase 3 — Confort de conception (LIVRÉE, sauf presets)
+
+- ✅ **Guides magnétiques** (smart guides) : aimantation aux bords/axes des cartes voisines **et aux marges/bords/centres des pages**, traits violets (`lib/smartGuides.ts`, testé). Sélections multiples : glisser libre (pas d'aimantation).
+- ✅ **Dupliquer une page** avec son contenu (`duplicateFrame` : cartes clonées + liens internes uniquement ; rail + menu contextuel). Les variantes anonymisées restent couvertes par `theme.display.showEmails`.
+- ✅ **« Créer une page pour cette branche »** (clic droit sur un responsable) : nouveau frame avec le sous-arbre copié, rangé (elk) dans la zone utile, titre de page = nom du responsable.
+- ✅ **Pack de diffusion** : zip « tout-en-un » (PDF multi-pages vectoriel + un PNG par page + annuaire CSV), bouton dans l'onglet PDF en mode multi-pages (`lib/diffusionPack.ts`, jszip déjà dépendance du round-trip pptx).
+- ⏳ **Presets de page** : « Affiche A3 », « Page de pôle », « Une page par direction » (génération assistée) — non commencé ; « Créer une page pour cette branche » couvre déjà le cas d'usage principal.
 
 ## Idées écartées (et pourquoi)
 

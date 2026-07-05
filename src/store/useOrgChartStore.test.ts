@@ -211,4 +211,145 @@ describe("useOrgChartStore", () => {
     expect(state.nodes.map((n) => n.id)).toEqual([childId]);
     expect(state.edges).toHaveLength(0);
   });
+
+  it("setNodePosition et deleteNodes ignorent les ids inconnus (éléments d'édition) sans polluer l'historique", () => {
+    const before = useOrgChartStore.getState();
+
+    useOrgChartStore.getState().setNodePosition("chrome:title", { x: 10, y: 10 });
+    useOrgChartStore.getState().deleteNodes(["chrome:title", "__page-guide__"]);
+
+    const after = useOrgChartStore.getState();
+    expect(after.nodes).toBe(before.nodes);
+    expect(after.past).toHaveLength(before.past.length);
+  });
+});
+
+describe("useOrgChartStore — frames multi-pages", () => {
+  beforeEach(() => {
+    useOrgChartStore.getState().loadFile(createBlankChart("blank"));
+  });
+
+  it("addFrame crée une page nommée, undoable, sérialisée dans le fichier", () => {
+    const id = useOrgChartStore.getState().addFrame();
+
+    const state = useOrgChartStore.getState();
+    expect(state.frames).toHaveLength(1);
+    expect(state.frames[0].id).toBe(id);
+    expect(state.frames[0].name).toBe("Page 1");
+    expect(state.toFile().frames).toHaveLength(1);
+
+    state.undo();
+    const afterUndo = useOrgChartStore.getState();
+    expect(afterUndo.frames).toHaveLength(0);
+    // Champ additif : omis tant qu'aucune page n'existe
+    expect(afterUndo.toFile().frames).toBeUndefined();
+  });
+
+  it("moveFrameWithContent déplace la feuille et ses cartes du même delta en une entrée d'historique", () => {
+    const frameId = useOrgChartStore.getState().addFrame();
+    const frame = useOrgChartStore.getState().frames[0];
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+    // Place la racine dans la feuille
+    useOrgChartStore.getState().setNodePosition(rootId, { x: frame.position.x + 100, y: frame.position.y + 100 });
+    const pastBefore = useOrgChartStore.getState().past.length;
+
+    useOrgChartStore
+      .getState()
+      .moveFrameWithContent(frameId, { x: frame.position.x + 500, y: frame.position.y + 40 }, [rootId]);
+
+    const state = useOrgChartStore.getState();
+    expect(state.frames[0].position).toEqual({ x: frame.position.x + 500, y: frame.position.y + 40 });
+    expect(state.nodes[0].position).toEqual({ x: frame.position.x + 600, y: frame.position.y + 140 });
+    expect(state.past).toHaveLength(pastBefore + 1);
+
+    state.undo();
+    expect(useOrgChartStore.getState().nodes[0].position).toEqual({
+      x: frame.position.x + 100,
+      y: frame.position.y + 100,
+    });
+  });
+
+  it("duplicateFrame clone la page, ses cartes et les liens internes uniquement", () => {
+    const { addFrame, addNode } = useOrgChartStore.getState();
+    const frameId = addFrame();
+    const frame = useOrgChartStore.getState().frames[0];
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+
+    // root (hors page) -> A (dans la page) -> B (dans la page)
+    addNode(rootId);
+    const aId = useOrgChartStore.getState().nodes[1].id;
+    addNode(aId);
+    const bId = useOrgChartStore.getState().nodes[2].id;
+    useOrgChartStore.getState().setNodePosition(rootId, { x: frame.position.x - 2000, y: 0 });
+    useOrgChartStore.getState().setNodePosition(aId, { x: frame.position.x + 100, y: frame.position.y + 100 });
+    useOrgChartStore.getState().setNodePosition(bId, { x: frame.position.x + 100, y: frame.position.y + 400 });
+
+    const cloneId = useOrgChartStore.getState().duplicateFrame(frameId)!;
+
+    const state = useOrgChartStore.getState();
+    expect(state.frames).toHaveLength(2);
+    const clone = state.frames.find((f) => f.id === cloneId)!;
+    expect(clone.name).toContain("(copie)");
+    // 3 originaux + 2 copies (root hors page n'est pas copié)
+    expect(state.nodes).toHaveLength(5);
+    // Un seul lien interne copié (A -> B) ; le lien root -> A ne l'est pas
+    expect(state.edges).toHaveLength(3);
+    const copies = state.nodes.slice(3);
+    const dx = clone.position.x - frame.position.x;
+    expect(copies[0].position.x).toBeCloseTo(frame.position.x + 100 + dx, 6);
+  });
+
+  it("reorderFrame échange l'ordre d'export", () => {
+    const first = useOrgChartStore.getState().addFrame();
+    const second = useOrgChartStore.getState().addFrame();
+
+    useOrgChartStore.getState().reorderFrame(second, -1);
+    expect(useOrgChartStore.getState().frames.map((f) => f.id)).toEqual([second, first]);
+
+    // Bornes : pas de déplacement hors du tableau
+    useOrgChartStore.getState().reorderFrame(second, -1);
+    expect(useOrgChartStore.getState().frames.map((f) => f.id)).toEqual([second, first]);
+  });
+
+  it("updateFrame renomme et change le format de page", () => {
+    const id = useOrgChartStore.getState().addFrame();
+
+    useOrgChartStore.getState().updateFrame(id, {
+      name: "Direction",
+      page: { format: "a3", orientation: "portrait", margin: 12 },
+    });
+
+    const frame = useOrgChartStore.getState().frames[0];
+    expect(frame.name).toBe("Direction");
+    expect(frame.page.format).toBe("a3");
+  });
+
+  it("setFrameChromeElement stocke une disposition d'en-tête propre à la page", () => {
+    const id = useOrgChartStore.getState().addFrame();
+
+    useOrgChartStore.getState().setFrameChromeElement(id, "title", { x: 5, y: 5, size: 18 });
+
+    expect(useOrgChartStore.getState().frames[0].chromeLayout?.title).toEqual({ x: 5, y: 5, size: 18 });
+  });
+
+  it("addFrameForBranch copie le sous-arbre dans une nouvelle page rangée", async () => {
+    const { addNode } = useOrgChartStore.getState();
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+    addNode(rootId);
+    const aId = useOrgChartStore.getState().nodes[1].id;
+    addNode(aId);
+
+    const frameId = await useOrgChartStore.getState().addFrameForBranch(aId);
+
+    const state = useOrgChartStore.getState();
+    expect(frameId).toBeDefined();
+    const frame = state.frames.find((f) => f.id === frameId)!;
+    // A + son subordonné copiés (le root ne fait pas partie de la branche)
+    expect(state.nodes).toHaveLength(5);
+    expect(state.edges).toHaveLength(3);
+    // Les copies sont posées dans la feuille (appartenance géométrique)
+    const { computeFrameMembership } = await import("../lib/frames");
+    const membership = computeFrameMembership(state.frames, state.nodes);
+    expect(membership.byFrame.get(frame.id)).toHaveLength(2);
+  });
 });

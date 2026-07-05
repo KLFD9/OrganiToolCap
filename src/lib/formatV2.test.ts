@@ -71,6 +71,28 @@ describe("migration v1 → v2", () => {
     const file = v2File();
     expect(migrateOrgChartFile(file)).toBe(file);
   });
+
+  it("frames (multi-pages) : champ additif v2, round-trip sans perte", () => {
+    const withFrames: OrgChartFile = {
+      ...v2File(),
+      frames: [
+        {
+          id: "frame-1",
+          name: "Direction",
+          position: { x: 0, y: 0 },
+          page: { format: "a4", orientation: "landscape", margin: 10 },
+          meta: { title: "Comité de direction" },
+          chromeLayout: { title: { x: 12, y: 8, size: 16 } },
+        },
+      ],
+    };
+    const parsed = parseOrgChartFile(JSON.stringify(withFrames));
+    expect(parsed.frames).toHaveLength(1);
+    expect(parsed.frames?.[0].meta?.title).toBe("Comité de direction");
+    expect(parseOrgChartFile(JSON.stringify(parsed))).toEqual(parsed);
+    // Un fichier sans frames reste valide (page implicite)
+    expect(parseOrgChartFile(JSON.stringify(v2File())).frames).toBeUndefined();
+  });
 });
 
 describe("les liens pointillés sont ignorés par la logique d'arbre", () => {

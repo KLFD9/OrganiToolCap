@@ -1,5 +1,8 @@
 import type { jsPDF } from "jspdf";
 import { getNodesBounds, getViewportForBounds, type Node } from "@xyflow/react";
+import { resolveChromeElement, textHeightMm } from "./chromeLayout";
+import type { ChromeElement, ChromeLayout } from "../types/orgchart";
+import type { PageSetup } from "./readability";
 
 // html-to-image et jspdf ne servent qu'à l'export : chargés à la demande
 // pour alléger le bundle initial.
@@ -20,6 +23,8 @@ export interface PdfExportOptions {
   secondaryLogoUrl?: string;
   /** Si vrai, répartit l'organigramme sur plusieurs pages (grand format / affiche). Sinon, ajustement dynamique sur une seule page. */
   multiPage?: boolean;
+  /** Positions/tailles personnalisées de l'en-tête et du pied de page (WYSIWYG canvas ↔ export). */
+  chromeLayout?: ChromeLayout;
 }
 
 const PNG_DPI_SCALE = 2.5;
@@ -300,13 +305,25 @@ export async function drawPageChrome(
   pageLabel?: string
 ): Promise<{ topOffset: number; bottomOffset: number }> {
   const { topOffset, bottomOffset } = computeChromeOffsets(options, margin);
+  const page: PageSetup = { format: options.format, orientation: options.orientation, margin };
+
+  // Même résolveur que le canvas (lib/chromeLayout) : la position stockée
+  // fait foi, sinon la disposition historique par défaut est reproduite.
+  const measureTextMm = (text: string, pt: number) => {
+    pdf.setFontSize(pt);
+    return pdf.getTextWidth(text);
+  };
+  // `size` est la taille de police (pt) ; la ligne de base jsPDF se place au
+  // bas de la boîte de texte mesurée en mm (cohérent avec le rendu canvas).
+  const baselineY = (el: ChromeElement) => el.y + textHeightMm(el.size);
 
   if (options.logoUrl || options.secondaryLogoUrl || options.title) {
     if (options.logoUrl) {
       try {
         const logo = await loadLogoForExport(options.logoUrl);
-        const logoW = (logo.width / logo.height) * HEADER_HEIGHT_MM;
-        pdf.addImage(logo.dataUrl, margin, margin, logoW, HEADER_HEIGHT_MM);
+        const el = resolveChromeElement(options.chromeLayout, "logo", page);
+        const logoW = (logo.width / logo.height) * el.size;
+        pdf.addImage(logo.dataUrl, el.x, el.y, logoW, el.size);
       } catch {
         // logo illisible : on ignore silencieusement
       }
@@ -314,31 +331,46 @@ export async function drawPageChrome(
     if (options.secondaryLogoUrl) {
       try {
         const logo = await loadLogoForExport(options.secondaryLogoUrl);
-        const logoW = (logo.width / logo.height) * HEADER_HEIGHT_MM;
-        pdf.addImage(logo.dataUrl, pageWidth - margin - logoW, margin, logoW, HEADER_HEIGHT_MM);
+        const el = resolveChromeElement(options.chromeLayout, "secondaryLogo", page, {
+          logoAspect: logo.width / logo.height,
+        });
+        const logoW = (logo.width / logo.height) * el.size;
+        pdf.addImage(logo.dataUrl, el.x, el.y, logoW, el.size);
       } catch {
         // logo illisible : on ignore silencieusement
       }
     }
     if (options.title) {
-      pdf.setFontSize(14);
-      pdf.text(options.title, pageWidth / 2, margin + HEADER_HEIGHT_MM / 2, { align: "center" });
+      const el = resolveChromeElement(options.chromeLayout, "title", page, { measureTextMm, text: options.title });
+      pdf.setFontSize(el.size);
+      pdf.setTextColor(0);
+      pdf.text(options.title, el.x, baselineY(el));
     }
     if (options.subtitle) {
-      pdf.setFontSize(10);
+      const el = resolveChromeElement(options.chromeLayout, "subtitle", page, {
+        measureTextMm,
+        text: options.subtitle,
+      });
+      pdf.setFontSize(el.size);
       pdf.setTextColor(120);
-      pdf.text(options.subtitle, pageWidth / 2, margin + HEADER_HEIGHT_MM / 2 + 5, { align: "center" });
+      pdf.text(options.subtitle, el.x, baselineY(el));
       pdf.setTextColor(0);
     }
   }
 
   if (options.footer || pageLabel) {
-    pdf.setFontSize(9);
-    pdf.setTextColor(120);
     if (options.footer) {
-      pdf.text(options.footer, pageWidth / 2, pageHeight - margin / 2, { align: "center" });
+      const el = resolveChromeElement(options.chromeLayout, "footer", page, {
+        measureTextMm,
+        text: options.footer,
+      });
+      pdf.setFontSize(el.size);
+      pdf.setTextColor(120);
+      pdf.text(options.footer, el.x, baselineY(el));
     }
     if (pageLabel) {
+      pdf.setFontSize(9);
+      pdf.setTextColor(120);
       pdf.text(pageLabel, pageWidth - margin, pageHeight - margin / 2, { align: "right" });
     }
     pdf.setTextColor(0);
@@ -438,6 +470,72 @@ async function drawSinglePage(
   const availableHeight = pageHeight - topOffset - bottomOffset;
   const placement = fitContain(imageWidth, imageHeight, margin, topOffset, availableWidth, availableHeight);
   pdf.addImage(dataUrl, "JPEG", placement.x, placement.y, placement.width, placement.height);
+}
+
+/** Page d'un export PDF image multi-pages : chrome + nœuds React Flow à capturer. */
+export interface FrameImagePage {
+  format: PdfFormat;
+  orientation: PdfOrientation;
+  margin: number;
+  name: string;
+  title?: string;
+  subtitle?: string;
+  chromeLayout?: ChromeLayout;
+  /** Nœuds React Flow (cartes membres de la page) à capturer. */
+  rfNodes: Node[];
+}
+
+/**
+ * Export PDF image multi-pages : une page par frame, chacune capturée en haute
+ * résolution et ajustée dans la zone utile de son format papier.
+ */
+export async function exportFramesToPdfImage(
+  viewportEl: HTMLElement,
+  pages: FrameImagePage[],
+  common: { docTitle?: string; docSubtitle?: string; footer?: string; logoUrl?: string; secondaryLogoUrl?: string }
+): Promise<void> {
+  if (pages.length === 0) return;
+  const { jsPDF } = await loadJsPdf();
+  const pdf = new jsPDF({ orientation: pages[0].orientation, unit: "mm", format: pages[0].format });
+  applyPdfMetadata(pdf, { title: common.docTitle, subtitle: common.docSubtitle });
+
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i];
+    if (i > 0) pdf.addPage(page.format, page.orientation);
+
+    const options: PdfExportOptions = {
+      format: page.format,
+      orientation: page.orientation,
+      margin: page.margin,
+      title: page.title,
+      subtitle: page.subtitle,
+      footer: common.footer,
+      logoUrl: common.logoUrl,
+      secondaryLogoUrl: common.secondaryLogoUrl,
+      chromeLayout: page.chromeLayout,
+    };
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const label = pages.length > 1 ? `${page.name} · ${i + 1}/${pages.length}` : undefined;
+    const { topOffset, bottomOffset } = await drawPageChrome(pdf, options, pageWidth, pageHeight, page.margin, label);
+
+    if (page.rfNodes.length === 0) continue; // page vide : chrome seul
+
+    const capture = await captureFlow(viewportEl, page.rfNodes, "jpeg", PDF_DPI_SCALE);
+    const availableWidth = pageWidth - page.margin * 2;
+    const availableHeight = pageHeight - topOffset - bottomOffset;
+    const placement = fitContain(
+      capture.pixelWidth,
+      capture.pixelHeight,
+      page.margin,
+      topOffset,
+      availableWidth,
+      availableHeight
+    );
+    pdf.addImage(capture.dataUrl, "JPEG", placement.x, placement.y, placement.width, placement.height);
+  }
+
+  pdf.save(safeFileName(common.docTitle, pages.length > 1 ? "-pages" : ""));
 }
 
 /** Export PNG haute résolution, recadré sur l'ensemble de l'organigramme. */

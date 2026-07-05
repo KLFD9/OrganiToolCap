@@ -12,6 +12,16 @@ import { pageSizeMm, PT_PER_MM, type PageSetup } from "./readability";
 /** Hauteur de la bande d'en-tête historique (voir pdfExport). */
 export const CHROME_HEADER_MM = 16;
 
+/** Interligne des éléments de texte du chrome — canvas (ChromeElement) et calcul de boîte (Canvas). */
+export const CHROME_TEXT_LINE_HEIGHT = 1.2;
+
+/**
+ * Pile de polices des textes de chrome à l'écran ET pour la mesure de largeur :
+ * alignée sur l'Helvetica du PDF (jsPDF) pour que centrage par défaut et boîtes
+ * de sélection correspondent au rendu imprimé.
+ */
+export const CHROME_TEXT_FONT_FAMILY = "Helvetica, Arial, sans-serif";
+
 /** Tailles par défaut : pt pour les textes, mm de hauteur pour les logos. */
 export const CHROME_DEFAULT_SIZE: Record<ChromeKey, number> = {
   title: 14,

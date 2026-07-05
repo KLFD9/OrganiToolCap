@@ -8,12 +8,15 @@ import {
   exportFlowToPdf,
   exportFlowToPng,
   exportFlowToSvg,
+  exportFramesToPdfImage,
+  type FrameImagePage,
   type PdfFormat,
   type PdfOrientation,
 } from "../lib/pdfExport";
 import { exportFlowToPptx } from "../lib/pptxExport";
-import { estimateReadability, pageAvailableArea } from "../lib/readability";
+import { availableAreaForSetup, estimateReadability, pageAvailableArea } from "../lib/readability";
 import { computeHiddenNodeIds } from "../lib/hierarchy";
+import { buildFramePages, type FramePageContent } from "../lib/frames";
 import { optimizeLayoutForPage, rankCandidates } from "../lib/exportLayout";
 import {
   Info,
@@ -41,6 +44,8 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   const theme = useOrgChartStore((s) => s.theme);
   const selectedNodeIds = useOrgChartStore((s) => s.selectedNodeIds);
   const selectNodes = useOrgChartStore((s) => s.selectNodes);
+  const pageGuideVisible = useOrgChartStore((s) => s.pageGuide);
+  const togglePageGuide = useOrgChartStore((s) => s.togglePageGuide);
   const layoutState = useOrgChartStore((s) => s.layout);
   const applyLayoutCandidate = useOrgChartStore((s) => s.applyLayoutCandidate);
   const storeNodes = useOrgChartStore((s) => s.nodes);
@@ -49,6 +54,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   const toFile = useOrgChartStore((s) => s.toFile);
   const pageSetup = useOrgChartStore((s) => s.layout.page);
   const setPageSetup = useOrgChartStore((s) => s.setPageSetup);
+  const frames = useOrgChartStore((s) => s.frames);
   const { getNodes, fitView } = useReactFlow();
   const [format, setFormat] = useState<PdfFormat>(pageSetup?.format ?? "a4");
   const [orientation, setOrientation] = useState<PdfOrientation>(pageSetup?.orientation ?? "landscape");
@@ -70,6 +76,11 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   const [includeFooter, setIncludeFooter] = useState(true);
   const [includeLogos, setIncludeLogos] = useState(true);
   const [multiPage, setMultiPage] = useState(false);
+  /** Périmètre en mode multi-pages : toutes les pages, ou une seule (id de frame). */
+  const [scope, setScope] = useState<"all" | string>("all");
+  const hasFrames = frames.length > 0;
+  // Un frame supprimé pendant que le dialogue est fermé : repli sur « toutes »
+  if (scope !== "all" && !frames.some((f) => f.id === scope)) setScope("all");
   const [pptxEditable, setPptxEditable] = useState(true);
   const [pdfVector, setPdfVector] = useState(true);
   const [transparentBg, setTransparentBg] = useState(false);
@@ -98,10 +109,51 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   const [copied, setCopied] = useState(false);
   const [optimizeNotice, setOptimizeNotice] = useState<string | null>(null);
 
+  // Pages exportables (mode multi-pages) : contenu + chrome par frame, dans
+  // l'ordre du document, restreintes au périmètre choisi.
+  const framePages = useMemo<FramePageContent[]>(() => {
+    if (!hasFrames || !open) return [];
+    const pages = buildFramePages(frames, visibleNodes, visibleEdges, {
+      title: includeTitle ? meta.title : undefined,
+      subtitle: includeTitle ? meta.subtitle : undefined,
+      chromeLayout: meta.chromeLayout,
+    });
+    // « Inclure le titre » décoché : aucune bande d'en-tête, y compris les titres par page
+    const withTitleRule = includeTitle
+      ? pages
+      : pages.map((p) => ({ ...p, title: undefined, subtitle: undefined }));
+    return scope === "all" ? withTitleRule : withTitleRule.filter((p) => p.frame.id === scope);
+  }, [hasFrames, open, frames, visibleNodes, visibleEdges, includeTitle, meta, scope]);
+
+  // Jauge multi-pages : la page la moins lisible du périmètre
+  const frameReadability = useMemo(() => {
+    if (!open || framePages.length === 0) return null;
+    let worst: { name: string; fontPt: number; rating: "good" | "warn" | "bad"; cardWidthMm: number } | null = null;
+    for (const p of framePages) {
+      if (p.nodes.length === 0) continue;
+      const xs = p.nodes.map((n) => n.position.x);
+      const ys = p.nodes.map((n) => n.position.y);
+      const avail = availableAreaForSetup(p.frame.page, {
+        title: p.title,
+        footer: includeFooter ? meta.footer : undefined,
+        logoUrl: includeLogos ? theme.logoUrl : undefined,
+        secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
+      });
+      const est = estimateReadability(
+        (Math.max(...xs) - Math.min(...xs) + CARD_WIDTH) * 1.12,
+        (Math.max(...ys) - Math.min(...ys) + CARD_HEIGHT) * 1.12,
+        avail.width,
+        avail.height
+      );
+      if (!worst || est.fontPt < worst.fontPt) worst = { name: p.frame.name, ...est };
+    }
+    return worst;
+  }, [open, framePages, includeFooter, includeLogos, meta.footer, theme.logoUrl, theme.secondaryLogoUrl]);
+
   // Lisibilité estimée du document : taille réelle du texte une fois
   // l'organigramme ajusté à la page (sans objet en multi-pages).
   const readability = useMemo(() => {
-    if (!open || multiPage || visibleNodes.length === 0) return null;
+    if (!open || multiPage || hasFrames || visibleNodes.length === 0) return null;
     // Bornes calculées depuis les nœuds visibles (réactif), cartes de 240×110 px
     const xs = visibleNodes.map((n) => n.position.x);
     const ys = visibleNodes.map((n) => n.position.y);
@@ -127,6 +179,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   }, [
     open,
     multiPage,
+    hasFrames,
     visibleNodes,
     format,
     orientation,
@@ -205,47 +258,107 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
     }
   };
 
-  const run = async (kind: "pdf" | "pptx" | "png" | "svg" | "clipboard") => {
+  const run = async (kind: "pdf" | "pptx" | "png" | "svg" | "clipboard" | "pack") => {
     const el = getViewportElement();
     if (!el) {
       setError("Le canevas n'est pas prêt.");
       return;
     }
-    const nodes = getNodes();
-    if (nodes.length === 0) {
+    // Le cadre de page et ses éléments d'en-tête/pied sont des nœuds React
+    // Flow eux aussi (repères d'édition, masqués pendant la capture ci-dessous) :
+    // exclus du cadrage pour ne pas élargir inutilement le recadrage. Les fonds
+    // de groupe restent inclus : contrairement au cadre de page, ce sont un
+    // élément visuel voulu dans l'export.
+    let nodes = getNodes().filter((n) => n.type !== "pageGuide" && n.type !== "chromeElement");
+    // Périmètre « cette page » : seuls les membres de la page sont capturés
+    // (exports image ; les moteurs par page utilisent framePages directement).
+    if (hasFrames && scope !== "all") {
+      const inScope = new Set(framePages.flatMap((p) => p.nodes.map((n) => n.id)));
+      nodes = nodes.filter((n) => inScope.has(n.id));
+    }
+    if (hasFrames && framePages.reduce((total, p) => total + p.nodes.length, 0) === 0) {
+      setError(scope === "all" ? "Toutes les pages sont vides." : "Cette page est vide.");
+      return;
+    }
+    if (!hasFrames && nodes.length === 0) {
       setError("Aucun membre à exporter.");
       return;
     }
     setError(null);
     setBusy(kind);
 
-    // Désélectionne temporairement les nœuds pour ne pas capturer le surlignage de sélection
-    const hadSelection = selectedNodeIds.length > 0;
-    if (hadSelection) {
-      selectNodes([]);
+    // Désélectionne temporairement les nœuds pour ne pas capturer le surlignage de sélection,
+    // et masque le cadre de page (feuille, bandes d'en-tête/pied, jauge de lisibilité) : un
+    // repère d'édition, jamais destiné à apparaître dans les exports rasterisés (PNG/SVG/PDF image).
+    // Les exports « natifs » (PDF vectoriel, PPTX éditable) ne capturent pas le DOM : inutile
+    // de faire clignoter le canvas pour eux.
+    const capturesDom =
+      kind === "png" ||
+      kind === "svg" ||
+      kind === "clipboard" ||
+      kind === "pack" || // les PNG par page du pack capturent le DOM
+      (kind === "pdf" && !(pdfVector && (hasFrames || !multiPage))) ||
+      (kind === "pptx" && !pptxEditable);
+    const hadSelection = capturesDom && selectedNodeIds.length > 0;
+    const hadPageGuide = capturesDom && pageGuideVisible;
+    if (hadSelection || hadPageGuide) {
+      if (hadSelection) selectNodes([]);
+      if (hadPageGuide) togglePageGuide();
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
     }
 
     try {
       if (kind === "pdf") {
-        const pdfOptions = {
-          format,
-          orientation,
-          margin,
-          title: includeTitle ? meta.title : undefined,
-          subtitle: includeTitle ? meta.subtitle : undefined,
-          footer: includeFooter ? meta.footer : undefined,
-          logoUrl: includeLogos ? theme.logoUrl : undefined,
-          secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
-          multiPage,
-        };
-        // Vectoriel natif : cartes dessinées dans le PDF (texte net, fichier
-        // léger). Le multi-pages reste en capture image haute résolution.
-        if (pdfVector && !multiPage) {
-          const { exportFlowToPdfVector } = await import("../lib/pdfVector");
-          await exportFlowToPdfVector(visibleNodes, visibleEdges, theme, pdfOptions);
+        if (hasFrames) {
+          // Mode multi-pages : une page PDF par frame du périmètre, chrome et
+          // format papier propres à chaque page.
+          const common = {
+            docTitle: meta.title,
+            docSubtitle: includeTitle ? meta.subtitle : undefined,
+            footer: includeFooter ? meta.footer : undefined,
+            logoUrl: includeLogos ? theme.logoUrl : undefined,
+            secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
+          };
+          if (pdfVector) {
+            const { exportFramesToPdfVector } = await import("../lib/pdfVector");
+            await exportFramesToPdfVector(framePages, theme, common);
+          } else {
+            const rfById = new Map(nodes.map((n) => [n.id, n]));
+            const pages: FrameImagePage[] = framePages.map((p) => ({
+              format: p.frame.page.format,
+              orientation: p.frame.page.orientation,
+              margin: p.frame.page.margin,
+              name: p.frame.name,
+              title: p.title,
+              subtitle: p.subtitle,
+              chromeLayout: p.chromeLayout,
+              rfNodes: p.nodes
+                .map((n) => rfById.get(n.id))
+                .filter((n): n is NonNullable<typeof n> => Boolean(n)),
+            }));
+            await exportFramesToPdfImage(el, pages, common);
+          }
         } else {
-          await exportFlowToPdf(el, nodes, pdfOptions);
+          const pdfOptions = {
+            format,
+            orientation,
+            margin,
+            title: includeTitle ? meta.title : undefined,
+            subtitle: includeTitle ? meta.subtitle : undefined,
+            footer: includeFooter ? meta.footer : undefined,
+            logoUrl: includeLogos ? theme.logoUrl : undefined,
+            secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
+            multiPage,
+            chromeLayout: meta.chromeLayout,
+          };
+          // Vectoriel natif : cartes dessinées dans le PDF (texte net, fichier
+          // léger). Le multi-pages reste en capture image haute résolution.
+          if (pdfVector && !multiPage) {
+            const { exportFlowToPdfVector } = await import("../lib/pdfVector");
+            await exportFlowToPdfVector(visibleNodes, visibleEdges, theme, pdfOptions);
+          } else {
+            await exportFlowToPdf(el, nodes, pdfOptions);
+          }
         }
       } else if (kind === "pptx") {
         const pptxOptions = {
@@ -256,14 +369,37 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
           secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
           accent: theme.accent,
         };
-        // Le .orgchart.json is embedded in the .pptx
+        // Le .orgchart.json est embarqué dans le .pptx (round-trip)
         const chartJson = JSON.stringify(toFile(), null, 2);
-        if (pptxEditable) {
+        if (pptxEditable && hasFrames) {
+          // Une diapositive par page du périmètre
+          const { exportFramesToPptxEditable } = await import("../lib/pptxEditable");
+          await exportFramesToPptxEditable(framePages, theme, pptxOptions, chartJson);
+        } else if (pptxEditable) {
           const { exportFlowToPptxEditable } = await import("../lib/pptxEditable");
           await exportFlowToPptxEditable(visibleNodes, visibleEdges, theme, pptxOptions, chartJson);
         } else {
           await exportFlowToPptx(el, nodes, pptxOptions, chartJson);
         }
+      } else if (kind === "pack") {
+        // Pack de diffusion : PDF multi-pages + un PNG par page + annuaire CSV
+        const { exportDiffusionPack } = await import("../lib/diffusionPack");
+        const rfById = new Map(nodes.map((n) => [n.id, n]));
+        await exportDiffusionPack(el, {
+          pages: framePages,
+          rfNodesPerPage: framePages.map((p) =>
+            p.nodes.map((n) => rfById.get(n.id)).filter((n): n is NonNullable<typeof n> => Boolean(n))
+          ),
+          theme,
+          common: {
+            docTitle: meta.title,
+            docSubtitle: includeTitle ? meta.subtitle : undefined,
+            footer: includeFooter ? meta.footer : undefined,
+            logoUrl: includeLogos ? theme.logoUrl : undefined,
+            secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
+          },
+          directory: { nodes: visibleNodes, edges: visibleEdges },
+        });
       } else if (kind === "clipboard") {
         await copyFlowToClipboard(el, nodes);
         setCopied(true);
@@ -282,6 +418,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
       );
     } finally {
       if (hadSelection) selectNodes(selectedNodeIds);
+      if (hadPageGuide) togglePageGuide();
       setBusy(null);
     }
   };
@@ -334,7 +471,32 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                 1. Mise en page & Contenu
               </h3>
 
+              {/* Périmètre (mode multi-pages) */}
+              {hasFrames && (
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-455 dark:text-zinc-500">
+                    Pages à exporter
+                  </span>
+                  <div className="relative">
+                    <select value={scope} onChange={(e) => setScope(e.target.value)} className={selectClass}>
+                      <option value="all">Toutes les pages ({frames.length})</option>
+                      {frames.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {f.name}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                  </div>
+                  <span className="text-[10px] leading-normal text-zinc-400 dark:text-zinc-500">
+                    Le format papier de chaque page (A4/A3, orientation, marges) est celui de sa feuille sur le
+                    canevas.
+                  </span>
+                </label>
+              )}
+
               {/* Format de page & Orientation */}
+              {!hasFrames && (
               <div className="grid grid-cols-2 gap-3">
                 <label className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-455 dark:text-zinc-500">
@@ -377,8 +539,10 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                   </div>
                 </label>
               </div>
+              )}
 
               {/* Marge */}
+              {!hasFrames && (
               <div className="flex flex-col gap-1.5">
                 <span className="flex justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-455 dark:text-zinc-500">
                   <span>Marges du document</span>
@@ -397,6 +561,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                   className="w-full accent-primary-600 dark:accent-primary-400 cursor-pointer bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none h-1"
                 />
               </div>
+              )}
 
               {/* Options de contenu */}
               <div className="flex flex-col gap-3 rounded-xl border border-zinc-150/80 dark:border-zinc-800/80 bg-zinc-50/30 dark:bg-zinc-900/10 p-3.5">
@@ -427,6 +592,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                   />
                   <span className="font-medium">Inclure le pied de page</span>
                 </label>
+                {!hasFrames && (
                 <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer border-t border-zinc-150/50 dark:border-zinc-800 pt-2.5 mt-0.5">
                   <input
                     type="checkbox"
@@ -441,7 +607,47 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                     </span>
                   </span>
                 </label>
+                )}
               </div>
+
+              {/* Jauge de lisibilité par page (mode multi-pages) */}
+              {frameReadability && (
+                <div
+                  className={`rounded-xl border p-3.5 transition-all ${
+                    frameReadability.rating === "good"
+                      ? "border-emerald-500/20 bg-emerald-500/5"
+                      : frameReadability.rating === "warn"
+                      ? "border-amber-500/20 bg-amber-500/5"
+                      : "border-red-500/20 bg-red-500/5"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`h-2 w-2 shrink-0 rounded-full ${
+                        frameReadability.rating === "good"
+                          ? "bg-emerald-500 animate-pulse"
+                          : frameReadability.rating === "warn"
+                          ? "bg-amber-500"
+                          : "bg-red-500"
+                      }`}
+                    />
+                    <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
+                      {frameReadability.rating === "good"
+                        ? "Toutes les pages sont lisibles"
+                        : `Page la moins lisible : ${frameReadability.name}`}
+                    </span>
+                    <span className="ml-auto font-mono text-[9px] text-zinc-450 dark:text-zinc-500">
+                      texte ≈ {frameReadability.fontPt} pt
+                    </span>
+                  </div>
+                  {frameReadability.rating !== "good" && (
+                    <p className="mt-2 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+                      Réduisez le contenu de cette page (glissez des cartes vers une autre page, ou créez une page
+                      par branche), ou passez sa feuille en A3.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Jauge de lisibilité */}
               {readability && (
@@ -577,12 +783,12 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                       <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={pdfVector && !multiPage}
-                          disabled={multiPage}
+                          checked={pdfVector && (hasFrames || !multiPage)}
+                          disabled={!hasFrames && multiPage}
                           onChange={(e) => setPdfVector(e.target.checked)}
                           className={`${checkboxClass} mt-0.5`}
                         />
-                        <span className={multiPage ? "opacity-50" : ""}>
+                        <span className={!hasFrames && multiPage ? "opacity-50" : ""}>
                           PDF vectoriel natif (texte net)
                           <span className="mt-0.5 block text-[10px] leading-normal font-normal text-zinc-400 dark:text-zinc-500">
                             Texte infiniment net et fichier très léger. Photos non incluses.
@@ -612,6 +818,34 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                         </>
                       )}
                     </button>
+
+                    {/* Pack de diffusion : un seul geste pour l'envoi mensuel */}
+                    {hasFrames && (
+                      <button
+                        onClick={() => run("pack")}
+                        disabled={busy !== null}
+                        className={`flex w-full items-center justify-center gap-2 rounded-xl border py-2.5 text-xs font-semibold transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer disabled:opacity-50 ${
+                          themeMode === "dark"
+                            ? "border-zinc-850 text-zinc-300 hover:bg-zinc-800"
+                            : "border-zinc-200 text-zinc-650 hover:bg-zinc-50"
+                        }`}
+                        title="PDF multi-pages + un PNG par page + annuaire CSV, dans un zip"
+                      >
+                        {busy === "pack" ? (
+                          <>
+                            <Loader2 className="animate-spin h-3.5 w-3.5" />
+                            <span>Assemblage du pack...</span>
+                          </>
+                        ) : (
+                          <span>
+                            Pack de diffusion (.zip)
+                            <span className="mt-0.5 block text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
+                              PDF multi-pages + PNG par page + annuaire CSV
+                            </span>
+                          </span>
+                        )}
+                      </button>
+                    )}
                   </div>
                 )}
 

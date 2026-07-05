@@ -17,6 +17,11 @@ export interface NodeCardData extends Record<string, unknown> {
   hiddenCount?: number;
   /** Branche repliée. */
   collapsed?: boolean;
+  /**
+   * Carte hors de toute page (mode multi-pages) : estompée avec badge
+   * « hors page » — rien n'est oublié à l'export par accident.
+   */
+  outOfPage?: boolean;
 }
 
 function initials(name: string): string {
@@ -31,7 +36,17 @@ function initials(name: string): string {
 }
 
 function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
-  const { orgNode, theme, level, direction, targetSide, childCount = 0, hiddenCount = 0, collapsed = false } = data;
+  const {
+    orgNode,
+    theme,
+    level,
+    direction,
+    targetSide,
+    childCount = 0,
+    hiddenCount = 0,
+    collapsed = false,
+    outOfPage = false,
+  } = data;
   const toggleCollapsed = useOrgChartStore((s) => s.toggleCollapsed);
   const style = computeNodeStyle(theme, level, orgNode.styleOverride);
   const display = resolveDisplay(theme);
@@ -102,8 +117,22 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
         boxShadow: shadowStyle,
         backdropFilter: isGlass ? "blur(18px) saturate(160%)" : undefined,
         WebkitBackdropFilter: isGlass ? "blur(18px) saturate(160%)" : undefined,
+        opacity: outOfPage && !selected ? 0.45 : undefined,
       }}
     >
+      {/* Badge « hors page » (mode multi-pages) */}
+      {outOfPage && (
+        <div
+          className="pointer-events-none absolute -top-2.5 right-3 z-10 rounded-full border px-2 py-0.5 font-mono text-[8px] font-bold uppercase tracking-widest"
+          style={{
+            background: "#fffbeb",
+            borderColor: "rgba(245, 158, 11, 0.5)",
+            color: "#b45309",
+          }}
+        >
+          hors page
+        </div>
+      )}
       {/* Target connection point - invisible par défaut, s'affiche au survol */}
       <Handle
         type="target"

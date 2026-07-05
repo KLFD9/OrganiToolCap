@@ -12,7 +12,7 @@ npm test         # tests unitaires (vitest)
 npm run lint     # eslint
 ```
 
-L'app démarre sur l'organigramme de démonstration **ATHANOR** (13 personnes) pour valider le rendu immédiatement.
+L'app démarre sur l'organigramme de démonstration **Société Horizon** (PME généraliste de 14 personnes : direction, finance & RH, commercial, opérations, informatique) pour valider le rendu immédiatement — son titre « Exemple » rappelle qu'il est à remplacer.
 
 ## Principes de données
 
@@ -67,7 +67,7 @@ src/
   components/   Canvas, NodeCard, Toolbar, Inspector, TemplatePicker, ExportDialog, GroupBackground
   store/        useOrgChartStore (Zustand) — sérialise vers/depuis OrgChartFile sans perte
   lib/          fileIO (ouvrir/enregistrer + zod), csvImport, pdfExport, elkLayout, nodeStyle, groups, db
-  templates/    thèmes bundlés, page vierge, démo ATHANOR
+  templates/    thèmes bundlés, page vierge, démo Société Horizon
   types/        schéma zod OrgChartFile (format versionné)
 ```
 

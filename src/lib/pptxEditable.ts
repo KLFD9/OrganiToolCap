@@ -1,6 +1,7 @@
 import { resolveDisplay, type OrgEdge, type OrgNode, type OrgTheme } from "../types/orgchart";
 import { computeLevels, computeNodeStyle, getContrastColor } from "./nodeStyle";
 import { computeStackedIds, CARD_WIDTH, CARD_HEIGHT } from "./compactLayout";
+import type { FramePageContent } from "./frames";
 import {
   addSlideChrome,
   computeSlideContentArea,
@@ -172,28 +173,11 @@ export function buildEditableSpec(
   return { cards, connectors };
 }
 
-export async function exportFlowToPptxEditable(
-  nodes: OrgNode[],
-  edges: OrgEdge[],
-  theme: OrgTheme,
-  options: PptxExportOptions,
-  /** Contenu .orgchart.json embarqué dans le fichier pour le round-trip. */
-  chartJson?: string
-): Promise<void> {
-  const { default: PptxGenJS } = await import("pptxgenjs");
-  const pptx = new PptxGenJS();
-  pptx.layout = "LAYOUT_WIDE";
-  pptx.title = options.title ?? "Organigramme";
-  if (options.subtitle) pptx.subject = options.subtitle;
+type PptxInstance = InstanceType<typeof import("pptxgenjs").default>;
+type PptxSlide = ReturnType<PptxInstance["addSlide"]>;
 
-  const slide = pptx.addSlide();
-  const hasHeader = Boolean(options.title || options.logoUrl || options.secondaryLogoUrl);
-  const hasFooter = Boolean(options.footer);
-  await addSlideChrome(slide, options);
-
-  const area = computeSlideContentArea(hasHeader, hasFooter);
-  const spec = buildEditableSpec(nodes, edges, theme, area);
-
+/** Dessine une spec (cartes + connecteurs) sur une diapositive. */
+function renderEditableSpec(pptx: PptxInstance, slide: PptxSlide, spec: EditableSlideSpec): void {
   // « bentConnector3 » est une géométrie OOXML standard (connecteur en coude) ;
   // pptxgenjs écrit la chaîne telle quelle dans le XML mais son enum TS ne la liste pas.
   const bentConnector = "bentConnector3" as unknown as typeof pptx.ShapeType.line;
@@ -256,6 +240,62 @@ export async function exportFlowToPptxEditable(
       margin: 6,
       shadow: { type: "outer", blur: 4, offset: 1, angle: 90, color: "9A9AA8", opacity: 0.3 },
     });
+  }
+}
+
+export async function exportFlowToPptxEditable(
+  nodes: OrgNode[],
+  edges: OrgEdge[],
+  theme: OrgTheme,
+  options: PptxExportOptions,
+  /** Contenu .orgchart.json embarqué dans le fichier pour le round-trip. */
+  chartJson?: string
+): Promise<void> {
+  const { default: PptxGenJS } = await import("pptxgenjs");
+  const pptx = new PptxGenJS();
+  pptx.layout = "LAYOUT_WIDE";
+  pptx.title = options.title ?? "Organigramme";
+  if (options.subtitle) pptx.subject = options.subtitle;
+
+  const slide = pptx.addSlide();
+  const hasHeader = Boolean(options.title || options.logoUrl || options.secondaryLogoUrl);
+  const hasFooter = Boolean(options.footer);
+  await addSlideChrome(slide, options);
+
+  const area = computeSlideContentArea(hasHeader, hasFooter);
+  const spec = buildEditableSpec(nodes, edges, theme, area);
+  renderEditableSpec(pptx, slide, spec);
+
+  await savePptxWithChart(pptx, chartJson, safePptxFileName(options.title));
+}
+
+/**
+ * Export PowerPoint éditable multi-pages : une diapositive par frame, dans
+ * l'ordre du document — le titre / sous-titre de chaque diapositive sont ceux
+ * de la page (hérités du document sinon).
+ */
+export async function exportFramesToPptxEditable(
+  pages: FramePageContent[],
+  theme: OrgTheme,
+  options: PptxExportOptions,
+  chartJson?: string
+): Promise<void> {
+  if (pages.length === 0) return;
+  const { default: PptxGenJS } = await import("pptxgenjs");
+  const pptx = new PptxGenJS();
+  pptx.layout = "LAYOUT_WIDE";
+  pptx.title = options.title ?? "Organigramme";
+  if (options.subtitle) pptx.subject = options.subtitle;
+
+  for (const page of pages) {
+    const slide = pptx.addSlide();
+    const slideOptions: PptxExportOptions = { ...options, title: page.title, subtitle: page.subtitle };
+    const hasHeader = Boolean(slideOptions.title || options.logoUrl || options.secondaryLogoUrl);
+    const hasFooter = Boolean(options.footer);
+    await addSlideChrome(slide, slideOptions);
+
+    const area = computeSlideContentArea(hasHeader, hasFooter);
+    renderEditableSpec(pptx, slide, buildEditableSpec(page.nodes, page.edges, theme, area));
   }
 
   await savePptxWithChart(pptx, chartJson, safePptxFileName(options.title));

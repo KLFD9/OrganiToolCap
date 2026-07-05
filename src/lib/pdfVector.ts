@@ -1,6 +1,7 @@
 import { resolveDisplay, type OrgEdge, type OrgNode, type OrgTheme } from "../types/orgchart";
-import { buildEditableSpec } from "./pptxEditable";
+import { buildEditableSpec, type EditableSlideSpec } from "./pptxEditable";
 import { CARD_WIDTH } from "./compactLayout";
+import type { FramePageContent } from "./frames";
 import {
   applyPdfMetadata,
   drawPageChrome,
@@ -59,20 +60,30 @@ function truncateToWidth(
   return `${t.trimEnd()}…`;
 }
 
-export async function exportFlowToPdfVector(
+/** jsPDF sans dépendance de type statique (module chargé à la demande). */
+type JsPdfLike = Awaited<ReturnType<typeof loadPdf>>["pdf"];
+
+async function loadPdf(orientation: PdfExportOptions["orientation"], format: PdfExportOptions["format"]) {
+  const { jsPDF } = await import("jspdf");
+  return { pdf: new jsPDF({ orientation, unit: "mm", format }) };
+}
+
+/**
+ * Dessine la page courante : chrome (en-tête/pied) puis cartes et connecteurs
+ * ajustés dans la zone utile. Partagé par l'export mono-page et le multi-pages.
+ */
+async function drawVectorPage(
+  pdf: JsPdfLike,
   nodes: OrgNode[],
   edges: OrgEdge[],
   theme: OrgTheme,
-  options: PdfExportOptions
+  options: PdfExportOptions,
+  pageLabel?: string
 ): Promise<void> {
-  const { jsPDF } = await import("jspdf");
-  const pdf = new jsPDF({ orientation: options.orientation, unit: "mm", format: options.format });
-  applyPdfMetadata(pdf, options);
-
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const margin = options.margin;
-  const { topOffset, bottomOffset } = await drawPageChrome(pdf, options, pageWidth, pageHeight, margin);
+  const { topOffset, bottomOffset } = await drawPageChrome(pdf, options, pageWidth, pageHeight, margin, pageLabel);
 
   // buildEditableSpec calcule la géométrie pour une zone en pouces
   const areaIn = {
@@ -82,11 +93,11 @@ export async function exportFlowToPdfVector(
     height: Math.max(0.1, (pageHeight - topOffset - bottomOffset) / MM_PER_IN),
   };
   const spec = buildEditableSpec(nodes, edges, theme, areaIn);
-  if (spec.cards.length === 0) {
-    pdf.save(safeFileName(options.title, "-vectoriel"));
-    return;
-  }
+  if (spec.cards.length > 0) drawEditableSpec(pdf, spec, theme);
+}
 
+/** Dessine cartes et connecteurs d'une spec éditable (réplique de NodeCard). */
+function drawEditableSpec(pdf: JsPdfLike, spec: EditableSlideSpec, theme: OrgTheme): void {
   const mm = (inches: number) => inches * MM_PER_IN;
   // Échelle exacte : mm de papier par px de canvas — toutes les dimensions
   // du dessin sont les px de NodeCard multipliés par cette échelle.
@@ -231,6 +242,71 @@ export async function exportFlowToPdfVector(
       pdf.text(truncateToWidth(pdf, card.email, innerW), x + padX, emailY + px(8), { baseline: "middle" });
     }
   }
+}
 
+export async function exportFlowToPdfVector(
+  nodes: OrgNode[],
+  edges: OrgEdge[],
+  theme: OrgTheme,
+  options: PdfExportOptions
+): Promise<void> {
+  const { pdf } = await loadPdf(options.orientation, options.format);
+  applyPdfMetadata(pdf, options);
+  await drawVectorPage(pdf, nodes, edges, theme, options);
   pdf.save(safeFileName(options.title, "-vectoriel"));
+}
+
+export interface FramesPdfCommonOptions {
+  docTitle?: string;
+  docSubtitle?: string;
+  footer?: string;
+  logoUrl?: string;
+  secondaryLogoUrl?: string;
+}
+
+/**
+ * Construit le PDF vectoriel multi-pages : une page par frame, dans l'ordre du
+ * document. Chaque page porte son propre chrome (titre/sous-titre de la page,
+ * disposition d'en-tête héritée ou propre) et le format papier de sa feuille.
+ * Renvoie le document sans le sauvegarder (réutilisé par le pack de diffusion).
+ */
+export async function buildFramesPdfVector(
+  pages: FramePageContent[],
+  theme: OrgTheme,
+  common: FramesPdfCommonOptions
+): Promise<JsPdfLike> {
+  const first = pages[0];
+  const { pdf } = await loadPdf(first.frame.page.orientation, first.frame.page.format);
+  applyPdfMetadata(pdf, { title: common.docTitle, subtitle: common.docSubtitle });
+
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i];
+    if (i > 0) pdf.addPage(page.frame.page.format, page.frame.page.orientation);
+    const options: PdfExportOptions = {
+      format: page.frame.page.format,
+      orientation: page.frame.page.orientation,
+      margin: page.frame.page.margin,
+      title: page.title,
+      subtitle: page.subtitle,
+      footer: common.footer,
+      logoUrl: common.logoUrl,
+      secondaryLogoUrl: common.secondaryLogoUrl,
+      chromeLayout: page.chromeLayout,
+    };
+    const label = pages.length > 1 ? `${page.frame.name} · ${i + 1}/${pages.length}` : undefined;
+    await drawVectorPage(pdf, page.nodes, page.edges, theme, options, label);
+  }
+
+  return pdf;
+}
+
+/** Export PDF vectoriel multi-pages (téléchargement direct). */
+export async function exportFramesToPdfVector(
+  pages: FramePageContent[],
+  theme: OrgTheme,
+  common: FramesPdfCommonOptions
+): Promise<void> {
+  if (pages.length === 0) return;
+  const pdf = await buildFramesPdfVector(pages, theme, common);
+  pdf.save(safeFileName(common.docTitle, pages.length > 1 ? "-pages" : "-vectoriel"));
 }

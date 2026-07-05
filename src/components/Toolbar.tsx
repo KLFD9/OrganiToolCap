@@ -24,7 +24,7 @@ import {
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import { openOrgChartFile, saveOrgChartFile, FileFormatError } from "../lib/fileIO";
 import { importPeopleCsv, CsvFormatError } from "../lib/csvImport";
-import { athanorDemo } from "../templates/athanorDemo";
+import { demoCompany } from "../templates/demoCompany";
 
 interface ToolbarProps {
   onExportClick: () => void;
@@ -429,17 +429,17 @@ export function Toolbar({
             </div>
           </div>
 
-          {/* Démo ATHANOR */}
+          {/* Organigramme d'exemple */}
           <div className="relative group">
             <button
-              aria-label="Charger la démo ATHANOR"
-              onClick={() => loadFile(athanorDemo)}
+              aria-label="Charger l'organigramme d'exemple"
+              onClick={() => loadFile(demoCompany)}
               className={getButtonClass(false)}
             >
               <Sparkles className="h-4 w-4" />
             </button>
             <div className="absolute left-1/2 top-full mt-2.5 hidden -translate-x-1/2 rounded bg-zinc-900 px-2.5 py-1 text-[10px] font-medium text-zinc-100 shadow-md group-hover:block z-30 whitespace-nowrap">
-              Charger l'exemple ATHANOR <span className="text-zinc-400 font-normal">(charger un exemple d'organigramme de démonstration)</span>
+              Charger l'exemple <span className="text-zinc-400 font-normal">(organigramme de démonstration Société Horizon)</span>
             </div>
           </div>
         </div>
