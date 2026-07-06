@@ -164,6 +164,8 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const setChromeElement = useOrgChartStore((s) => s.setChromeElement);
   const setFrameChromeElement = useOrgChartStore((s) => s.setFrameChromeElement);
   const frames = useOrgChartStore((s) => s.frames);
+  const selectedFrameId = useOrgChartStore((s) => s.selectedFrameId);
+  const selectFrame = useOrgChartStore((s) => s.selectFrame);
   const addFrame = useOrgChartStore((s) => s.addFrame);
   const deleteFrame = useOrgChartStore((s) => s.deleteFrame);
   const duplicateFrame = useOrgChartStore((s) => s.duplicateFrame);
@@ -297,14 +299,17 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         position: frame.position,
         draggable: true,
         dragHandle: ".frame-drag-handle",
-        // Non sélectionnable : la feuille ne doit jamais rejoindre un drag de
-        // groupe ni voler la sélection — l'étiquette est la seule prise.
+        // Non sélectionnable au sens React Flow : la feuille ne doit jamais
+        // rejoindre un drag de groupe, voler la sélection de cartes, ni (même
+        // avec selectable: false) remonter dans onSelectionChange — d'où
+        // `data.isSelected` plutôt que le `selected` géré par React Flow.
         selectable: false,
         focusable: false,
         zIndex: -2,
         // La feuille est transparente aux événements (pan au clic droit,
         // lasso, clic droit → menu de fond passent au canevas). Seule
-        // l'étiquette (pointer-events-auto) déclenche drag et menu contextuel.
+        // l'étiquette (pointer-events-auto) déclenche drag, clic de sélection
+        // et menu contextuel.
         style: { pointerEvents: "none" as const },
         data: {
           width: size.width,
@@ -321,6 +326,8 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
           dark: themeMode === "dark",
           frameName: frame.name,
           memberCount: members.length,
+          isSelected: frame.id === selectedFrameId,
+          onSelect: () => selectFrame(frame.id),
         },
       };
     });
@@ -328,6 +335,8 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     pageGuideEnabled,
     hasFrames,
     frames,
+    selectedFrameId,
+    selectFrame,
     membership,
     visibleNodes,
     meta,
@@ -549,7 +558,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
           target: e.target,
           type: "org",
           animated: isSelected, // anime le flux des connexions liées au nœud sélectionné
-          data: { spine: !isDotted && stackedIds.has(e.target) },
+          data: { spine: !isDotted && stackedIds.has(e.target), dotted: isDotted },
           style: {
             stroke: isSelected
               ? theme.accent
@@ -951,6 +960,14 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     [selectNodes]
   );
 
+  // Clic sur le fond du canevas : désélectionne explicitement cartes ET page
+  // (onSelectionChange seul ne suffit pas à effacer une page sélectionnée,
+  // cf. commentaire de selectNodes dans le store).
+  const onPaneClick = useCallback(() => {
+    selectNodes([]);
+    selectFrame(null);
+  }, [selectNodes, selectFrame]);
+
   // Couleurs de fond de la grille
   const gridColor = themeMode === "dark" ? "rgba(255, 255, 255, 0.04)" : "rgba(0, 0, 0, 0.05)";
   const maskColor = themeMode === "dark" ? "rgba(9, 9, 11, 0.7)" : "rgba(250, 249, 246, 0.7)";
@@ -971,6 +988,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         onEdgeContextMenu={onEdgeContextMenu}
         onPaneContextMenu={onPaneContextMenu}
         onSelectionChange={onSelectionChange}
+        onPaneClick={onPaneClick}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView

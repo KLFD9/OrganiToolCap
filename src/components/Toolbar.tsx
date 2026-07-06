@@ -248,10 +248,10 @@ export function Toolbar({
 
   return (
     <div
-      className={`mx-4 mt-4 mb-2 flex flex-wrap items-center gap-3 rounded-2xl border px-4 py-2.5 shadow-md backdrop-blur-md transition-all duration-300 z-10 ${
+      className={`w-full flex flex-wrap items-center gap-3 border-b px-4 py-2 transition-all duration-300 z-10 ${
         themeMode === "dark"
-          ? "border-border-dark bg-panel-bg-dark/95 text-text-dark"
-          : "border-border-light bg-panel-bg-light/95 text-text-light"
+          ? "border-border-dark bg-panel-bg-dark text-text-dark"
+          : "border-border-light bg-panel-bg-light text-text-light"
       }`}
     >
       {/* Titre et indicateur d'enregistrement */}

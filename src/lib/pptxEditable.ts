@@ -1,6 +1,9 @@
 import { resolveDisplay, type OrgEdge, type OrgNode, type OrgTheme } from "../types/orgchart";
 import { computeLevels, computeNodeStyle, getContrastColor } from "./nodeStyle";
 import { computeStackedIds, CARD_WIDTH, CARD_HEIGHT } from "./compactLayout";
+import { computeElbowRoute, computeSpineRoute, isSpineDirection, type EdgeRoutePoint } from "./edgeRouting";
+import { nameInitials } from "./nameInitials";
+import { blendHex } from "./colorBlend";
 import type { FramePageContent } from "./frames";
 import {
   addSlideChrome,
@@ -38,15 +41,15 @@ export interface CardSpec {
   namePt: number;
   rolePt: number;
   deptPt: number;
+  /** Pastille avatar (initiales) — masquée si l'affichage des photos est désactivé. */
+  avatar?: { diameterIn: number; bg: string; textColor: string; initials: string };
+  /** Style « minimal » : fine barre d'accent sur le bord gauche de la carte. */
+  accentBarWidthIn?: number;
 }
 
 export interface ConnectorSpec {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  flipH: boolean;
-  flipV: boolean;
+  /** Polyligne (mêmes points que le tracé canvas, cf. lib/edgeRouting.ts). */
+  points: EdgeRoutePoint[];
   color: string;
   /** Rattachement fonctionnel : trait pointillé. */
   dashed: boolean;
@@ -115,12 +118,24 @@ export function buildEditableSpec(
         : solidBg
         ? pptxColor(style.background, accent)
         : "FFFFFF";
+    const isNeon = theme.nodeStyle === "neon";
+    const isMinimal = theme.nodeStyle === "minimal";
     const textColor =
-      theme.nodeStyle === "neon"
+      isNeon
         ? "FFFFFF"
         : solidBg
         ? pptxColor(getContrastColor(`#${fillColor}`), "1A1A1E")
         : "1A1A1E";
+    // Pastille avatar : réplique de NodeCard (40 px de diamètre, cf. lib/pdfVector.ts)
+    const avatarDiameterPx = 40;
+    const avatar = display.showPhotos
+      ? {
+          diameterIn: toIn(avatarDiameterPx),
+          bg: solidBg || isNeon ? blendHex(textColor, fillColor, 0.18) : accent,
+          textColor: solidBg || isNeon ? textColor : "FFFFFF",
+          initials: nameInitials(n.data.name || "?") || "?",
+        }
+      : undefined;
     return {
       x: posX(n.position.x),
       y: posY(n.position.y),
@@ -129,17 +144,19 @@ export function buildEditableSpec(
       radiusIn: toIn(theme.cornerRadius),
       fillColor,
       lineColor: accent,
-      lineWidth: theme.nodeStyle === "outline" || theme.nodeStyle === "neon" ? 1.25 : 0.75,
+      lineWidth: theme.nodeStyle === "outline" || isNeon ? 1.25 : 0.75,
       department: display.showDepartments ? n.data.department : undefined,
       name: n.data.name || "Sans nom",
       role: display.showRoles ? n.data.role : undefined,
       email: display.showEmails ? n.data.email : undefined,
-      deptColor: solidBg || theme.nodeStyle === "neon" ? textColor : accent,
+      deptColor: solidBg || isNeon ? textColor : accent,
       textColor,
       accentColor: accent,
       namePt,
       rolePt: Math.max(MIN_FONT_PT, namePt * 0.82),
       deptPt: Math.max(MIN_FONT_PT - 1, namePt * 0.62),
+      avatar,
+      accentBarWidthIn: isMinimal ? toIn(6) : undefined,
     };
   });
 
@@ -150,21 +167,23 @@ export function buildEditableSpec(
     if (!source || !target) continue;
 
     // Départ : bas-centre du responsable. Arrivée : haut-centre du subordonné,
-    // ou côté gauche pour les subordonnés empilés (disposition compacte).
+    // ou côté gauche pour les subordonnés empilés (disposition compacte) —
+    // même géométrie que le canvas (cf. components/OrgEdge.tsx), calculée en
+    // px canvas puis mise à l'échelle point par point pour garantir le WYSIWYG.
     const dashed = e.kind === "dotted";
-    const sx = posX(source.position.x + CARD_WIDTH / 2);
-    const sy = posY(source.position.y + CARD_HEIGHT);
+    const sxPx = source.position.x + CARD_WIDTH / 2;
+    const syPx = source.position.y + CARD_HEIGHT;
     const stacked = !dashed && stackedIds.has(e.target);
-    const tx = stacked ? posX(target.position.x) : posX(target.position.x + CARD_WIDTH / 2);
-    const ty = stacked ? posY(target.position.y + CARD_HEIGHT / 2) : posY(target.position.y);
+    const txPx = stacked ? target.position.x : target.position.x + CARD_WIDTH / 2;
+    const tyPx = stacked ? target.position.y + CARD_HEIGHT / 2 : target.position.y;
+
+    const routePx =
+      stacked && isSpineDirection(sxPx, syPx, txPx, tyPx)
+        ? computeSpineRoute(sxPx, syPx, txPx, tyPx)
+        : computeElbowRoute(sxPx, syPx, txPx, tyPx);
 
     connectors.push({
-      x: Math.min(sx, tx),
-      y: Math.min(sy, ty),
-      w: Math.abs(tx - sx),
-      h: Math.abs(ty - sy),
-      flipH: tx < sx,
-      flipV: ty < sy,
+      points: routePx.map((p) => ({ x: posX(p.x), y: posY(p.y) })),
       color: "B5B5C0",
       dashed,
     });
@@ -178,25 +197,84 @@ type PptxSlide = ReturnType<PptxInstance["addSlide"]>;
 
 /** Dessine une spec (cartes + connecteurs) sur une diapositive. */
 function renderEditableSpec(pptx: PptxInstance, slide: PptxSlide, spec: EditableSlideSpec): void {
-  // « bentConnector3 » est une géométrie OOXML standard (connecteur en coude) ;
-  // pptxgenjs écrit la chaîne telle quelle dans le XML mais son enum TS ne la liste pas.
-  const bentConnector = "bentConnector3" as unknown as typeof pptx.ShapeType.line;
-
-  // Connecteurs d'abord : les cartes passent au-dessus
+  // Connecteurs d'abord : les cartes passent au-dessus. Chaque polyligne est
+  // dessinée segment par segment avec des lignes droites (pptx.ShapeType.line)
+  // — une géométrie OOXML toujours valide, contrairement au coude générique
+  // ("bentConnector3") utilisé auparavant, dont la forme réelle échappait à
+  // pptxgenjs et provoquait une invite de réparation à l'ouverture.
   for (const c of spec.connectors) {
-    const isStraight = c.w < 0.02 || c.h < 0.02;
-    slide.addShape(isStraight ? pptx.ShapeType.line : bentConnector, {
-      x: c.x,
-      y: c.y,
-      w: c.w,
-      h: c.h,
-      flipH: c.flipH,
-      flipV: c.flipV,
-      line: { color: c.color, width: 1, dashType: c.dashed ? "dash" : "solid" },
-    });
+    for (let i = 0; i < c.points.length - 1; i++) {
+      const a = c.points[i];
+      const b = c.points[i + 1];
+      if (Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) < 1e-6) continue;
+      slide.addShape(pptx.ShapeType.line, {
+        x: Math.min(a.x, b.x),
+        y: Math.min(a.y, b.y),
+        w: Math.max(Math.abs(b.x - a.x), 0.001),
+        h: Math.max(Math.abs(b.y - a.y), 0.001),
+        flipH: b.x < a.x,
+        flipV: b.y < a.y,
+        line: { color: c.color, width: 1, dashType: c.dashed ? "dash" : "solid" },
+      });
+    }
   }
 
   for (const card of spec.cards) {
+    // 1. Fond de carte (toujours la forme pleine, sous tout le reste)
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x: card.x,
+      y: card.y,
+      w: card.w,
+      h: card.h,
+      rectRadius: Math.min(card.radiusIn, card.h / 2),
+      fill: { color: card.fillColor },
+      line: { color: card.lineColor, width: card.lineWidth },
+      shadow: { type: "outer", blur: 4, offset: 1, angle: 90, color: "9A9AA8", opacity: 0.3 },
+    });
+
+    // 2. Barre d'accent (style « minimal »), en surimpression sur le bord gauche
+    if (card.accentBarWidthIn) {
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: card.x,
+        y: card.y,
+        w: card.accentBarWidthIn,
+        h: card.h,
+        rectRadius: Math.min(card.radiusIn, card.h / 2),
+        fill: { color: card.accentColor },
+        line: { type: "none" },
+      });
+    }
+
+    // 3. Avatar (pastille d'initiales), réplique de NodeCard
+    const leftInset = (card.accentBarWidthIn ?? 0) + 0.06;
+    let textLeftInset = leftInset;
+    if (card.avatar) {
+      const d = card.avatar.diameterIn;
+      const avatarX = card.x + leftInset;
+      const avatarY = card.y + (card.h - d) / 2;
+      slide.addShape(pptx.ShapeType.ellipse, {
+        x: avatarX,
+        y: avatarY,
+        w: d,
+        h: d,
+        fill: { color: card.avatar.bg },
+        line: { type: "none" },
+      });
+      slide.addText(card.avatar.initials, {
+        x: avatarX,
+        y: avatarY,
+        w: d,
+        h: d,
+        align: "center",
+        valign: "middle",
+        fontSize: Math.max(MIN_FONT_PT, card.namePt * 0.9),
+        bold: true,
+        color: card.avatar.textColor,
+      });
+      textLeftInset = leftInset + d + 0.1;
+    }
+
+    // 4. Texte (nom, poste, pôle, e-mail) : bloc transparent superposé au fond
     const runs: Array<{ text: string; options: Record<string, unknown> }> = [];
     if (card.department) {
       runs.push({
@@ -227,18 +305,13 @@ function renderEditableSpec(pptx: PptxInstance, slide: PptxSlide, spec: Editable
     }
 
     slide.addText(runs, {
-      shape: pptx.ShapeType.roundRect,
-      x: card.x,
+      x: card.x + textLeftInset,
       y: card.y,
-      w: card.w,
+      w: card.w - textLeftInset - 0.06,
       h: card.h,
-      rectRadius: Math.min(card.radiusIn, card.h / 2),
-      fill: { color: card.fillColor },
-      line: { color: card.lineColor, width: card.lineWidth },
       align: "left",
       valign: "middle",
       margin: 6,
-      shadow: { type: "outer", blur: 4, offset: 1, angle: 90, color: "9A9AA8", opacity: 0.3 },
     });
   }
 }

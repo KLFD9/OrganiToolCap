@@ -34,6 +34,15 @@ export interface PageGuideData extends Record<string, unknown> {
   frameName?: string;
   /** Nombre de cartes appartenant à la page (mode multi-pages). */
   memberCount?: number;
+  /**
+   * Page sélectionnée (propriétés affichées dans l'inspecteur) — état applicatif
+   * propre, distinct du `selected` React Flow (les frames ne sont pas
+   * selectable côté RF pour ne jamais rejoindre un drag de groupe ni
+   * remonter dans onSelectionChange).
+   */
+  isSelected?: boolean;
+  /** Sélectionne la page (affiche ses propriétés dans l'inspecteur) — mode multi-pages. */
+  onSelect?: () => void;
 }
 
 const RATING_STYLE: Record<ReadabilityRating, { chip: string; text: string }> = {
@@ -48,7 +57,7 @@ const RATING_LABEL: Record<ReadabilityRating, string> = {
   bad: "illisible",
 };
 
-function PageGuideImpl({ data, selected }: NodeProps & { data: PageGuideData }) {
+function PageGuideImpl({ data }: NodeProps & { data: PageGuideData }) {
   const {
     width,
     height,
@@ -64,6 +73,8 @@ function PageGuideImpl({ data, selected }: NodeProps & { data: PageGuideData }) 
     dark,
     frameName,
     memberCount,
+    isSelected,
+    onSelect,
   } = data;
   const ratingStyle = RATING_STYLE[rating];
   const isFrame = frameName !== undefined;
@@ -80,6 +91,10 @@ function PageGuideImpl({ data, selected }: NodeProps & { data: PageGuideData }) 
       >
         {isFrame && (
           <span
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect?.();
+            }}
             className="rounded-lg px-2.5 py-1 font-bold transition-shadow hover:shadow-md"
             style={{
               background: dark ? "rgba(24, 24, 27, 0.92)" : "#ffffff",
@@ -107,7 +122,7 @@ function PageGuideImpl({ data, selected }: NodeProps & { data: PageGuideData }) 
         style={{
           background: dark ? "rgba(255, 255, 255, 0.025)" : "rgba(255, 255, 255, 0.6)",
           border: `1.5px solid ${
-            selected && isFrame
+            isSelected && isFrame
               ? "rgba(109, 74, 174, 0.75)"
               : dark
               ? "rgba(255,255,255,0.09)"

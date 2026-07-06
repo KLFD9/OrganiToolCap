@@ -62,6 +62,8 @@ interface OrgChartState {
   fileHandle?: FileSystemFileHandle;
   isDirty: boolean;
   selectedNodeIds: string[];
+  /** Page (frame) sélectionnée dans le navigateur de pages ou le canevas — mutuellement exclusif avec selectedNodeIds. */
+  selectedFrameId: string | null;
   /** Branches repliées (état de vue, non persisté dans le fichier). */
   collapsedNodeIds: string[];
   /** Cadre de page visible dans le canvas (état de vue, non persisté). */
@@ -138,6 +140,8 @@ interface OrgChartState {
   // -- sélection --
   selectNode: (id: string | null) => void;
   selectNodes: (ids: string[]) => void;
+  /** Sélectionne une page (frame) pour afficher ses propriétés dans l'inspecteur ; désélectionne les cartes. */
+  selectFrame: (id: string | null) => void;
 
   // -- repli de branches --
   toggleCollapsed: (id: string) => void;
@@ -197,6 +201,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
   fileHandle: undefined,
   isDirty: false,
   selectedNodeIds: [],
+  selectedFrameId: null,
   collapsedNodeIds: [],
   pageGuide: true,
 
@@ -667,8 +672,13 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       };
     }),
 
-  selectNode: (id) => set({ selectedNodeIds: id ? [id] : [] }),
-  selectNodes: (ids) => set({ selectedNodeIds: ids }),
+  selectNode: (id) => set({ selectedNodeIds: id ? [id] : [], selectedFrameId: null }),
+  // React Flow ré-émet onSelectionChange([]) à chaque recalcul de la liste de
+  // nœuds (ex. maj des pages), pas seulement au clic utilisateur — ne pas
+  // effacer une sélection de page sur une émission vide non déclenchée par
+  // un clic (cf. onPaneClick, qui gère explicitement la désélection totale).
+  selectNodes: (ids) => set((s) => ({ selectedNodeIds: ids, selectedFrameId: ids.length > 0 ? null : s.selectedFrameId })),
+  selectFrame: (id) => set({ selectedFrameId: id, selectedNodeIds: [] }),
 
   toggleCollapsed: (id) =>
     set((s) => {
@@ -724,6 +734,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       return {
         ...pushHistory(s),
         frames: s.frames.filter((f) => f.id !== id),
+        selectedFrameId: s.selectedFrameId === id ? null : s.selectedFrameId,
         isDirty: true,
         meta: { ...s.meta, updatedAt: new Date().toISOString() },
       };

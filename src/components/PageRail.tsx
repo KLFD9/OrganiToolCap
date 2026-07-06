@@ -4,21 +4,19 @@ import { ChevronDown, ChevronUp, Copy, FilePlus2, Layers, PanelLeftClose, Trash 
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import { computeFrameMembership, frameRectPx, frameSizePx } from "../lib/frames";
 import { CARD_HEIGHT, CARD_WIDTH } from "../lib/compactLayout";
-import type { PageSetup } from "../lib/readability";
 
 /**
- * Navigateur de pages : rail permanent à gauche du canvas — c'est l'entrée
- * principale du mode multi-pages. Sans page : état d'accueil (« Créer la
- * première page » enveloppe l'organigramme actuel). Avec pages : miniatures
- * (sommaire visuel + ordre d'export), renommage au double-clic, format
- * A4/A3 et orientation par page, dupliquer, supprimer, réordonner.
+ * Navigateur de pages : panneau ancré à gauche du canevas (style Figma).
+ * Miniature de sommaire visuel, renommage au double-clic, réglage du format
+ * de page (A4/A3, orientation) et actions de réorganisation/duplication/suppression.
  */
 
 interface PageRailProps {
   themeMode?: "light" | "dark";
+  onClose: () => void;
 }
 
-export function PageRail({ themeMode = "light" }: PageRailProps) {
+export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
   const frames = useOrgChartStore((s) => s.frames);
   const nodes = useOrgChartStore((s) => s.nodes);
   const addFrame = useOrgChartStore((s) => s.addFrame);
@@ -26,21 +24,21 @@ export function PageRail({ themeMode = "light" }: PageRailProps) {
   const deleteFrame = useOrgChartStore((s) => s.deleteFrame);
   const duplicateFrame = useOrgChartStore((s) => s.duplicateFrame);
   const reorderFrame = useOrgChartStore((s) => s.reorderFrame);
+  const selectedFrameId = useOrgChartStore((s) => s.selectedFrameId);
+  const selectFrame = useOrgChartStore((s) => s.selectFrame);
   const { fitBounds } = useReactFlow();
 
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [collapsed, setCollapsed] = useState(false);
 
   const dark = themeMode === "dark";
   const reduceMotion =
     typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
-  // fitBounds (et non fitView sur le nœud) : fonctionne même si le cadre de
-  // page est momentanément masqué dans le canvas.
   const jumpTo = (frameId: string) => {
     const frame = useOrgChartStore.getState().frames.find((f) => f.id === frameId);
     if (!frame) return;
+    selectFrame(frameId);
     const rect = frameRectPx(frame);
     fitBounds(rect, { duration: reduceMotion ? 0 : 300, padding: 0.1 });
   };
@@ -57,107 +55,89 @@ export function PageRail({ themeMode = "light" }: PageRailProps) {
     setRenamingId(null);
   };
 
-  const setPageOption = (frameId: string, patch: Partial<PageSetup>) => {
-    const frame = frames.find((f) => f.id === frameId);
-    if (frame) updateFrame(frameId, { page: { ...frame.page, ...patch } });
-  };
-
-  const iconButton = `rounded-md p-1 transition-colors cursor-pointer ${
-    dark ? "text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800" : "text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100"
+  const iconButton = `rounded-lg p-1 transition-all cursor-pointer ${
+    dark
+      ? "text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800"
+      : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100"
   }`;
-
-  // Segment A4/A3 ou paysage/portrait : deux micro-boutons exclusifs
-  const segment = (active: boolean) =>
-    `flex-1 rounded-md px-1 py-0.5 text-[9px] font-bold uppercase tracking-wide transition-colors cursor-pointer ${
-      active
-        ? dark
-          ? "bg-primary-600/80 text-white"
-          : "bg-primary-700 text-white"
-        : dark
-        ? "text-zinc-500 hover:text-zinc-300"
-        : "text-zinc-450 hover:text-zinc-650"
-    }`;
-
-  // Rail replié : pastille discrète pour le rouvrir
-  if (collapsed) {
-    return (
-      <button
-        onClick={() => setCollapsed(false)}
-        title="Afficher le navigateur de pages"
-        className={`absolute left-4 top-16 z-10 flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-semibold shadow-md backdrop-blur-md transition-all hover:scale-102 active:scale-98 cursor-pointer ${
-          dark
-            ? "border-zinc-800 bg-zinc-950/90 text-zinc-300 hover:bg-zinc-900"
-            : "border-zinc-200 bg-white/95 text-zinc-600 hover:bg-zinc-50"
-        }`}
-      >
-        <Layers className="h-4 w-4" />
-        <span>Pages{frames.length > 0 ? ` · ${frames.length}` : ""}</span>
-      </button>
-    );
-  }
 
   const membership = computeFrameMembership(frames, nodes);
 
   return (
-    <div
-      className={`absolute left-4 top-16 z-10 flex w-44 flex-col rounded-2xl border shadow-lg backdrop-blur-md ${
-        frames.length > 0 ? "bottom-32" : ""
-      } ${dark ? "border-zinc-800 bg-zinc-950/90" : "border-zinc-200 bg-white/95"}`}
-    >
+    <div className="flex flex-col h-full w-full bg-panel-bg-light dark:bg-panel-bg-dark">
+      {/* Header Figma-style */}
       <div
-        className={`flex items-center justify-between border-b py-1.5 pl-3 pr-1.5 ${
-          dark ? "border-zinc-800" : "border-zinc-100"
+        className={`flex h-12 items-center justify-between px-4 border-b ${
+          dark ? "border-border-dark bg-zinc-950/20" : "border-border-light bg-zinc-50/50"
         }`}
       >
-        <span className={`text-[10px] font-bold uppercase tracking-widest ${dark ? "text-zinc-500" : "text-zinc-400"}`}>
-          Pages{frames.length > 0 ? ` · ${frames.length}` : ""}
+        <span className={`text-xs font-semibold tracking-wide ${dark ? "text-zinc-200" : "text-zinc-800"}`}>
+          Pages{frames.length > 0 ? ` (${frames.length})` : ""}
         </span>
-        <button
-          onClick={() => setCollapsed(true)}
-          title="Replier le navigateur de pages"
-          aria-label="Replier le navigateur de pages"
-          className={iconButton}
-        >
-          <PanelLeftClose className="h-3.5 w-3.5" />
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={handleAddFrame}
+            title="Ajouter une page"
+            aria-label="Ajouter une page"
+            className={iconButton}
+          >
+            <FilePlus2 className="h-4 w-4" />
+          </button>
+          <button
+            onClick={onClose}
+            title="Replier le navigateur de pages"
+            aria-label="Replier le navigateur de pages"
+            className={iconButton}
+          >
+            <PanelLeftClose className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {frames.length === 0 ? (
-        /* État d'accueil : le multi-pages en un clic */
-        <div className="flex flex-col gap-3 p-3.5">
-          <Layers className={`h-6 w-6 ${dark ? "text-zinc-700" : "text-zinc-300"}`} />
-          <p className={`text-[11px] leading-relaxed ${dark ? "text-zinc-400" : "text-zinc-500"}`}>
-            Découpez le document en <strong>pages A4/A3</strong> : une feuille par équipe ou par pôle, exportées
-            ensemble en un seul PDF ou PowerPoint.
+        /* État d'accueil Figma-style */
+        <div className="flex flex-col items-center justify-center p-6 text-center h-full flex-1">
+          <div className={`mb-4 rounded-full p-4 ${dark ? "bg-primary-950/20 text-primary-400" : "bg-primary-50 text-primary-600"}`}>
+            <Layers className="h-7 w-7" />
+          </div>
+          <h3 className={`text-sm font-semibold ${dark ? "text-zinc-200" : "text-zinc-800"}`}>
+            Aucune page
+          </h3>
+          <p className={`mt-2 text-[11px] leading-relaxed max-w-[185px] ${dark ? "text-zinc-400" : "text-zinc-500"}`}>
+            Découpez le document en <strong>pages A4/A3</strong> pour un export multi-pages de qualité professionnelle.
           </p>
           <button
             onClick={handleAddFrame}
-            className={`flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[11px] font-bold shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ${
+            className={`mt-5 flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ${
               dark ? "bg-primary-600 text-white hover:bg-primary-500" : "bg-primary-700 text-white hover:bg-primary-600"
             }`}
           >
             <FilePlus2 className="h-3.5 w-3.5" />
             <span>Créer la première page</span>
           </button>
-          <p className={`text-[10px] leading-normal ${dark ? "text-zinc-600" : "text-zinc-400"}`}>
-            La page enveloppe l'organigramme actuel ; glissez ensuite les cartes d'une feuille à l'autre.
-          </p>
         </div>
       ) : (
-        <div className="custom-scrollbar flex-1 overflow-y-auto p-2 flex flex-col gap-2">
+        <div className="custom-scrollbar flex-1 overflow-y-auto p-3 flex flex-col gap-3">
           {frames.map((frame, index) => {
             const size = frameSizePx(frame.page);
             const memberIds = membership.byFrame.get(frame.id) ?? [];
             const memberSet = new Set(memberIds);
             const members = nodes.filter((n) => memberSet.has(n.id));
 
+            const isSelected = frame.id === selectedFrameId;
+
             return (
               <div
                 key={frame.id}
-                className={`group rounded-xl border p-2 transition-colors ${
-                  dark
-                    ? "border-zinc-800 hover:border-primary-400/50 hover:bg-zinc-900"
-                    : "border-zinc-150 hover:border-primary-600/40 hover:bg-primary-50/40"
+                onClick={() => selectFrame(frame.id)}
+                className={`group rounded-xl border p-2.5 transition-all duration-200 cursor-pointer ${
+                  isSelected
+                    ? dark
+                      ? "border-primary-400/70 bg-zinc-900/30 shadow-sm ring-1 ring-primary-400/30"
+                      : "border-primary-600/60 bg-white shadow-sm ring-1 ring-primary-600/20"
+                    : dark
+                    ? "border-zinc-800/60 bg-zinc-900/10 hover:border-primary-400/40 hover:bg-zinc-900/20 hover:shadow-sm"
+                    : "border-zinc-200 bg-zinc-50/40 hover:border-primary-600/30 hover:bg-white hover:shadow-sm"
                 }`}
               >
                 {/* Miniature schématique : feuille + cartes en rectangles */}
@@ -168,10 +148,10 @@ export function PageRail({ themeMode = "light" }: PageRailProps) {
                 >
                   <svg
                     viewBox={`0 0 ${size.width} ${size.height}`}
-                    className="w-full rounded-md"
+                    className="w-full rounded-md shadow-sm transition-shadow hover:shadow-md"
                     style={{
-                      background: dark ? "rgba(255,255,255,0.04)" : "#ffffff",
-                      border: `1px solid ${dark ? "rgba(255,255,255,0.09)" : "rgba(24,24,27,0.12)"}`,
+                      background: dark ? "#1c1c1e" : "#ffffff",
+                      border: `1px solid ${dark ? "rgba(255,255,255,0.08)" : "rgba(24,24,27,0.08)"}`,
                       aspectRatio: `${size.width} / ${size.height}`,
                     }}
                     role="img"
@@ -192,87 +172,77 @@ export function PageRail({ themeMode = "light" }: PageRailProps) {
                 </button>
 
                 {/* Nom (double-clic pour renommer) + effectif */}
-                <div className="mt-1.5 flex items-center gap-1">
-                  <span className={`font-mono text-[9px] ${dark ? "text-zinc-600" : "text-zinc-350"}`}>
-                    {index + 1}
-                  </span>
-                  {renamingId === frame.id ? (
-                    <input
-                      autoFocus
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onBlur={() => commitRename(frame.id)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitRename(frame.id);
-                        else if (e.key === "Escape") setRenamingId(null);
-                      }}
-                      className={`min-w-0 flex-1 rounded border px-1 py-0.5 text-[11px] focus:outline-none ${
-                        dark
-                          ? "border-primary-400/60 bg-zinc-900 text-zinc-100"
-                          : "border-primary-600/60 bg-white text-zinc-800"
-                      }`}
-                    />
-                  ) : (
-                    <button
-                      onDoubleClick={() => {
-                        setDraft(frame.name);
-                        setRenamingId(frame.id);
-                      }}
-                      onClick={() => jumpTo(frame.id)}
-                      title="Double-clic pour renommer"
-                      className={`min-w-0 flex-1 truncate text-left text-[11px] font-semibold cursor-pointer ${
-                        dark ? "text-zinc-300" : "text-zinc-700"
-                      }`}
-                    >
-                      {frame.name}
-                    </button>
-                  )}
-                  <span className={`shrink-0 font-mono text-[9px] ${dark ? "text-zinc-600" : "text-zinc-400"}`}>
+                <div className="mt-2.5 flex items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                    <span className={`font-mono text-[9px] ${dark ? "text-zinc-500" : "text-zinc-400"}`}>
+                      {index + 1}
+                    </span>
+                    {renamingId === frame.id ? (
+                      <input
+                        autoFocus
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onBlur={() => commitRename(frame.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") commitRename(frame.id);
+                          else if (e.key === "Escape") setRenamingId(null);
+                        }}
+                        className={`min-w-0 flex-1 rounded border px-1.5 py-0.5 text-xs focus:outline-none ${
+                          dark
+                            ? "border-primary-400/60 bg-zinc-950 text-zinc-100"
+                            : "border-primary-600/60 bg-white text-zinc-800"
+                        }`}
+                      />
+                    ) : (
+                      <button
+                        onDoubleClick={() => {
+                          setDraft(frame.name);
+                          setRenamingId(frame.id);
+                        }}
+                        onClick={() => jumpTo(frame.id)}
+                        title="Double-clic pour renommer"
+                        className={`min-w-0 flex-1 truncate text-left text-xs font-semibold hover:text-primary-600 dark:hover:text-primary-400 cursor-pointer ${
+                          dark ? "text-zinc-300" : "text-zinc-700"
+                        }`}
+                      >
+                        {frame.name}
+                      </button>
+                    )}
+                  </div>
+                  <span className={`shrink-0 px-1.5 py-0.5 rounded-full font-mono text-[9px] font-medium ${
+                    dark ? "bg-zinc-800/80 text-zinc-400" : "bg-zinc-100 text-zinc-500"
+                  }`}>
                     {memberIds.length}
                   </span>
                 </div>
 
-                {/* Format papier de la page : A4/A3 + orientation */}
-                <div className="mt-1.5 flex items-center gap-1.5">
-                  <div
-                    className={`flex flex-1 rounded-lg p-0.5 ${dark ? "bg-zinc-900" : "bg-zinc-100"}`}
-                    role="group"
-                    aria-label={`Format papier de la page ${frame.name}`}
-                  >
-                    <button className={segment(frame.page.format === "a4")} onClick={() => setPageOption(frame.id, { format: "a4" })}>
-                      A4
-                    </button>
-                    <button className={segment(frame.page.format === "a3")} onClick={() => setPageOption(frame.id, { format: "a3" })}>
-                      A3
-                    </button>
-                  </div>
-                  <div
-                    className={`flex flex-1 rounded-lg p-0.5 ${dark ? "bg-zinc-900" : "bg-zinc-100"}`}
-                    role="group"
-                    aria-label={`Orientation de la page ${frame.name}`}
-                  >
-                    <button
-                      className={segment(frame.page.orientation === "landscape")}
-                      onClick={() => setPageOption(frame.id, { orientation: "landscape" })}
-                      title="Paysage"
-                    >
-                      Pays.
-                    </button>
-                    <button
-                      className={segment(frame.page.orientation === "portrait")}
-                      onClick={() => setPageOption(frame.id, { orientation: "portrait" })}
-                      title="Portrait"
-                    >
-                      Port.
-                    </button>
-                  </div>
+                {/* Format papier : lecture seule ici — cliquer la page l'ouvre
+                    dans le panneau Propriétés (à droite) pour le modifier. */}
+                <div
+                  className={`mt-2 flex items-center gap-1.5 text-[9px] font-medium uppercase tracking-wide ${
+                    isSelected
+                      ? dark
+                        ? "text-primary-300"
+                        : "text-primary-700"
+                      : dark
+                      ? "text-zinc-500"
+                      : "text-zinc-400"
+                  }`}
+                >
+                  <span>
+                    {frame.page.format.toUpperCase()} · {frame.page.orientation === "landscape" ? "Paysage" : "Portrait"}
+                  </span>
+                  {isSelected && <span className="normal-case font-normal opacity-80">— réglable à droite →</span>}
                 </div>
 
-                {/* Actions (au survol) */}
-                <div className="mt-1 flex items-center justify-between opacity-0 transition-opacity group-hover:opacity-100">
-                  <div className="flex items-center">
+                {/* Actions (toujours visibles mais atténuées, s'activent au survol) */}
+                <div className="mt-2.5 pt-2 flex items-center justify-between border-t border-zinc-200/50 dark:border-zinc-800/40 opacity-40 group-hover:opacity-100 transition-opacity duration-200">
+                  <div className="flex items-center gap-0.5">
                     <button
-                      onClick={() => reorderFrame(frame.id, -1)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        reorderFrame(frame.id, -1);
+                      }}
                       disabled={index === 0}
                       title="Avancer dans l'ordre des pages"
                       aria-label="Avancer la page dans l'ordre d'export"
@@ -281,7 +251,10 @@ export function PageRail({ themeMode = "light" }: PageRailProps) {
                       <ChevronUp className="h-3.5 w-3.5" />
                     </button>
                     <button
-                      onClick={() => reorderFrame(frame.id, 1)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        reorderFrame(frame.id, 1);
+                      }}
                       disabled={index === frames.length - 1}
                       title="Reculer dans l'ordre des pages"
                       aria-label="Reculer la page dans l'ordre d'export"
@@ -290,9 +263,10 @@ export function PageRail({ themeMode = "light" }: PageRailProps) {
                       <ChevronDown className="h-3.5 w-3.5" />
                     </button>
                   </div>
-                  <div className="flex items-center">
+                  <div className="flex items-center gap-0.5">
                     <button
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         const cloneId = duplicateFrame(frame.id);
                         if (cloneId) requestAnimationFrame(() => jumpTo(cloneId));
                       }}
@@ -303,13 +277,16 @@ export function PageRail({ themeMode = "light" }: PageRailProps) {
                       <Copy className="h-3.5 w-3.5" />
                     </button>
                     <button
-                      onClick={() => deleteFrame(frame.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteFrame(frame.id);
+                      }}
                       title="Supprimer la page (les cartes restent sur le canevas)"
                       aria-label={`Supprimer la page ${frame.name}`}
-                      className={`rounded-md p-1 transition-colors cursor-pointer ${
+                      className={`rounded-lg p-1 transition-all cursor-pointer ${
                         dark
-                          ? "text-zinc-500 hover:text-red-400 hover:bg-red-500/10"
-                          : "text-zinc-400 hover:text-red-600 hover:bg-red-50"
+                          ? "text-zinc-400 hover:text-red-400 hover:bg-red-500/10"
+                          : "text-zinc-500 hover:text-red-600 hover:bg-red-50"
                       }`}
                     >
                       <Trash className="h-3.5 w-3.5" />
@@ -323,13 +300,13 @@ export function PageRail({ themeMode = "light" }: PageRailProps) {
       )}
 
       {frames.length > 0 && (
-        <div className={`border-t p-2 ${dark ? "border-zinc-800" : "border-zinc-100"}`}>
+        <div className={`p-3 border-t ${dark ? "border-border-dark bg-zinc-950/10" : "border-border-light bg-zinc-50/30"}`}>
           <button
             onClick={handleAddFrame}
-            className={`flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-2 py-2 text-[11px] font-semibold transition-colors cursor-pointer ${
+            className={`flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-3 py-2.5 text-xs font-semibold transition-colors cursor-pointer ${
               dark
-                ? "border-zinc-700 text-zinc-400 hover:border-primary-400/60 hover:text-primary-300"
-                : "border-zinc-300 text-zinc-500 hover:border-primary-600/50 hover:text-primary-700"
+                ? "border-zinc-800 text-zinc-400 hover:border-primary-400/50 hover:text-primary-300 bg-zinc-900/10 hover:bg-zinc-900/25"
+                : "border-zinc-200 text-zinc-500 hover:border-primary-600/40 hover:text-primary-700 bg-zinc-50/50 hover:bg-primary-50/5"
             }`}
           >
             <FilePlus2 className="h-3.5 w-3.5" />

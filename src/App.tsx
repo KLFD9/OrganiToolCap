@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ReactFlowProvider } from "@xyflow/react";
+import { Layers } from "lucide-react";
 import { Toolbar } from "./components/Toolbar";
 import { Canvas } from "./components/Canvas";
 import { Inspector } from "./components/Inspector";
@@ -20,6 +21,7 @@ function App() {
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [draftBanner, setDraftBanner] = useState<{ savedAt: string } | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(true);
+  const [pageRailOpen, setPageRailOpen] = useState(true);
   const [showGroups, setShowGroups] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
   const [directoryOpen, setDirectoryOpen] = useState(false);
@@ -235,7 +237,9 @@ function App() {
         {/* Toast Notification pour brouillon */}
         {!presentationMode && draftBanner && (
           <div
-            className={`fixed bottom-6 left-6 z-50 max-w-sm border p-5 shadow-2xl backdrop-blur-md rounded-2xl transition-all duration-300 animate-slide-in ${
+            className={`fixed bottom-6 ${
+              !presentationMode && !directoryOpen && pageRailOpen ? "left-[280px]" : "left-6"
+            } z-50 max-w-sm border p-5 shadow-2xl backdrop-blur-md rounded-2xl transition-all duration-300 animate-slide-in ${
               themeMode === "dark"
                 ? "border-zinc-800 bg-zinc-950/95 text-zinc-100 shadow-black/40"
                 : "border-zinc-200 bg-white/95 text-zinc-800 shadow-zinc-200/50"
@@ -290,6 +294,23 @@ function App() {
 
         {/* Main Editor Zone */}
         <div className="flex min-h-0 flex-1 relative">
+          {/* Left Sidebar (PageRail) */}
+          {!presentationMode && !directoryOpen && (
+            <aside
+              className={`shrink-0 border-r transition-all duration-300 ease-in-out h-full overflow-hidden ${
+                pageRailOpen ? "w-64 opacity-100" : "w-0 opacity-0 border-r-transparent"
+              } ${
+                themeMode === "dark"
+                  ? "border-border-dark bg-panel-bg-dark"
+                  : "border-border-light bg-panel-bg-light"
+              }`}
+            >
+              <div className="w-64 h-full">
+                <PageRail themeMode={themeMode} onClose={() => setPageRailOpen(false)} />
+              </div>
+            </aside>
+          )}
+
           <div className="relative min-w-0 flex-1 h-full">
             <Canvas ref={canvasRef} themeMode={themeMode} showGroups={showGroups} />
 
@@ -298,15 +319,28 @@ function App() {
               <Directory themeMode={themeMode} onClose={() => setDirectoryOpen(false)} />
             )}
 
-            {/* Navigateur de pages (mode multi-pages) */}
-            {!presentationMode && !directoryOpen && <PageRail themeMode={themeMode} />}
+            {/* Pages Toggle Button (when PageRail is closed) */}
+            {!presentationMode && !directoryOpen && !pageRailOpen && (
+              <button
+                onClick={() => setPageRailOpen(true)}
+                title="Afficher le navigateur de pages"
+                className={`absolute left-4 top-4 z-10 flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-medium shadow-sm transition-all duration-200 hover:scale-102 active:scale-98 cursor-pointer ${
+                  themeMode === "dark"
+                    ? "border-border-dark bg-panel-bg-dark/95 text-text-dark hover:bg-zinc-800"
+                    : "border-border-light bg-panel-bg-light/95 text-text-light hover:bg-zinc-50"
+                }`}
+              >
+                <Layers className="h-3.5 w-3.5" />
+                <span>Pages{frames.length > 0 ? ` · ${frames.length}` : ""}</span>
+              </button>
+            )}
 
             {/* Chip « branches repliées » : rappel + tout déplier en un clic */}
             {hiddenCount > 0 && (
               <button
                 onClick={expandAll}
                 title="Afficher à nouveau toutes les branches"
-                className={`absolute left-4 top-4 z-10 flex h-8 items-center gap-2 rounded-lg border px-3 text-xs font-medium shadow-sm transition-all duration-200 hover:scale-102 active:scale-98 ${
+                className={`absolute ${pageRailOpen ? "left-4" : "left-28"} top-4 z-10 flex h-8 items-center gap-2 rounded-lg border px-3 text-xs font-medium shadow-sm transition-all duration-200 hover:scale-102 active:scale-98 ${
                   themeMode === "dark"
                     ? "border-primary-400/40 bg-panel-bg-dark/95 text-primary-300 hover:bg-zinc-800"
                     : "border-primary-600/40 bg-panel-bg-light/95 text-primary-700 hover:bg-primary-50"

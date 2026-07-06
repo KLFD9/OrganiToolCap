@@ -1,6 +1,8 @@
 import { resolveDisplay, type OrgEdge, type OrgNode, type OrgTheme } from "../types/orgchart";
 import { buildEditableSpec, type EditableSlideSpec } from "./pptxEditable";
 import { CARD_WIDTH } from "./compactLayout";
+import { nameInitials } from "./nameInitials";
+import { blendHex } from "./colorBlend";
 import type { FramePageContent } from "./frames";
 import {
   applyPdfMetadata,
@@ -22,29 +24,6 @@ import {
 
 const MM_PER_IN = 25.4;
 const CONNECTOR_COLOR = "#DBDBDF"; // ≈ rgba(39,39,42,0.15) du canvas, aplati sur blanc
-
-/** Mélange deux couleurs hex (sans #) — bordures et textes atténués sans transparence. */
-export function blendHex(fg: string, bg: string, fgRatio: number): string {
-  const parse = (hex: string) => [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) || 0);
-  const [fr, fgG, fb] = parse(fg);
-  const [br, bgG, bb] = parse(bg);
-  const mix = (a: number, b: number) => Math.round(a * fgRatio + b * (1 - fgRatio));
-  return [mix(fr, br), mix(fgG, bgG), mix(fb, bb)]
-    .map((v) => v.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/** Initiales d'un nom (mêmes règles que la carte à l'écran). */
-export function nameInitials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .map((part) => part[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
 
 /** Tronque un libellé à la largeur donnée (mm) pour la taille de police courante. */
 function truncateToWidth(
@@ -113,28 +92,15 @@ function drawEditableSpec(pdf: JsPdfLike, spec: EditableSlideSpec, theme: OrgThe
   const solidBg = theme.nodeStyle === "flat" || theme.nodeStyle === "gradient";
 
   // Connecteurs d'abord (les cartes passent au-dessus), fins et clairs comme
-  // à l'écran, en coude à mi-hauteur
+  // à l'écran — polyligne partagée avec le canvas (lib/edgeRouting.ts) et
+  // l'export PowerPoint, point par point.
   pdf.setDrawColor(CONNECTOR_COLOR);
   pdf.setLineWidth(px(1.25));
   for (const c of spec.connectors) {
     pdf.setLineDashPattern(c.dashed ? [px(6), px(5)] : [], 0);
-    const sx = mm(c.flipH ? c.x + c.w : c.x);
-    const sy = mm(c.flipV ? c.y + c.h : c.y);
-    const ex = mm(c.flipH ? c.x : c.x + c.w);
-    const ey = mm(c.flipV ? c.y : c.y + c.h);
-    if (mm(c.w) < 0.5 || mm(c.h) < 0.5) {
-      pdf.line(sx, sy, ex, ey);
-    } else {
-      const midY = (sy + ey) / 2;
-      pdf.lines(
-        [
-          [0, midY - sy],
-          [ex - sx, 0],
-          [0, ey - midY],
-        ],
-        sx,
-        sy
-      );
+    const pts = c.points.map((p) => ({ x: mm(p.x), y: mm(p.y) }));
+    for (let i = 0; i < pts.length - 1; i++) {
+      pdf.line(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y);
     }
   }
   pdf.setLineDashPattern([], 0);

@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import { isHierarchyEdge, NodeStyleVariantSchema, resolveDisplay, type OrgDisplayOptions } from "../types/orgchart";
 import { computeOrgStats, computeTeamSize } from "../lib/stats";
+import type { PageSetup } from "../lib/readability";
 import {
   Plus,
   Trash2,
@@ -10,6 +11,7 @@ import {
   Copy,
   Scissors,
   ChevronDown,
+  ChevronUp,
   X,
   Settings,
   Palette,
@@ -18,7 +20,8 @@ import {
   Briefcase,
   GitFork,
   Trash,
-  RotateCcw
+  RotateCcw,
+  FileText,
 } from "lucide-react";
 
 const NODE_STYLE_LABELS: Record<string, string> = {
@@ -192,6 +195,13 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
   const theme = useOrgChartStore((s) => s.theme);
   const meta = useOrgChartStore((s) => s.meta);
   const selectedNodeIds = useOrgChartStore((s) => s.selectedNodeIds);
+  const frames = useOrgChartStore((s) => s.frames);
+  const selectedFrameId = useOrgChartStore((s) => s.selectedFrameId);
+  const selectFrame = useOrgChartStore((s) => s.selectFrame);
+  const updateFrame = useOrgChartStore((s) => s.updateFrame);
+  const deleteFrame = useOrgChartStore((s) => s.deleteFrame);
+  const duplicateFrame = useOrgChartStore((s) => s.duplicateFrame);
+  const reorderFrame = useOrgChartStore((s) => s.reorderFrame);
   const updateNodeData = useOrgChartStore((s) => s.updateNodeData);
   const updateNodeStyleOverride = useOrgChartStore((s) => s.updateNodeStyleOverride);
   const updateNodesStyleOverride = useOrgChartStore((s) => s.updateNodesStyleOverride);
@@ -253,6 +263,178 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
       ? "border-zinc-800 bg-zinc-900/60 text-zinc-100"
       : "border-zinc-200 bg-zinc-50/50 text-zinc-800"
   }`;
+
+  // Rendu : propriétés d'une page (frame) sélectionnée dans le navigateur de pages
+  const selectedFrame = selectedFrameId ? frames.find((f) => f.id === selectedFrameId) : undefined;
+  if (selectedFrame) {
+    const frame = selectedFrame;
+    const cardBg = themeMode === "dark" ? "border-zinc-800/80 bg-zinc-900/10" : "border-zinc-200 bg-zinc-50/20";
+    const headerBorder = "flex items-center gap-2 pb-2 border-b border-zinc-100 dark:border-zinc-900/50";
+    const headerTitle = "text-[10px] font-bold uppercase tracking-wider text-zinc-700 dark:text-zinc-300";
+    const index = frames.findIndex((f) => f.id === frame.id);
+
+    const setPageOption = (patch: Partial<PageSetup>) => updateFrame(frame.id, { page: { ...frame.page, ...patch } });
+
+    const segment = (active: boolean) =>
+      `flex-1 rounded-md py-1.5 text-xs font-medium transition-all duration-150 text-center cursor-pointer ${
+        active
+          ? themeMode === "dark"
+            ? "bg-zinc-800 text-zinc-100 shadow-sm font-semibold"
+            : "bg-white text-zinc-800 shadow-sm font-semibold"
+          : themeMode === "dark"
+          ? "text-zinc-400 hover:text-zinc-200"
+          : "text-zinc-500 hover:text-zinc-800"
+      }`;
+
+    const segmentGroup = `flex flex-1 rounded-lg p-0.5 ${
+      themeMode === "dark" ? "bg-zinc-950 border border-zinc-800/60" : "bg-zinc-100 border border-zinc-200/60"
+    }`;
+
+    return (
+      <div className="flex h-full flex-col gap-6 overflow-y-auto p-5 custom-scrollbar">
+        <div>
+          <div className="flex items-center gap-2">
+            <FileText className="h-5 w-5 text-primary-500" />
+            <h2 className="text-sm font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
+              Propriétés de la page
+            </h2>
+          </div>
+          <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1.5 leading-normal">
+            Réglages du canevas pour « {frame.name} » — format, orientation et ordre d'export.
+          </p>
+        </div>
+
+        <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>
+          <div className={headerBorder}>
+            <Briefcase className="h-4 w-4 text-primary-500" />
+            <h3 className={headerTitle}>Nom de la page</h3>
+          </div>
+          <input
+            type="text"
+            value={frame.name}
+            onChange={(e) => updateFrame(frame.id, { name: e.target.value })}
+            className={inputClass}
+          />
+        </div>
+
+        <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>
+          <div className={headerBorder}>
+            <Layout className="h-4 w-4 text-primary-500" />
+            <h3 className={headerTitle}>Format du canevas</h3>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Taille papier
+            </span>
+            <div className={segmentGroup} role="group" aria-label="Format papier">
+              <button className={segment(frame.page.format === "a4")} onClick={() => setPageOption({ format: "a4" })}>
+                A4
+              </button>
+              <button className={segment(frame.page.format === "a3")} onClick={() => setPageOption({ format: "a3" })}>
+                A3
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Orientation
+            </span>
+            <div className={segmentGroup} role="group" aria-label="Orientation">
+              <button
+                className={segment(frame.page.orientation === "landscape")}
+                onClick={() => setPageOption({ orientation: "landscape" })}
+              >
+                Paysage
+              </button>
+              <button
+                className={segment(frame.page.orientation === "portrait")}
+                onClick={() => setPageOption({ orientation: "portrait" })}
+              >
+                Portrait
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <span className="flex justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              <span>Marges</span>
+              <span className="font-mono text-zinc-500">{frame.page.margin} mm</span>
+            </span>
+            <input
+              type="range"
+              min={5}
+              max={30}
+              value={frame.page.margin}
+              onChange={(e) => setPageOption({ margin: Number(e.target.value) })}
+              className="w-full accent-primary-600 dark:accent-primary-400 cursor-pointer bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none h-1"
+            />
+          </div>
+        </div>
+
+        <div className={`rounded-xl border p-4.5 space-y-3 ${cardBg}`}>
+          <div className={headerBorder}>
+            <Settings className="h-4 w-4 text-primary-500" />
+            <h3 className={headerTitle}>Ordre d'export</h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => reorderFrame(frame.id, -1)}
+              disabled={index === 0}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-medium border transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-default ${
+                themeMode === "dark"
+                  ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800"
+                  : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"
+              }`}
+            >
+              <ChevronUp className="h-3.5 w-3.5" />
+              <span>Avancer</span>
+            </button>
+            <button
+              onClick={() => reorderFrame(frame.id, 1)}
+              disabled={index === frames.length - 1}
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl py-2 text-xs font-medium border transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-default ${
+                themeMode === "dark"
+                  ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800"
+                  : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"
+              }`}
+            >
+              <ChevronDown className="h-3.5 w-3.5" />
+              <span>Reculer</span>
+            </button>
+          </div>
+          <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+            Position {index + 1} sur {frames.length} dans l'ordre des pages exportées.
+          </p>
+        </div>
+
+        <div className="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-900/50 flex flex-col gap-2">
+          <button
+            onClick={() => {
+              const cloneId = duplicateFrame(frame.id);
+              if (cloneId) selectFrame(cloneId);
+            }}
+            className={`flex w-full items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-medium border transition-colors cursor-pointer ${
+              themeMode === "dark"
+                ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800"
+                : "border-zinc-200 bg-white text-zinc-600 hover:bg-zinc-50"
+            }`}
+          >
+            <Copy className="h-3.5 w-3.5" />
+            <span>Dupliquer la page</span>
+          </button>
+          <button
+            onClick={() => deleteFrame(frame.id)}
+            className="w-full flex items-center justify-center gap-2 rounded-xl bg-red-500/10 px-4 py-2.5 text-xs font-semibold text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-sm cursor-pointer"
+          >
+            <Trash className="h-4 w-4" />
+            <span>Supprimer la page</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   // Rendu de sélection multiple
   if (selectedNodeIds.length > 1) {

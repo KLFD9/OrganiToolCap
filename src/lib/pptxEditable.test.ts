@@ -36,12 +36,17 @@ describe("buildEditableSpec", () => {
     const spec = buildEditableSpec(nodes, edges, glassCapTheme, AREA);
     expect(spec.connectors).toHaveLength(2);
     for (const conn of spec.connectors) {
-      expect(conn.flipV).toBe(false); // les enfants sont sous le parent
-      expect(conn.h).toBeGreaterThan(0);
+      const first = conn.points[0];
+      const last = conn.points[conn.points.length - 1];
+      expect(last.y).toBeGreaterThan(first.y); // l'enfant est sous le parent
     }
-    // l'un des enfants est à gauche du parent → flipH
-    expect(spec.connectors.some((c) => c.flipH)).toBe(true);
-    expect(spec.connectors.some((c) => !c.flipH)).toBe(true);
+    // l'un des enfants est à gauche du parent
+    expect(
+      spec.connectors.some((c) => c.points[c.points.length - 1].x < c.points[0].x)
+    ).toBe(true);
+    expect(
+      spec.connectors.some((c) => c.points[c.points.length - 1].x > c.points[0].x)
+    ).toBe(true);
   });
 
   it("thème glass : fond blanc, bordure accent ; thème flat : fond palette + texte contrasté", () => {
