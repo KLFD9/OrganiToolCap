@@ -9,12 +9,14 @@ import {
   useEdgesState,
   useReactFlow,
   SelectionMode,
+  Panel,
   type Connection,
   type FinalConnectionState,
   type OnSelectionChangeFunc,
   type Node,
   type Edge,
 } from "@xyflow/react";
+import { Eye, EyeOff } from "lucide-react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import { computeLevels } from "../lib/nodeStyle";
 import { computeDepartmentGroups, buildGroupTheme } from "../lib/groups";
@@ -175,6 +177,17 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
 
   const { screenToFlowPosition, fitView, fitBounds, getZoom } = useReactFlow();
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [showMiniMap, setShowMiniMap] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("organi_show_minimap");
+      return saved !== null ? saved === "true" : true;
+    }
+    return true;
+  });
+
+  useEffect(() => {
+    localStorage.setItem("organi_show_minimap", String(showMiniMap));
+  }, [showMiniMap]);
 
   const levels = useMemo(() => computeLevels(storeNodes, storeEdges), [storeNodes, storeEdges]);
 
@@ -972,6 +985,16 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const gridColor = themeMode === "dark" ? "rgba(255, 255, 255, 0.04)" : "rgba(0, 0, 0, 0.05)";
   const maskColor = themeMode === "dark" ? "rgba(9, 9, 11, 0.7)" : "rgba(250, 249, 246, 0.7)";
 
+  // Appareil disposant d'un pointeur tactile (tablette, écran tactile,
+  // hybride) : on adopte le comportement Figma — un doigt glisse pour
+  // déplacer le canevas, sans passer par Espace ou un bouton de souris
+  // dédié. `any-pointer` (et pas seulement `pointer`) pour capter aussi les
+  // PC portables tactiles où la souris/trackpad reste le pointeur principal.
+  const isCoarsePointer = useMemo(
+    () => typeof window !== "undefined" && window.matchMedia("(any-pointer: coarse)").matches,
+    []
+  );
+
   return (
     <div ref={ref} className="h-full w-full">
       <ReactFlow
@@ -993,15 +1016,49 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         edgeTypes={edgeTypes}
         fitView
         proOptions={{ hideAttribution: true }}
-        selectionOnDrag
+        selectionOnDrag={!isCoarsePointer}
         selectionMode={SelectionMode.Partial}
-        panOnDrag={[1, 2]}
+        panOnDrag={isCoarsePointer ? true : [1, 2]}
+        panOnScroll
+        panOnScrollSpeed={0.8}
+        zoomOnScroll={false}
+        zoomOnPinch
+        deleteKeyCode={null}
         multiSelectionKeyCode={["Meta", "Control"]}
         className="transition-colors duration-300"
       >
         <Background gap={24} color={gridColor} />
         <Controls showInteractive={false} />
-        <MiniMap pannable zoomable maskColor={maskColor} />
+        <MiniMap
+          pannable
+          zoomable
+          maskColor={maskColor}
+          style={{
+            transform: showMiniMap ? "translate(0, 0) scale(1)" : "translate(10px, 10px) scale(0.9)",
+            opacity: showMiniMap ? 1 : 0,
+            pointerEvents: showMiniMap ? "auto" : "none",
+          }}
+        />
+
+        <Panel
+          position="bottom-right"
+          className="pointer-events-auto"
+        >
+          <button
+            onClick={() => setShowMiniMap(!showMiniMap)}
+            className={`flex h-8 w-8 items-center justify-center rounded-lg shadow-sm border transition-all duration-300 cursor-pointer ${
+              themeMode === "dark"
+                ? "bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800 hover:text-white"
+                : "bg-white border-zinc-200 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900"
+            }`}
+            style={{
+              transform: showMiniMap ? "translateY(-155px)" : "translateY(0px)",
+            }}
+            title={showMiniMap ? "Masquer la mini-carte" : "Afficher la mini-carte"}
+          >
+            {showMiniMap ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+          </button>
+        </Panel>
 
         {/* Guides magnétiques : traits violets pendant l'aimantation */}
         {guides && (guides.v !== undefined || guides.h !== undefined) && (
