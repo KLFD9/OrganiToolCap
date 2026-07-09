@@ -67,6 +67,8 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
   // Ombres portées de style Awwwards
   const shadowStyle = selected
     ? `0 0 0 2px ${style.accentColor}, 0 20px 40px -10px rgba(0, 0, 0, 0.18)`
+    : outOfPage
+    ? "0 0 0 2px rgba(245, 158, 11, 0.75), 0 8px 30px -10px rgba(0, 0, 0, 0.06)"
     : isNeon
     ? neonGlow
     : "0 8px 30px -10px rgba(0, 0, 0, 0.06)";
@@ -121,7 +123,7 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
         boxShadow: shadowStyle,
         backdropFilter: isGlass ? "blur(18px) saturate(160%)" : undefined,
         WebkitBackdropFilter: isGlass ? "blur(18px) saturate(160%)" : undefined,
-        opacity: outOfPage && !selected ? 0.45 : undefined,
+        opacity: outOfPage && !selected ? 0.7 : undefined,
       }}
     >
       {/* Badge « hors page » (mode multi-pages) */}

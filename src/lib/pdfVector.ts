@@ -142,10 +142,24 @@ function drawEditableSpec(pdf: JsPdfLike, spec: EditableSlideSpec, theme: OrgThe
 
     // Style minimal : barre d'accent sur le bord gauche (4 px)
     if (isMinimal) {
-      pdf.setFillColor(`#${card.accentColor}`);
-      pdf.roundedRect(x, y, px(6), h, Math.min(radius, px(3)), Math.min(radius, px(3)), "F");
-      pdf.setFillColor(`#${card.fillColor}`);
-      pdf.rect(x + px(3), y, px(3), h, "F");
+      if (radius > px(4)) {
+        // 1. Dessiner un rectangle arrondi de largeur 2 * radius (pour garantir un rayon parfait sur le bord gauche)
+        pdf.setFillColor(`#${card.accentColor}`);
+        pdf.roundedRect(x, y, 2 * radius, h, radius, radius, "F");
+        
+        // 2. Couvrir la partie droite avec le fond du nœud pour ne laisser que px(4) visible à gauche
+        pdf.setFillColor(`#${card.fillColor}`);
+        pdf.rect(x + px(4), y, 2 * radius - px(4), h, "F");
+      } else {
+        // Pour les coins carrés ou très peu arrondis, un rectangle simple de 4px suffit
+        pdf.setFillColor(`#${card.accentColor}`);
+        pdf.rect(x, y, px(4), h, "F");
+      }
+      
+      // 3. Redessiner le contour du nœud par-dessus
+      pdf.setDrawColor(`#${borderColor}`);
+      pdf.setLineWidth(px(1));
+      pdf.roundedRect(x, y, w, h, radius, radius, "D");
     }
 
     // Réplique de NodeCard : padding 20 px / 16 px
