@@ -18,11 +18,11 @@ import {
 } from "@xyflow/react";
 import { Eye, EyeOff } from "lucide-react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
-import { computeLevels } from "../lib/nodeStyle";
+import { computeLevels, computeNodeWidth } from "../lib/nodeStyle";
 import { computeDepartmentGroups, buildGroupTheme } from "../lib/groups";
 import { computeStackedIds, CARD_WIDTH, CARD_HEIGHT } from "../lib/compactLayout";
 import { buildChildrenMap, computeDescendantCounts, computeHiddenNodeIds, wouldCreateHierarchyCycle } from "../lib/hierarchy";
-import { isHierarchyEdge, type ChromeElement, type ChromeKey, type ChromeLayout } from "../types/orgchart";
+import { resolveDisplay, isHierarchyEdge, type ChromeElement, type ChromeKey, type ChromeLayout } from "../types/orgchart";
 import {
   computeFrameMembership,
   frameIdFromNodeId,
@@ -31,7 +31,15 @@ import {
   frameSizePx,
   resolveFrameChrome,
 } from "../lib/frames";
-import { mergeTargets, rectTargets, snapPosition, type Rect, type SnapTargets } from "../lib/smartGuides";
+import {
+  mergeTargets,
+  neighborGaps,
+  rectTargets,
+  snapPosition,
+  type NeighborGaps,
+  type Rect,
+  type SnapTargets,
+} from "../lib/smartGuides";
 import {
   resolveChromeElement,
   isChromeTextKey,
@@ -165,11 +173,13 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const applyAutoLayout = useOrgChartStore((s) => s.applyAutoLayout);
   const setChromeElement = useOrgChartStore((s) => s.setChromeElement);
   const setFrameChromeElement = useOrgChartStore((s) => s.setFrameChromeElement);
+  const setPageSetup = useOrgChartStore((s) => s.setPageSetup);
   const frames = useOrgChartStore((s) => s.frames);
   const selectedFrameId = useOrgChartStore((s) => s.selectedFrameId);
   const selectFrame = useOrgChartStore((s) => s.selectFrame);
   const addFrame = useOrgChartStore((s) => s.addFrame);
   const deleteFrame = useOrgChartStore((s) => s.deleteFrame);
+  const updateFrame = useOrgChartStore((s) => s.updateFrame);
   const duplicateFrame = useOrgChartStore((s) => s.duplicateFrame);
   const moveFrameWithContent = useOrgChartStore((s) => s.moveFrameWithContent);
   const addFrameForBranch = useOrgChartStore((s) => s.addFrameForBranch);
@@ -242,9 +252,13 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     const ys = visibleNodes.map((n) => n.position.y);
     const minX = Math.min(...xs);
     const minY = Math.min(...ys);
-    const boundsW = (Math.max(...xs) - minX + CARD_WIDTH) * CAPTURE_MARGIN;
+    const display = resolveDisplay(theme);
+    const maxRight = visibleNodes.length > 0
+      ? Math.max(...visibleNodes.map((n) => n.position.x + computeNodeWidth(n, display.showPhotos)))
+      : minX + CARD_WIDTH;
+    const boundsW = (maxRight - minX) * CAPTURE_MARGIN;
     const boundsH = (Math.max(...ys) - minY + CARD_HEIGHT) * CAPTURE_MARGIN;
-    const centerX = minX + (Math.max(...xs) - minX + CARD_WIDTH) / 2;
+    const centerX = minX + (maxRight - minX) / 2;
     const centerY = minY + (Math.max(...ys) - minY + CARD_HEIGHT) / 2;
 
     const px = (mm: number) => mm / COMFORT_MM_PER_PX;
@@ -302,7 +316,12 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         .filter((n): n is NonNullable<typeof n> => Boolean(n));
       const xs = members.map((n) => n.position.x);
       const ys = members.map((n) => n.position.y);
-      const boundsW = members.length > 0 ? (Math.max(...xs) - Math.min(...xs) + CARD_WIDTH) * CAPTURE_MARGIN : 1;
+      const display = resolveDisplay(theme);
+      const maxRight = members.length > 0
+        ? Math.max(...members.map((n) => n.position.x + computeNodeWidth(n, display.showPhotos)))
+        : 0;
+      const minLeft = members.length > 0 ? Math.min(...xs) : 0;
+      const boundsW = members.length > 0 ? (maxRight - minLeft) * CAPTURE_MARGIN : 1;
       const boundsH = members.length > 0 ? (Math.max(...ys) - Math.min(...ys) + CARD_HEIGHT) * CAPTURE_MARGIN : 1;
       const estimate = estimateReadability(boundsW, boundsH, avail.width, avail.height);
 
@@ -598,22 +617,32 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const snapTargetsRef = useRef<SnapTargets | null>(null);
   const [guides, setGuides] = useState<{ v?: number; h?: number } | null>(null);
 
+  // Écarts façon Figma : rectangles des cartes voisines capturés au début du
+  // drag (indépendant du cadre de page), badges en px affichés pendant le
+  // déplacement vers le voisin le plus proche dans chaque direction alignée.
+  const neighborRectsRef = useRef<Rect[]>([]);
+  const [gaps, setGaps] = useState<NeighborGaps | null>(null);
+
   const onNodesChange = useCallback(
     (changes: Parameters<typeof onNodesChangeBase>[0]) => {
-      // Aimantation pendant le glisser d'une carte seule (les sélections
-      // multiples glissent librement) : la position du changement est ajustée
-      // avant d'être appliquée — le commit final hérite de la position aimantée.
-      const targets = snapTargetsRef.current;
-      if (targets) {
-        const positionChanges = changes.filter((c) => c.type === "position" && c.position);
-        if (positionChanges.length === 1) {
-          const change = positionChanges[0] as { position: { x: number; y: number }; dragging?: boolean; id: string };
-          if (!parseChromeNodeId(change.id) && !frameIdFromNodeId(change.id)) {
+      // Aimantation + écarts pendant le glisser d'une carte seule (les
+      // sélections multiples glissent librement) : la position du changement
+      // est ajustée avant d'être appliquée — le commit final hérite de la
+      // position aimantée.
+      const positionChanges = changes.filter((c) => c.type === "position" && c.position);
+      if (positionChanges.length === 1) {
+        const change = positionChanges[0] as { position: { x: number; y: number }; dragging?: boolean; id: string };
+        if (!parseChromeNodeId(change.id) && !frameIdFromNodeId(change.id)) {
+          const node = storeNodes.find((n) => n.id === change.id);
+          const nodeW = node ? computeNodeWidth(node, theme.display?.showPhotos ?? true) : CARD_WIDTH;
+
+          const targets = snapTargetsRef.current;
+          if (targets) {
             const threshold = 8 / Math.max(0.05, getZoom());
             const snapped = snapPosition(
               change.position.x,
               change.position.y,
-              CARD_WIDTH,
+              nodeW,
               CARD_HEIGHT,
               targets,
               threshold
@@ -626,6 +655,14 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
                   : null
               );
             }
+          }
+
+          if (change.dragging && neighborRectsRef.current.length > 0) {
+            const result = neighborGaps(
+              { x: change.position.x, y: change.position.y, width: nodeW, height: CARD_HEIGHT },
+              neighborRectsRef.current
+            );
+            setGaps(result.left || result.right || result.top || result.bottom ? result : null);
           }
         }
       }
@@ -656,7 +693,16 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         }
       }
     },
-    [onNodesChangeBase, setNodePosition, resolvedChrome, setChromeElement, setFrameChromeElement, getZoom]
+    [
+      onNodesChangeBase,
+      setNodePosition,
+      resolvedChrome,
+      setChromeElement,
+      setFrameChromeElement,
+      getZoom,
+      storeNodes,
+      theme.display?.showPhotos,
+    ]
   );
 
   // Déplacement solidaire d'une page : pendant le glisser de la feuille, les
@@ -684,28 +730,38 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         return;
       }
 
-      // Carte membre : prépare les cibles d'aimantation (cartes voisines +
-      // marges / bords / axes centraux des pages visibles).
-      if (node.type === "orgNode" && pageGuideEnabled) {
+      // Carte membre : prépare les rectangles voisins (écarts, toujours) et
+      // les cibles d'aimantation (cartes voisines + marges / bords / axes
+      // centraux des pages visibles, seulement si le cadre de page est actif).
+      if (node.type === "orgNode") {
         const cardRects: Rect[] = visibleNodes
           .filter((n) => n.id !== node.id)
-          .map((n) => ({ x: n.position.x, y: n.position.y, width: CARD_WIDTH, height: CARD_HEIGHT }));
-        const pageRects: Rect[] = [];
-        for (const pg of [...pageGuideNodes, ...frameGuideNodes]) {
-          const d = pg.data;
-          // Feuille entière (bords + centre) et zone utile (marges)
-          pageRects.push({ x: pg.position.x, y: pg.position.y, width: d.width, height: d.height });
-          pageRects.push({
-            x: pg.position.x + d.insetLeft,
-            y: pg.position.y + d.insetTop,
-            width: d.width - d.insetLeft - d.insetRight,
-            height: d.height - d.insetTop - d.insetBottom,
-          });
+          .map((n) => ({
+            x: n.position.x,
+            y: n.position.y,
+            width: computeNodeWidth(n, theme.display?.showPhotos ?? true),
+            height: CARD_HEIGHT,
+          }));
+        neighborRectsRef.current = cardRects;
+
+        if (pageGuideEnabled) {
+          const pageRects: Rect[] = [];
+          for (const pg of [...pageGuideNodes, ...frameGuideNodes]) {
+            const d = pg.data;
+            // Feuille entière (bords + centre) et zone utile (marges)
+            pageRects.push({ x: pg.position.x, y: pg.position.y, width: d.width, height: d.height });
+            pageRects.push({
+              x: pg.position.x + d.insetLeft,
+              y: pg.position.y + d.insetTop,
+              width: d.width - d.insetLeft - d.insetRight,
+              height: d.height - d.insetTop - d.insetBottom,
+            });
+          }
+          snapTargetsRef.current = mergeTargets(rectTargets(cardRects), rectTargets(pageRects));
         }
-        snapTargetsRef.current = mergeTargets(rectTargets(cardRects), rectTargets(pageRects));
       }
     },
-    [membership, storeNodes, pageGuideEnabled, visibleNodes, pageGuideNodes, frameGuideNodes]
+    [membership, storeNodes, pageGuideEnabled, visibleNodes, pageGuideNodes, frameGuideNodes, theme.display?.showPhotos]
   );
 
   const onNodeDrag = useCallback(
@@ -727,7 +783,9 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const onNodeDragStop = useCallback(
     (_event: MouseEvent | TouchEvent, node: Node) => {
       snapTargetsRef.current = null;
+      neighborRectsRef.current = [];
       setGuides(null);
+      setGaps(null);
       const drag = frameDragRef.current;
       if (!drag || frameIdFromNodeId(node.id) !== drag.frameId) return;
       frameDragRef.current = null;
@@ -803,6 +861,36 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const motionMs = (ms: number) =>
     typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? 0 : ms;
 
+  // Centre une carte sur sa page : la feuille explicite (frame) qui contient
+  // son centre, ou la page implicite sinon — même géométrie que le cadre de
+  // page affiché (pageGuideNodes / frameGuideNodes), donc le résultat colle
+  // pile à ce que l'utilisateur voit.
+  const centerNodeOnPage = useCallback(
+    (nodeId: string) => {
+      const node = storeNodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      const nodeW = computeNodeWidth(node, theme.display?.showPhotos ?? true);
+
+      const frameId = membership.frameOf.get(nodeId);
+      let rect: { x: number; y: number; width: number; height: number } | undefined;
+      if (frameId) {
+        const frame = frames.find((f) => f.id === frameId);
+        if (frame) rect = frameRectPx(frame);
+      } else {
+        const guide = pageGuideNodes[0];
+        if (guide) rect = { x: guide.position.x, y: guide.position.y, width: guide.data.width, height: guide.data.height };
+      }
+      if (!rect) return;
+
+      setNodePosition(nodeId, {
+        x: rect.x + rect.width / 2 - nodeW / 2,
+        y: rect.y + rect.height / 2 - CARD_HEIGHT / 2,
+      });
+      requestAnimationFrame(() => fitBounds(rect!, { duration: motionMs(300), padding: 0.15 }));
+    },
+    [storeNodes, theme.display?.showPhotos, membership, frames, pageGuideNodes, setNodePosition, fitBounds]
+  );
+
   const menuItems = useMemo<ContextMenuItem[]>(() => {
     if (!menu) return [];
 
@@ -874,6 +962,15 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         { label: "Ajouter un collègue", hint: "Entrée", onClick: () => addNode(parentEdge?.source) },
         { label: "Dupliquer le membre", onClick: () => duplicateNode(nodeId) },
       ];
+      if (pageGuideEnabled) {
+        const nodeFrameId = membership.frameOf.get(nodeId);
+        const targetPage = nodeFrameId ? frames.find((f) => f.id === nodeFrameId)?.page : page;
+        items.push({
+          label: "Centrer sur la page",
+          hint: targetPage ? `${FORMAT_LABEL[targetPage.format]} ${ORIENTATION_LABEL[targetPage.orientation]}` : undefined,
+          onClick: () => centerNodeOnPage(nodeId),
+        });
+      }
       if (childCount > 0) {
         items.push({
           label: isCollapsed ? "Déplier la branche" : "Replier la branche",
@@ -966,6 +1063,9 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     arrangeFrame,
     duplicateFrame,
     deleteFrame,
+    pageGuideEnabled,
+    page,
+    centerNodeOnPage,
   ]);
 
   const onSelectionChange: OnSelectionChangeFunc = useCallback(
@@ -1040,6 +1140,56 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
           }}
         />
 
+        {/* Format de page rapide : change layout.page (ou celle de la frame
+            sélectionnée) sans passer par la boîte d'export — même source de
+            vérité (invariant n° 9), donc le cadre de page et « Centrer sur la
+            page » suivent immédiatement. */}
+        {pageGuideEnabled && (
+          <Panel position="top-center" className="pointer-events-auto">
+            <div
+              className={`flex items-center gap-1 rounded-lg border px-1.5 py-1 shadow-sm ${
+                themeMode === "dark" ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
+              }`}
+            >
+              {(["a4", "a3"] as const).map((fmt) => (
+                <button
+                  key={fmt}
+                  onClick={() => {
+                    const target = selectedFrameId ? frames.find((f) => f.id === selectedFrameId) : undefined;
+                    if (target) updateFrame(target.id, { page: { ...target.page, format: fmt } });
+                    else setPageSetup({ ...page, format: fmt });
+                  }}
+                  className={`cursor-pointer rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                    (selectedFrameId ? frames.find((f) => f.id === selectedFrameId)?.page.format : page.format) === fmt
+                      ? "bg-primary-600 text-white"
+                      : themeMode === "dark"
+                        ? "text-zinc-400 hover:bg-zinc-800"
+                        : "text-zinc-600 hover:bg-zinc-100"
+                  }`}
+                  title={`Format ${FORMAT_LABEL[fmt]}`}
+                >
+                  {FORMAT_LABEL[fmt]}
+                </button>
+              ))}
+              <span className={`mx-0.5 h-4 w-px ${themeMode === "dark" ? "bg-zinc-800" : "bg-zinc-200"}`} />
+              <button
+                onClick={() => {
+                  const target = selectedFrameId ? frames.find((f) => f.id === selectedFrameId) : undefined;
+                  const nextOrientation = (target?.page.orientation ?? page.orientation) === "portrait" ? "landscape" : "portrait";
+                  if (target) updateFrame(target.id, { page: { ...target.page, orientation: nextOrientation } });
+                  else setPageSetup({ ...page, orientation: nextOrientation });
+                }}
+                className={`cursor-pointer rounded-md px-2 py-1 text-xs font-medium transition-colors ${
+                  themeMode === "dark" ? "text-zinc-400 hover:bg-zinc-800" : "text-zinc-600 hover:bg-zinc-100"
+                }`}
+                title="Changer l'orientation"
+              >
+                {ORIENTATION_LABEL[(selectedFrameId ? frames.find((f) => f.id === selectedFrameId)?.page.orientation : undefined) ?? page.orientation]}
+              </button>
+            </div>
+          </Panel>
+        )}
+
         <Panel
           position="bottom-right"
           className="pointer-events-auto"
@@ -1089,6 +1239,47 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
                 }}
               />
             )}
+          </ViewportPortal>
+        )}
+
+        {/* Écarts façon Figma : segment + badge en px vers le voisin le plus
+            proche dans chaque direction alignée, pendant le glisser d'une
+            carte. Le badge est mis à l'échelle inverse du zoom pour rester
+            lisible à taille d'écran constante, comme dans Figma. */}
+        {gaps && (
+          <ViewportPortal>
+            {(["left", "right", "top", "bottom"] as const).map((dir) => {
+              const g = gaps[dir];
+              if (!g) return null;
+              const horizontal = g.axis === "x";
+              const midpoint = (g.from + g.to) / 2;
+              const invZoom = 1 / Math.max(0.05, getZoom());
+              return (
+                <div key={dir}>
+                  <div
+                    className="pointer-events-none"
+                    style={
+                      horizontal
+                        ? { position: "absolute", left: g.from, top: g.at, width: g.to - g.from, height: 1, background: "rgba(109, 74, 174, 0.85)" }
+                        : { position: "absolute", top: g.from, left: g.at, height: g.to - g.from, width: 1, background: "rgba(109, 74, 174, 0.85)" }
+                    }
+                  />
+                  <div
+                    className="pointer-events-none select-none rounded px-1.5 py-0.5 text-[11px] font-semibold text-white shadow-sm"
+                    style={{
+                      position: "absolute",
+                      left: horizontal ? midpoint : g.at,
+                      top: horizontal ? g.at : midpoint,
+                      transform: `translate(-50%, -50%) scale(${invZoom})`,
+                      background: "#6D4AAE",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {Math.round(g.gap)}
+                  </div>
+                </div>
+              );
+            })}
           </ViewportPortal>
         )}
       </ReactFlow>

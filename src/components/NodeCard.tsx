@@ -1,8 +1,9 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { resolveDisplay, type OrgNode, type OrgTheme } from "../types/orgchart";
-import { computeNodeStyle, getContrastColor } from "../lib/nodeStyle";
+import { computeNodeStyle, getContrastColor, computeNodeWidth, formatPhoneNumber } from "../lib/nodeStyle";
 import { useOrgChartStore } from "../store/useOrgChartStore";
+import { Mail, Phone } from "lucide-react";
 
 export interface NodeCardData extends Record<string, unknown> {
   orgNode: OrgNode;
@@ -50,7 +51,7 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
   const toggleCollapsed = useOrgChartStore((s) => s.toggleCollapsed);
   const style = computeNodeStyle(theme, level, orgNode.styleOverride);
   const display = resolveDisplay(theme);
-  const { name, role, department, email, avatarUrl } = orgNode.data;
+  const { name, role, department, email, phone, avatarUrl } = orgNode.data;
 
   const isGlass = theme.nodeStyle === "glass";
   const isFlat = theme.nodeStyle === "flat";
@@ -103,10 +104,13 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
 
   const deptColor = isColoredBg ? style.textColor : style.accentColor;
 
+  const cardWidth = computeNodeWidth(orgNode, display.showPhotos);
+
   return (
     <div
-      className="relative w-[240px] px-5 py-4 border transition-all duration-300 ease-out group hover:scale-[1.03] cursor-pointer"
+      className="relative px-5 py-4 border transition-all duration-300 ease-out group hover:scale-[1.03] cursor-pointer"
       style={{
+        width: cardWidth,
         background: style.background,
         color: style.textColor,
         borderColor: style.borderColor,
@@ -176,24 +180,35 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
           ))}
 
         <div className="min-w-0 flex-1">
-          <div className="truncate text-xs font-bold leading-normal tracking-tight" style={{ color: style.textColor }}>
+          <div className="text-xs font-bold leading-normal tracking-tight break-words" style={{ color: style.textColor }}>
             {name || "Sans nom"}
           </div>
           {role && display.showRoles && (
-            <div className={`truncate text-[10px] leading-relaxed mt-0.5 font-medium ${isDarkText ? "opacity-90" : "opacity-80"}`}>
+            <div className={`text-[10px] leading-relaxed mt-0.5 font-medium break-words ${isDarkText ? "opacity-90" : "opacity-80"}`}>
               {role}
             </div>
           )}
         </div>
       </div>
 
-      {/* Email */}
-      {email && display.showEmails && (
+      {/* Contacts (Email & Téléphone) */}
+      {((email && display.showEmails) || (phone && display.showPhones)) && (
         <div
-          className={`mt-2.5 pt-2 border-t truncate text-[9px] font-mono tracking-tight ${isDarkText ? "opacity-75" : "opacity-60"}`}
+          className="mt-3.5 pt-3 border-t flex flex-col gap-1.5"
           style={{ borderColor: isDarkText ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.08)" }}
         >
-          {email}
+          {email && display.showEmails && (
+            <div className={`flex items-center gap-2 text-[10px] tracking-tight break-all ${isDarkText ? "opacity-70" : "opacity-60"}`}>
+              <Mail className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} style={{ color: style.textColor }} />
+              <span>{email}</span>
+            </div>
+          )}
+          {phone && display.showPhones && (
+            <div className={`flex items-center gap-2 text-[10px] tracking-tight break-all ${isDarkText ? "opacity-70" : "opacity-60"}`}>
+              <Phone className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} style={{ color: style.textColor }} />
+              <span>{formatPhoneNumber(phone)}</span>
+            </div>
+          )}
         </div>
       )}
 

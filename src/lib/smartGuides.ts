@@ -86,3 +86,94 @@ export function snapPosition(
 
   return { x: x + (bestDx ?? 0), y: y + (bestDy ?? 0), vLine, hLine };
 }
+
+export interface GapInfo {
+  /** "x" = écart horizontal (gauche/droite), "y" = écart vertical (haut/bas). */
+  axis: "x" | "y";
+  /** Écart en px canvas, à afficher dans le badge. */
+  gap: number;
+  /** Coordonnée perpendiculaire du segment (y fixe si axis "x", x fixe si axis "y"). */
+  at: number;
+  /** Bornes du segment le long de l'axe de l'écart. */
+  from: number;
+  to: number;
+}
+
+export interface NeighborGaps {
+  left?: GapInfo;
+  right?: GapInfo;
+  top?: GapInfo;
+  bottom?: GapInfo;
+}
+
+function overlap1D(aStart: number, aEnd: number, bStart: number, bEnd: number): { start: number; end: number } | null {
+  const start = Math.max(aStart, bStart);
+  const end = Math.min(aEnd, bEnd);
+  return end > start ? { start, end } : null;
+}
+
+/**
+ * Écarts (px) entre `rect` et son voisin le plus proche dans chacune des 4
+ * directions — uniquement parmi les rectangles qui chevauchent `rect` sur
+ * l'axe perpendiculaire (façon Figma : le badge de distance n'apparaît
+ * qu'entre éléments alignés). `maxGap` écarte les voisins trop lointains pour
+ * rester lisible.
+ */
+export function neighborGaps(rect: Rect, others: Rect[], maxGap = 800): NeighborGaps {
+  const result: NeighborGaps = {};
+  const rTop = rect.y;
+  const rBottom = rect.y + rect.height;
+  const rLeft = rect.x;
+  const rRight = rect.x + rect.width;
+
+  let bestLeft: { gap: number; ov: { start: number; end: number } } | undefined;
+  let bestRight: typeof bestLeft;
+  let bestTop: typeof bestLeft;
+  let bestBottom: typeof bestLeft;
+
+  for (const o of others) {
+    const oTop = o.y;
+    const oBottom = o.y + o.height;
+    const oLeft = o.x;
+    const oRight = o.x + o.width;
+
+    const vOv = overlap1D(rTop, rBottom, oTop, oBottom);
+    if (vOv) {
+      if (oRight <= rLeft) {
+        const gap = rLeft - oRight;
+        if (gap >= 0 && gap <= maxGap && (!bestLeft || gap < bestLeft.gap)) bestLeft = { gap, ov: vOv };
+      }
+      if (oLeft >= rRight) {
+        const gap = oLeft - rRight;
+        if (gap >= 0 && gap <= maxGap && (!bestRight || gap < bestRight.gap)) bestRight = { gap, ov: vOv };
+      }
+    }
+
+    const hOv = overlap1D(rLeft, rRight, oLeft, oRight);
+    if (hOv) {
+      if (oBottom <= rTop) {
+        const gap = rTop - oBottom;
+        if (gap >= 0 && gap <= maxGap && (!bestTop || gap < bestTop.gap)) bestTop = { gap, ov: hOv };
+      }
+      if (oTop >= rBottom) {
+        const gap = oTop - rBottom;
+        if (gap >= 0 && gap <= maxGap && (!bestBottom || gap < bestBottom.gap)) bestBottom = { gap, ov: hOv };
+      }
+    }
+  }
+
+  if (bestLeft) {
+    result.left = { axis: "x", gap: bestLeft.gap, at: (bestLeft.ov.start + bestLeft.ov.end) / 2, from: rLeft - bestLeft.gap, to: rLeft };
+  }
+  if (bestRight) {
+    result.right = { axis: "x", gap: bestRight.gap, at: (bestRight.ov.start + bestRight.ov.end) / 2, from: rRight, to: rRight + bestRight.gap };
+  }
+  if (bestTop) {
+    result.top = { axis: "y", gap: bestTop.gap, at: (bestTop.ov.start + bestTop.ov.end) / 2, from: rTop - bestTop.gap, to: rTop };
+  }
+  if (bestBottom) {
+    result.bottom = { axis: "y", gap: bestBottom.gap, at: (bestBottom.ov.start + bestBottom.ov.end) / 2, from: rBottom, to: rBottom + bestBottom.gap };
+  }
+
+  return result;
+}

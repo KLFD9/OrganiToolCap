@@ -19,6 +19,7 @@ export const OrgDisplayOptionsSchema = z.object({
   showRoles: z.boolean().optional(),
   showDepartments: z.boolean().optional(),
   showEmails: z.boolean().optional(),
+  showPhones: z.boolean().optional(),
 });
 export type OrgDisplayOptions = z.infer<typeof OrgDisplayOptionsSchema>;
 
@@ -41,6 +42,7 @@ export function resolveDisplay(theme: Pick<OrgTheme, "display">): Required<OrgDi
     showRoles: theme.display?.showRoles ?? true,
     showDepartments: theme.display?.showDepartments ?? true,
     showEmails: theme.display?.showEmails ?? true,
+    showPhones: theme.display?.showPhones ?? true,
   };
 }
 
@@ -49,6 +51,7 @@ export const OrgNodeDataSchema = z.object({
   role: z.string().optional(),
   department: z.string().optional(),
   email: z.string().optional(),
+  phone: z.string().optional(),
   avatarUrl: z.string().optional(),
 });
 export type OrgNodeData = z.infer<typeof OrgNodeDataSchema>;

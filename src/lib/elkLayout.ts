@@ -1,5 +1,6 @@
 import type ELKType from "elkjs/lib/elk.bundled.js";
 import { hierarchyEdges, type OrgEdge, type OrgNode } from "../types/orgchart";
+import { computeNodeWidth } from "./nodeStyle";
 
 // elkjs pèse ~1,4 Mo : chargé à la demande au premier « Ranger automatiquement »
 // pour ne pas alourdir le bundle initial.
@@ -12,7 +13,6 @@ async function getElk(): Promise<InstanceType<typeof ELKType>> {
   return elkInstance;
 }
 
-const NODE_WIDTH = 240;
 const NODE_HEIGHT = 110;
 
 export async function layoutWithElk(
@@ -31,7 +31,7 @@ export async function layoutWithElk(
     },
     children: nodes.map((n) => ({
       id: n.id,
-      width: NODE_WIDTH,
+      width: computeNodeWidth(n),
       height: NODE_HEIGHT,
     })),
     // Les liens pointillés (fonctionnels) ne contraignent pas la mise en page

@@ -3,6 +3,7 @@ import { estimateReadability, type ReadabilityEstimate } from "./readability";
 import { CARD_HEIGHT, CARD_WIDTH, layoutCompact } from "./compactLayout";
 import { layoutWithElk } from "./elkLayout";
 import { buildChildrenMap, computeDescendants } from "./hierarchy";
+import { computeNodeWidth } from "./nodeStyle";
 
 /**
  * Optimiseur de disposition pour l'export : au lieu de constater qu'un
@@ -38,8 +39,10 @@ export function contentBounds(nodes: OrgNode[]): { width: number; height: number
   if (nodes.length === 0) return { width: 1, height: 1 };
   const xs = nodes.map((n) => n.position.x);
   const ys = nodes.map((n) => n.position.y);
+  const maxRight = Math.max(...nodes.map((n) => n.position.x + computeNodeWidth(n)));
+  const minLeft = Math.min(...xs);
   return {
-    width: (Math.max(...xs) - Math.min(...xs) + CARD_WIDTH) * CONTENT_MARGIN_RATIO,
+    width: (maxRight - minLeft) * CONTENT_MARGIN_RATIO,
     height: (Math.max(...ys) - Math.min(...ys) + CARD_HEIGHT) * CONTENT_MARGIN_RATIO,
   };
 }
@@ -116,7 +119,10 @@ export function layoutGridForRatio(nodes: OrgNode[], edges: OrgEdge[], targetRat
       ids,
       minX,
       minY,
-      width: Math.max(...xs) - minX + CARD_WIDTH,
+      width: Math.max(...ids.map((id) => {
+        const n = nodes.find((x) => x.id === id);
+        return posById.get(id)!.x + (n ? computeNodeWidth(n) : CARD_WIDTH);
+      })) - minX,
       height: Math.max(...ys) - minY + CARD_HEIGHT,
     };
   });
@@ -153,7 +159,7 @@ export function layoutGridForRatio(nodes: OrgNode[], edges: OrgEdge[], targetRat
 
   if (singleRoot) {
     offsets.set(singleRoot.id, {
-      dx: (gridWidth - CARD_WIDTH) / 2 - posById.get(singleRoot.id)!.x,
+      dx: (gridWidth - computeNodeWidth(singleRoot)) / 2 - posById.get(singleRoot.id)!.x,
       dy: -posById.get(singleRoot.id)!.y,
     });
   }

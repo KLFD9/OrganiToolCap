@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mergeTargets, rectTargets, snapPosition } from "./smartGuides";
+import { mergeTargets, neighborGaps, rectTargets, snapPosition } from "./smartGuides";
 
 describe("rectTargets", () => {
   it("expose bords et axes centraux d'un rectangle", () => {
@@ -48,5 +48,43 @@ describe("snapPosition", () => {
   it("mergeTargets concatène les jeux de cibles", () => {
     const merged = mergeTargets({ v: [1], h: [2] }, { v: [3], h: [4] });
     expect(merged).toEqual({ v: [1, 3], h: [2, 4] });
+  });
+});
+
+describe("neighborGaps", () => {
+  const rect = { x: 200, y: 200, width: 100, height: 100 };
+
+  it("détecte l'écart à droite avec un voisin aligné verticalement", () => {
+    const right = { x: 350, y: 220, width: 100, height: 60 };
+    const gaps = neighborGaps(rect, [right]);
+    expect(gaps.right).toEqual({ axis: "x", gap: 50, at: 250, from: 300, to: 350 });
+    expect(gaps.left).toBeUndefined();
+    expect(gaps.top).toBeUndefined();
+    expect(gaps.bottom).toBeUndefined();
+  });
+
+  it("détecte l'écart en bas avec un voisin aligné horizontalement", () => {
+    const below = { x: 210, y: 350, width: 60, height: 100 };
+    const gaps = neighborGaps(rect, [below]);
+    expect(gaps.bottom).toEqual({ axis: "y", gap: 50, at: 240, from: 300, to: 350 });
+  });
+
+  it("ignore les rectangles qui ne se chevauchent sur aucun axe perpendiculaire", () => {
+    const diagonal = { x: 400, y: 400, width: 50, height: 50 };
+    const gaps = neighborGaps(rect, [diagonal]);
+    expect(gaps).toEqual({});
+  });
+
+  it("choisit le voisin le plus proche dans une direction", () => {
+    const near = { x: 350, y: 200, width: 50, height: 100 };
+    const far = { x: 500, y: 200, width: 50, height: 100 };
+    const gaps = neighborGaps(rect, [far, near]);
+    expect(gaps.right?.gap).toBe(50);
+  });
+
+  it("ignore un voisin au-delà de maxGap", () => {
+    const far = { x: 1200, y: 200, width: 50, height: 100 };
+    const gaps = neighborGaps(rect, [far], 500);
+    expect(gaps.right).toBeUndefined();
   });
 });

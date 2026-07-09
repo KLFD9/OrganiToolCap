@@ -1,4 +1,5 @@
 import { isHierarchyEdge, type OrgEdge, type OrgNode } from "../types/orgchart";
+import { computeNodeWidth } from "./nodeStyle";
 
 /**
  * Disposition « compacte » : les équipes terrain (groupes de feuilles) sont
@@ -84,11 +85,19 @@ export function layoutCompact(nodes: OrgNode[], edges: OrgEdge[]): CompactLayout
     if (cached) return cached;
     const kids = children.get(id) ?? [];
     let size: SubtreeSize;
+    const node = nodes.find((n) => n.id === id);
+    const nodeW = node ? computeNodeWidth(node) : CARD_WIDTH;
+
     if (kids.length === 0) {
-      size = { width: CARD_WIDTH, height: CARD_HEIGHT };
+      size = { width: nodeW, height: CARD_HEIGHT };
     } else if (kids.every((k) => stackedIds.has(k))) {
+      const childWidths = kids.map((kId) => {
+        const kn = nodes.find((n) => n.id === kId);
+        return kn ? computeNodeWidth(kn) : CARD_WIDTH;
+      });
+      const maxChildW = childWidths.length > 0 ? Math.max(...childWidths) : CARD_WIDTH;
       size = {
-        width: STACK_INDENT + CARD_WIDTH,
+        width: Math.max(nodeW, STACK_INDENT + maxChildW),
         height:
           CARD_HEIGHT + LEVEL_GAP_Y + kids.length * CARD_HEIGHT + (kids.length - 1) * STACK_GAP_Y,
       };
@@ -97,7 +106,7 @@ export function layoutCompact(nodes: OrgNode[], edges: OrgEdge[]): CompactLayout
       const rowWidth =
         kidSizes.reduce((sum, s) => sum + s.width, 0) + (kids.length - 1) * SIBLING_GAP_X;
       size = {
-        width: Math.max(CARD_WIDTH, rowWidth),
+        width: Math.max(nodeW, rowWidth),
         height: CARD_HEIGHT + LEVEL_GAP_Y + Math.max(...kidSizes.map((s) => s.height)),
       };
     }
@@ -111,6 +120,8 @@ export function layoutCompact(nodes: OrgNode[], edges: OrgEdge[]): CompactLayout
   function place(id: string, x: number, y: number): void {
     const size = measure(id);
     const kids = children.get(id) ?? [];
+    const node = nodes.find((n) => n.id === id);
+    const nodeW = node ? computeNodeWidth(node) : CARD_WIDTH;
 
     if (kids.length > 0 && kids.every((k) => stackedIds.has(k))) {
       // Parent aligné à gauche, pile indentée dessous
@@ -124,7 +135,7 @@ export function layoutCompact(nodes: OrgNode[], edges: OrgEdge[]): CompactLayout
     }
 
     // Parent centré au-dessus de la rangée de ses sous-arbres
-    positions.set(id, { x: x + (size.width - CARD_WIDTH) / 2, y });
+    positions.set(id, { x: x + (size.width - nodeW) / 2, y });
     let childX = x;
     for (const k of kids) {
       const kidSize = measure(k);

@@ -33,11 +33,12 @@ function normalize(value: string): string {
     .trim();
 }
 
-const COLUMN_ALIASES: Record<"name" | "role" | "department" | "email" | "manager", string[]> = {
+const COLUMN_ALIASES: Record<"name" | "role" | "department" | "email" | "phone" | "manager", string[]> = {
   name: ["nom", "name", "nom complet", "prenom nom", "collaborateur", "personne"],
   role: ["poste", "role", "fonction", "title", "intitule", "intitule de poste"],
   department: ["pole", "departement", "department", "service", "equipe", "direction", "bu"],
   email: ["email", "e-mail", "mail", "courriel", "adresse e-mail", "adresse email"],
+  phone: ["telephone", "tel", "phone", "numero", "gsm", "mobile", "portable", "numero de telephone"],
   manager: ["responsable", "manager", "n+1", "superieur", "rattachement", "reports to", "responsable direct"],
 };
 
@@ -165,6 +166,7 @@ export function importPeopleCsv(text: string): CsvImportResult {
         role: cellAt(row, columns.role),
         department: cellAt(row, columns.department),
         email,
+        phone: cellAt(row, columns.phone),
       },
     });
   });

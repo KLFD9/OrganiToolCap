@@ -171,3 +171,63 @@ export function computeNodeStyle(theme: OrgTheme, level: number, override?: Part
 
   return result;
 }
+
+/**
+ * Formate un numéro de téléphone brut en format français lisible :
+ * - 0614053323 -> 06 14 05 33 23
+ * - +33614053323 -> +33 6 14 05 33 23
+ * - +330614053323 -> +33 (0)6 14 05 33 23
+ */
+export function formatPhoneNumber(phone: string): string {
+  const trimmed = phone.trim();
+  if (!trimmed) return "";
+
+  // Supprime tous les caractères non numériques sauf le '+' initial
+  const cleaned = trimmed.replace(/[^\d+]/g, "");
+
+  // Cas 1 : Numéro français standard à 10 chiffres (ex: 0614053323)
+  if (/^0[1-9]\d{8}$/.test(cleaned)) {
+    return cleaned.replace(/(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/, "$1 $2 $3 $4 $5");
+  }
+
+  // Cas 2 : Numéro français avec indicatif international +33 (ex: +33614053323)
+  if (/^\+33[1-9]\d{8}$/.test(cleaned)) {
+    return cleaned.replace(/^\+33([1-9])(\d{2})(\d{2})(\d{2})(\d{2})/, "+33 $1 $2 $3 $4 $5");
+  }
+
+  // Cas 3 : Numéro français avec indicatif international et 0 (ex: +330614053323)
+  if (/^\+330[1-9]\d{8}$/.test(cleaned)) {
+    return cleaned.replace(/^\+330([1-9])(\d{2})(\d{2})(\d{2})(\d{2})/, "+33 (0)$1 $2 $3 $4 $5");
+  }
+
+  return trimmed;
+}
+
+/**
+ * Calcule la largeur d'un nœud (carte) en fonction de la longueur de ses textes.
+ * Borne la largeur entre 240px (min) et 380px (max).
+ */
+export function computeNodeWidth(node: OrgNode, showPhotos: boolean = true): number {
+  const name = node.data.name || "";
+  const role = node.data.role || "";
+  const email = node.data.email || "";
+  const phone = formatPhoneNumber(node.data.phone || "");
+
+  // Estimation du poids par caractère :
+  // - Nom (gras, ~12px) : ~7.5px par caractère
+  // - Rôle (~10px) : ~6.2px par caractère
+  // - Email/Téléphone (sans-serif, ~10px) : ~5.8px par caractère + 22px pour l'icône et son espacement
+  const nameWidth = name.length * 7.5;
+  const roleWidth = role.length * 6.2;
+  const emailWidth = email ? email.length * 5.8 + 22 : 0;
+  const phoneWidth = phone ? phone.length * 5.8 + 22 : 0;
+
+  const maxTextWidth = Math.max(nameWidth, roleWidth, emailWidth, phoneWidth);
+
+  // Largeur totale = paddings (px-5 = 20px de chaque côté, soit 40px) 
+  // + espace pour photo si activé (40px de largeur + 12px de gap = 52px)
+  const baseSpacing = 40 + (showPhotos ? 52 : 0);
+  const estimatedWidth = maxTextWidth + baseSpacing;
+
+  return Math.max(240, Math.min(380, Math.round(estimatedWidth)));
+}

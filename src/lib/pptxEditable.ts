@@ -1,5 +1,5 @@
 import { resolveDisplay, type OrgEdge, type OrgNode, type OrgTheme } from "../types/orgchart";
-import { computeLevels, computeNodeStyle, getContrastColor } from "./nodeStyle";
+import { computeLevels, computeNodeStyle, getContrastColor, computeNodeWidth, formatPhoneNumber } from "./nodeStyle";
 import { computeStackedIds, CARD_WIDTH, CARD_HEIGHT } from "./compactLayout";
 import { computeElbowRoute, computeSpineRoute, isSpineDirection, type EdgeRoutePoint } from "./edgeRouting";
 import { nameInitials } from "./nameInitials";
@@ -34,6 +34,7 @@ export interface CardSpec {
   name: string;
   role?: string;
   email?: string;
+  phone?: string;
   deptColor: string;
   textColor: string;
   /** Couleur d'accent du niveau (bordures, pastille d'initiales). */
@@ -80,11 +81,13 @@ export function buildEditableSpec(
 ): EditableSlideSpec {
   if (nodes.length === 0) return { cards: [], connectors: [] };
 
+  const display = resolveDisplay(theme);
   const xs = nodes.map((n) => n.position.x);
   const ys = nodes.map((n) => n.position.y);
   const minX = Math.min(...xs);
   const minY = Math.min(...ys);
-  const boundsW = Math.max(...xs) - minX + CARD_WIDTH;
+  const maxRight = Math.max(...nodes.map((n) => n.position.x + computeNodeWidth(n, display.showPhotos)));
+  const boundsW = maxRight - minX;
   const boundsH = Math.max(...ys) - minY + CARD_HEIGHT;
 
   const scale = Math.min(area.width / boundsW, area.height / boundsH); // pouces par px
@@ -98,7 +101,6 @@ export function buildEditableSpec(
   const levels = computeLevels(nodes, edges);
   const stackedIds = computeStackedIds(nodes, edges);
   const byId = new Map(nodes.map((n) => [n.id, n]));
-  const display = resolveDisplay(theme);
 
   const namePt = clamp(12 * scale * PT_PER_IN * (96 / 72), MIN_FONT_PT, MAX_NAME_PT);
 
@@ -139,7 +141,7 @@ export function buildEditableSpec(
     return {
       x: posX(n.position.x),
       y: posY(n.position.y),
-      w: toIn(CARD_WIDTH),
+      w: toIn(computeNodeWidth(n, display.showPhotos)),
       h: toIn(CARD_HEIGHT),
       radiusIn: toIn(theme.cornerRadius),
       fillColor,
@@ -149,6 +151,7 @@ export function buildEditableSpec(
       name: n.data.name || "Sans nom",
       role: display.showRoles ? n.data.role : undefined,
       email: display.showEmails ? n.data.email : undefined,
+      phone: display.showPhones ? formatPhoneNumber(n.data.phone || "") : undefined,
       deptColor: solidBg || isNeon ? textColor : accent,
       textColor,
       accentColor: accent,
@@ -288,19 +291,34 @@ function renderEditableSpec(pptx: PptxInstance, slide: PptxSlide, spec: Editable
         fontSize: card.namePt,
         color: card.textColor,
         bold: true,
-        breakLine: Boolean(card.role || card.email),
+        breakLine: Boolean(card.role || card.email || card.phone),
       },
     });
     if (card.role) {
       runs.push({
         text: card.role,
-        options: { fontSize: card.rolePt, color: card.textColor, transparency: 25, breakLine: Boolean(card.email) },
+        options: { fontSize: card.rolePt, color: card.textColor, transparency: 25, breakLine: Boolean(card.email || card.phone) },
       });
     }
     if (card.email) {
       runs.push({
         text: card.email,
-        options: { fontSize: Math.max(MIN_FONT_PT - 1, card.rolePt * 0.9), color: card.textColor, transparency: 40 },
+        options: {
+          fontSize: Math.max(MIN_FONT_PT - 1, card.rolePt * 0.9),
+          color: card.textColor,
+          transparency: 40,
+          breakLine: Boolean(card.phone),
+        },
+      });
+    }
+    if (card.phone) {
+      runs.push({
+        text: card.phone,
+        options: {
+          fontSize: Math.max(MIN_FONT_PT - 1, card.rolePt * 0.9),
+          color: card.textColor,
+          transparency: 40,
+        },
       });
     }
 

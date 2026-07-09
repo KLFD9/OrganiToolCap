@@ -1,6 +1,6 @@
 import { resolveDisplay, type OrgEdge, type OrgNode, type OrgTheme } from "../types/orgchart";
 import { buildEditableSpec, type EditableSlideSpec } from "./pptxEditable";
-import { CARD_WIDTH } from "./compactLayout";
+import { computeNodeWidth } from "./nodeStyle";
 import { nameInitials } from "./nameInitials";
 import { blendHex } from "./colorBlend";
 import type { FramePageContent } from "./frames";
@@ -80,12 +80,24 @@ function drawEditableSpec(pdf: JsPdfLike, spec: EditableSlideSpec, theme: OrgThe
   const mm = (inches: number) => inches * MM_PER_IN;
   // Échelle exacte : mm de papier par px de canvas — toutes les dimensions
   // du dessin sont les px de NodeCard multipliés par cette échelle.
-  const mmPerPx = mm(spec.cards[0].w) / CARD_WIDTH;
+  const display = resolveDisplay(theme);
+  const firstCard = spec.cards[0];
+  const firstNodeW = computeNodeWidth(
+    {
+      data: {
+        name: firstCard.name,
+        role: firstCard.role,
+        email: firstCard.email,
+        phone: firstCard.phone,
+      },
+    } as OrgNode,
+    display.showPhotos
+  );
+  const mmPerPx = mm(firstCard.w) / firstNodeW;
   const px = (cssPx: number) => cssPx * mmPerPx;
   // pt typographiques équivalents à une taille en px du canvas
   const pt = (cssPx: number) => cssPx * mmPerPx * (72 / MM_PER_IN);
 
-  const display = resolveDisplay(theme);
   const isOutline = theme.nodeStyle === "outline";
   const isNeon = theme.nodeStyle === "neon";
   const isMinimal = theme.nodeStyle === "minimal";
@@ -196,16 +208,24 @@ function drawEditableSpec(pdf: JsPdfLike, spec: EditableSlideSpec, theme: OrgThe
       pdf.text(truncateToWidth(pdf, card.role, textW), textX, nameY + px(15), { baseline: "middle" });
     }
 
-    // E-mail : filet + 9 px atténué, comme la carte
-    if (card.email) {
-      const emailY = cursorY + rowH + px(10);
+    // Contacts (E-mail & Téléphone) : filet + 9 px atténué
+    if (card.email || card.phone) {
+      let contactY = cursorY + rowH + px(10);
       pdf.setDrawColor(textOn(card.fillColor, card.textColor, 0.08));
       pdf.setLineWidth(px(1));
-      pdf.line(x + padX, emailY, x + w - padX, emailY);
+      pdf.line(x + padX, contactY, x + w - padX, contactY);
+
       pdf.setFont("helvetica", "normal");
       pdf.setFontSize(pt(9));
       pdf.setTextColor(textOn(card.fillColor, card.textColor, 0.6));
-      pdf.text(truncateToWidth(pdf, card.email, innerW), x + padX, emailY + px(8), { baseline: "middle" });
+
+      if (card.email) {
+        pdf.text(truncateToWidth(pdf, card.email, innerW), x + padX, contactY + px(8), { baseline: "middle" });
+        contactY += px(14);
+      }
+      if (card.phone) {
+        pdf.text(truncateToWidth(pdf, card.phone, innerW), x + padX, contactY + px(8), { baseline: "middle" });
+      }
     }
   }
 }

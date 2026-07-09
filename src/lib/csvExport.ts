@@ -9,7 +9,7 @@ import { isHierarchyEdge, type OrgEdge, type OrgNode } from "../types/orgchart";
  */
 
 const DELIMITER = ";";
-export const CSV_HEADER = ["Nom", "Poste", "Pôle", "Email", "Responsable"];
+export const CSV_HEADER = ["Nom", "Poste", "Pôle", "Email", "Téléphone", "Responsable"];
 
 /** Échappe une cellule CSV : guillemets si séparateur, guillemet ou retour à la ligne. */
 export function escapeCsvCell(value: string): string {
@@ -37,6 +37,7 @@ export function buildPeopleCsv(nodes: OrgNode[], edges: OrgEdge[]): string {
         node.data.role ?? "",
         node.data.department ?? "",
         node.data.email ?? "",
+        node.data.phone ?? "",
         manager,
       ]
         .map(escapeCsvCell)

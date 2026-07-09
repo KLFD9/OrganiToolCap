@@ -703,6 +703,11 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
               checked={display.showEmails}
               onChange={(v) => setDisplay({ showEmails: v })}
             />
+            <DisplayToggle
+              label="Numéros de téléphone"
+              checked={display.showPhones}
+              onChange={(v) => setDisplay({ showPhones: v })}
+            />
           </div>
         </div>
 
@@ -896,6 +901,18 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
               type="email"
               value={selected.data.email ?? ""}
               onChange={(e) => updateNodeData(selected.id, { email: e.target.value })}
+              className={inputClass}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Téléphone
+            </span>
+            <input
+              type="tel"
+              value={selected.data.phone ?? ""}
+              onChange={(e) => updateNodeData(selected.id, { phone: e.target.value })}
               className={inputClass}
             />
           </label>
