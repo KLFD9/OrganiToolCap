@@ -8,6 +8,7 @@ import {
   applyPdfMetadata,
   drawPageChrome,
   safeFileName,
+  type ExportProgressCallback,
   type PdfExportOptions,
 } from "./pdfExport";
 
@@ -356,13 +357,15 @@ export interface FramesPdfCommonOptions {
 export async function buildFramesPdfVector(
   pages: FramePageContent[],
   theme: OrgTheme,
-  common: FramesPdfCommonOptions
+  common: FramesPdfCommonOptions,
+  onProgress?: ExportProgressCallback
 ): Promise<JsPdfLike> {
   const first = pages[0];
   const { pdf } = await loadPdf(first.frame.page.orientation, first.frame.page.format);
   applyPdfMetadata(pdf, { title: common.docTitle, subtitle: common.docSubtitle });
 
   for (let i = 0; i < pages.length; i++) {
+    onProgress?.(i + 1, pages.length);
     const page = pages[i];
     if (i > 0) pdf.addPage(page.frame.page.format, page.frame.page.orientation);
     const options: PdfExportOptions = {
@@ -387,9 +390,10 @@ export async function buildFramesPdfVector(
 export async function exportFramesToPdfVector(
   pages: FramePageContent[],
   theme: OrgTheme,
-  common: FramesPdfCommonOptions
+  common: FramesPdfCommonOptions,
+  onProgress?: ExportProgressCallback
 ): Promise<void> {
   if (pages.length === 0) return;
-  const pdf = await buildFramesPdfVector(pages, theme, common);
+  const pdf = await buildFramesPdfVector(pages, theme, common, onProgress);
   pdf.save(safeFileName(common.docTitle, pages.length > 1 ? "-pages" : "-vectoriel"));
 }

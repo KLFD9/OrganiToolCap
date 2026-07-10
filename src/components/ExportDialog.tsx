@@ -105,6 +105,8 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
     [storeEdges, hiddenIds]
   );
   const [busy, setBusy] = useState<string | null>(null);
+  const [exportProgress, setExportProgress] = useState<{ current: number; total: number } | null>(null);
+  const [lastPdfDuration, setLastPdfDuration] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [optimizeNotice, setOptimizeNotice] = useState<string | null>(null);
@@ -286,6 +288,9 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
     }
     setError(null);
     setBusy(kind);
+    setExportProgress(null);
+    if (kind === "pdf") setLastPdfDuration(null);
+    const startedAt = performance.now();
 
     // Désélectionne temporairement les nœuds pour ne pas capturer le surlignage de sélection,
     // et masque le cadre de page (feuille, bandes d'en-tête/pied, jauge de lisibilité) : un
@@ -321,7 +326,9 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
           };
           if (pdfVector) {
             const { exportFramesToPdfVector } = await import("../lib/pdfVector");
-            await exportFramesToPdfVector(framePages, theme, common);
+            await exportFramesToPdfVector(framePages, theme, common, (current, total) =>
+              setExportProgress({ current, total })
+            );
           } else {
             const rfById = new Map(nodes.map((n) => [n.id, n]));
             const pages: FrameImagePage[] = framePages.map((p) => ({
@@ -336,7 +343,9 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                 .map((n) => rfById.get(n.id))
                 .filter((n): n is NonNullable<typeof n> => Boolean(n)),
             }));
-            await exportFramesToPdfImage(el, pages, common);
+            await exportFramesToPdfImage(el, pages, common, (current, total) =>
+              setExportProgress({ current, total })
+            );
           }
         } else {
           const pdfOptions = {
@@ -409,6 +418,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
       } else {
         await exportFlowToSvg(el, nodes, `${meta.title || "organigramme"}.svg`, { transparent: transparentBg });
       }
+      if (kind === "pdf") setLastPdfDuration(performance.now() - startedAt);
     } catch (err) {
       console.error(err);
       setError(
@@ -420,6 +430,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
       if (hadSelection) selectNodes(selectedNodeIds);
       if (hadPageGuide) togglePageGuide();
       setBusy(null);
+      setExportProgress(null);
     }
   };
 
@@ -810,7 +821,11 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                       {busy === "pdf" ? (
                         <>
                           <Loader2 className="animate-spin h-4 w-4" />
-                          <span>Génération PDF en cours...</span>
+                          <span>
+                            {exportProgress
+                              ? `Génération de la page ${exportProgress.current} sur ${exportProgress.total}…`
+                              : "Préparation du PDF…"}
+                          </span>
                         </>
                       ) : (
                         <>
@@ -819,6 +834,17 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                         </>
                       )}
                     </button>
+
+                    {busy === "pdf" && exportProgress && (
+                      <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800" role="progressbar" aria-valuemin={0} aria-valuemax={exportProgress.total} aria-valuenow={exportProgress.current}>
+                        <div className="h-full rounded-full bg-primary-600 transition-[width] duration-200" style={{ width: `${(exportProgress.current / exportProgress.total) * 100}%` }} />
+                      </div>
+                    )}
+                    {busy !== "pdf" && lastPdfDuration !== null && (
+                      <p className="text-center text-[10px] font-medium text-emerald-600 dark:text-emerald-400" role="status">
+                        PDF généré en {(lastPdfDuration / 1000).toFixed(1)} s · mesure conservée uniquement à l’écran
+                      </p>
+                    )}
 
                     {/* Pack de diffusion : un seul geste pour l'envoi mensuel */}
                     {hasFrames && (

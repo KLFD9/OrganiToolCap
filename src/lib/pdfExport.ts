@@ -6,7 +6,9 @@ import type { PageSetup } from "./readability";
 
 // html-to-image et jspdf ne servent qu'à l'export : chargés à la demande
 // pour alléger le bundle initial.
-const loadHtmlToImage = () => import("html-to-image");
+let htmlToImagePromise: Promise<typeof import("html-to-image")> | undefined;
+const importHtmlToImage = () => import("html-to-image");
+const loadHtmlToImage = () => (htmlToImagePromise ??= importHtmlToImage());
 const loadJsPdf = () => import("jspdf");
 
 export type PdfFormat = "a4" | "a3" | "a2";
@@ -157,8 +159,20 @@ function cropToDataUrl(img: HTMLImageElement, tile: PdfTile): string {
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
-// `html-to-image` n'intègre les polices de façon fiable qu'après un premier rendu « à blanc ».
-let fontsWarmed = false;
+// L'analyse des @font-face et leur conversion en data-URI est l'une des
+// opérations les plus coûteuses de html-to-image. Les polices de l'éditeur
+// sont bundlées et immuables pendant la session : un seul résultat suffit
+// pour toutes les pages d'un export.
+let fontEmbedCssPromise: Promise<string | undefined> | undefined;
+
+async function getCachedFontEmbedCss(viewportEl: HTMLElement): Promise<string | undefined> {
+  if (!fontEmbedCssPromise) {
+    fontEmbedCssPromise = loadHtmlToImage()
+      .then(({ getFontEmbedCSS }) => getFontEmbedCSS(viewportEl, { cacheBust: false }))
+      .catch(() => undefined);
+  }
+  return fontEmbedCssPromise;
+}
 
 export interface CaptureResult {
   dataUrl: string;
@@ -211,13 +225,17 @@ export async function captureFlow(
   try {
     // Le JPEG ne gère pas la transparence : fond blanc imposé.
     const transparent = Boolean(capture?.transparent) && type !== "jpeg";
+    const fontEmbedCSS = type === "svg" ? undefined : await getCachedFontEmbedCss(viewportEl);
     const options = {
       backgroundColor: transparent ? undefined : "#ffffff",
       pixelRatio,
       width,
       height,
       quality: 0.95,
-      cacheBust: true,
+      // Les assets sont locaux ou en data-URI. Forcer un cache-bust à chaque
+      // frame multipliait les lectures et l'encodage des polices/logos.
+      cacheBust: false,
+      fontEmbedCSS,
     };
 
     const { toSvg, toPng, toJpeg } = await loadHtmlToImage();
@@ -227,16 +245,6 @@ export async function captureFlow(
         : type === "jpeg"
         ? toJpeg(viewportEl, options)
         : toPng(viewportEl, options);
-
-    // Rendu « à blanc » la première fois pour fiabiliser l'intégration des polices.
-    if (!fontsWarmed && type !== "svg") {
-      try {
-        await render();
-      } catch {
-        // ignore : le rendu réel suit
-      }
-      fontsWarmed = true;
-    }
 
     const dataUrl = await render();
 
@@ -256,10 +264,32 @@ export async function captureFlow(
 
 /**
  * Prépare un logo pour insertion dans un document Office (PDF / PPTX).
- * jsPDF et PowerPoint ne savent pas insérer de SVG : on le rasterise en PNG
- * haute résolution via canvas. Les formats bitmap passent tels quels.
+ * jsPDF et PowerPoint ne savent pas insérer de SVG et jsPDF convertit les PNG
+ * en une chaîne binaire en mémoire. Tous les logos sont donc normalisés vers
+ * un PNG borné : qualité suffisante à la taille d'un en-tête, sans risque de
+ * `RangeError: Invalid string length` sur une photo/logo source démesuré.
  */
-export async function loadLogoForExport(url: string): Promise<{ dataUrl: string; width: number; height: number }> {
+type ExportLogo = { dataUrl: string; width: number; height: number };
+const logoExportCache = new Map<string, Promise<ExportLogo>>();
+const MAX_EXPORT_LOGO_SIDE = 512;
+
+export function fitExportLogoDimensions(
+  width: number,
+  height: number,
+  upscale: boolean
+): { width: number; height: number } {
+  const safeWidth = Math.max(1, width);
+  const safeHeight = Math.max(1, height);
+  const ratio = upscale
+    ? MAX_EXPORT_LOGO_SIDE / Math.max(safeWidth, safeHeight)
+    : Math.min(1, MAX_EXPORT_LOGO_SIDE / Math.max(safeWidth, safeHeight));
+  return {
+    width: Math.max(1, Math.round(safeWidth * ratio)),
+    height: Math.max(1, Math.round(safeHeight * ratio)),
+  };
+}
+
+async function decodeLogoForExport(url: string): Promise<ExportLogo> {
   const img = await new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image();
     image.crossOrigin = "anonymous";
@@ -273,14 +303,26 @@ export async function loadLogoForExport(url: string): Promise<{ dataUrl: string;
   const height = img.naturalHeight || img.height || 256;
 
   const isSvg = url.startsWith("data:image/svg") || /\.svg($|\?)/i.test(url);
-  if (!isSvg) return { dataUrl: url, width, height };
-
-  const scale = 512 / Math.max(width, height);
+  const fitted = fitExportLogoDimensions(width, height, isSvg);
   const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(width * scale));
-  canvas.height = Math.max(1, Math.round(height * scale));
-  canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+  canvas.width = fitted.width;
+  canvas.height = fitted.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas indisponible pour préparer le logo.");
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
   return { dataUrl: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height };
+}
+
+export function loadLogoForExport(url: string): Promise<ExportLogo> {
+  const cached = logoExportCache.get(url);
+  if (cached) return cached;
+  const pending = decodeLogoForExport(url).catch((error) => {
+    // Une erreur transitoire ne doit pas empoisonner les exports suivants.
+    logoExportCache.delete(url);
+    throw error;
+  });
+  logoExportCache.set(url, pending);
+  return pending;
 }
 
 const HEADER_HEIGHT_MM = 16;
@@ -318,26 +360,33 @@ export async function drawPageChrome(
   const baselineY = (el: ChromeElement) => el.y + textHeightMm(el.size);
 
   if (options.logoUrl || options.secondaryLogoUrl || options.title) {
-    if (options.logoUrl) {
+    // Les deux logos sont indépendants : les préparer en parallèle évite de
+    // cumuler leurs temps de décodage sur la première page. Les pages
+    // suivantes réutilisent les promesses mises en cache.
+    const [logo, secondaryLogo] = await Promise.all([
+      options.logoUrl ? loadLogoForExport(options.logoUrl).catch(() => undefined) : undefined,
+      options.secondaryLogoUrl
+        ? loadLogoForExport(options.secondaryLogoUrl).catch(() => undefined)
+        : undefined,
+    ]);
+    if (logo) {
+      const el = resolveChromeElement(options.chromeLayout, "logo", page);
+      const logoW = (logo.width / logo.height) * el.size;
       try {
-        const logo = await loadLogoForExport(options.logoUrl);
-        const el = resolveChromeElement(options.chromeLayout, "logo", page);
-        const logoW = (logo.width / logo.height) * el.size;
-        pdf.addImage(logo.dataUrl, el.x, el.y, logoW, el.size);
+        pdf.addImage(logo.dataUrl, "PNG", el.x, el.y, logoW, el.size, "orgchart-logo-primary", "FAST");
       } catch {
-        // logo illisible : on ignore silencieusement
+        // Un logo illisible ne doit jamais faire échouer tout le document.
       }
     }
-    if (options.secondaryLogoUrl) {
+    if (secondaryLogo) {
+      const el = resolveChromeElement(options.chromeLayout, "secondaryLogo", page, {
+        logoAspect: secondaryLogo.width / secondaryLogo.height,
+      });
+      const logoW = (secondaryLogo.width / secondaryLogo.height) * el.size;
       try {
-        const logo = await loadLogoForExport(options.secondaryLogoUrl);
-        const el = resolveChromeElement(options.chromeLayout, "secondaryLogo", page, {
-          logoAspect: logo.width / logo.height,
-        });
-        const logoW = (logo.width / logo.height) * el.size;
-        pdf.addImage(logo.dataUrl, el.x, el.y, logoW, el.size);
+        pdf.addImage(secondaryLogo.dataUrl, "PNG", el.x, el.y, logoW, el.size, "orgchart-logo-secondary", "FAST");
       } catch {
-        // logo illisible : on ignore silencieusement
+        // Même garde-fou pour le logo secondaire.
       }
     }
     if (options.title) {
@@ -485,6 +534,8 @@ export interface FrameImagePage {
   rfNodes: Node[];
 }
 
+export type ExportProgressCallback = (currentPage: number, totalPages: number) => void;
+
 /**
  * Export PDF image multi-pages : une page par frame, chacune capturée en haute
  * résolution et ajustée dans la zone utile de son format papier.
@@ -492,7 +543,8 @@ export interface FrameImagePage {
 export async function exportFramesToPdfImage(
   viewportEl: HTMLElement,
   pages: FrameImagePage[],
-  common: { docTitle?: string; docSubtitle?: string; footer?: string; logoUrl?: string; secondaryLogoUrl?: string }
+  common: { docTitle?: string; docSubtitle?: string; footer?: string; logoUrl?: string; secondaryLogoUrl?: string },
+  onProgress?: ExportProgressCallback
 ): Promise<void> {
   if (pages.length === 0) return;
   const { jsPDF } = await loadJsPdf();
@@ -500,6 +552,7 @@ export async function exportFramesToPdfImage(
   applyPdfMetadata(pdf, { title: common.docTitle, subtitle: common.docSubtitle });
 
   for (let i = 0; i < pages.length; i++) {
+    onProgress?.(i + 1, pages.length);
     const page = pages[i];
     if (i > 0) pdf.addPage(page.format, page.orientation);
 

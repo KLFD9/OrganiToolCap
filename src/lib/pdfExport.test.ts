@@ -4,6 +4,7 @@ import {
   computePdfTiles,
   safePixelRatio,
   fitContain,
+  fitExportLogoDimensions,
   PDF_TILE_PX_PER_MM,
 } from "./pdfExport";
 
@@ -109,5 +110,19 @@ describe("fitContain", () => {
     expect(placement.y).toBe(20);
     expect(placement.width).toBe(100);
     expect(placement.height).toBe(100);
+  });
+});
+
+describe("fitExportLogoDimensions", () => {
+  it("réduit un logo bitmap démesuré sans déformer son ratio", () => {
+    expect(fitExportLogoDimensions(4000, 1000, false)).toEqual({ width: 512, height: 128 });
+  });
+
+  it("ne grossit pas inutilement un petit logo bitmap", () => {
+    expect(fitExportLogoDimensions(240, 120, false)).toEqual({ width: 240, height: 120 });
+  });
+
+  it("rasterise un SVG à une définition adaptée à l'impression", () => {
+    expect(fitExportLogoDimensions(100, 50, true)).toEqual({ width: 512, height: 256 });
   });
 });
