@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import { isHierarchyEdge, NodeStyleVariantSchema, resolveDisplay, type OrgDisplayOptions } from "../types/orgchart";
 import { computeOrgStats, computeTeamSize } from "../lib/stats";
@@ -217,8 +217,15 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
   const resetChromeLayout = useOrgChartStore((s) => s.resetChromeLayout);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   const selected = selectedNodeIds.length === 1 ? nodes.find((n) => n.id === selectedNodeIds[0]) : undefined;
+
+  useEffect(() => {
+    if (selected?.data.name !== "Nouveau membre") return;
+    nameInputRef.current?.focus();
+    nameInputRef.current?.select();
+  }, [selected?.id, selected?.data.name]);
   const parentEdge = selected
     ? edges.find((e) => isHierarchyEdge(e) && e.target === selected.id)
     : undefined;
@@ -862,6 +869,7 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
               Nom complet
             </span>
             <input
+              ref={nameInputRef}
               type="text"
               value={selected.data.name}
               onChange={(e) => updateNodeData(selected.id, { name: e.target.value })}

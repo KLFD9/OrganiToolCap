@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { CARD_HEIGHT, CARD_WIDTH, computeStackedIds, layoutCompact } from "./compactLayout";
+import {
+  CARD_HEIGHT,
+  CARD_WIDTH,
+  computeGeometricStackIds,
+  computeStackedIds,
+  layoutCompact,
+} from "./compactLayout";
 import type { OrgEdge, OrgNode } from "../types/orgchart";
 
 function makeNode(id: string): OrgNode {
@@ -60,6 +66,45 @@ describe("computeStackedIds", () => {
     const nodes = ["p", "x", "y", "z", "w"].map(makeNode);
     const edges = [edge("p", "x"), edge("p", "y"), edge("p", "z"), edge("z", "w")];
     expect(computeStackedIds(nodes, edges).size).toBe(0);
+  });
+});
+
+describe("computeGeometricStackIds", () => {
+  it("reconnaît la pile produite par layoutCompact", () => {
+    const { nodes, edges } = wideOrg();
+    const laid = layoutCompact(nodes, edges);
+    const geometric = computeGeometricStackIds(laid.nodes, edges);
+    expect(geometric).toEqual(laid.stackedIds);
+    expect(geometric.size).toBe(9);
+  });
+
+  it("ne s'applique pas quand la fratrie est disposée en rangée (3 collègues ajoutés à la main)", () => {
+    // Placement produit par addNode : premier enfant sous le parent, les
+    // suivants à droite sur la même rangée.
+    const nodes: OrgNode[] = [
+      { id: "p", position: { x: 300, y: 0 }, data: { name: "p" } },
+      { id: "a", position: { x: 300, y: 160 }, data: { name: "a" } },
+      { id: "b", position: { x: 588, y: 160 }, data: { name: "b" } },
+      { id: "c", position: { x: 876, y: 160 }, data: { name: "c" } },
+    ];
+    const edges = [edge("p", "a"), edge("p", "b"), edge("p", "c")];
+    expect(computeStackedIds(nodes, edges).size).toBe(3); // candidats…
+    expect(computeGeometricStackIds(nodes, edges).size).toBe(0); // …mais pas en pile
+  });
+
+  it("retombe sur le snap standard dès qu'une carte de la pile est déplacée", () => {
+    const { nodes, edges } = wideOrg();
+    const laid = layoutCompact(nodes, edges);
+    const moved = laid.nodes.map((n) =>
+      n.id === "a" ? { ...n, position: { x: n.position.x + 400, y: n.position.y } } : n
+    );
+    const geometric = computeGeometricStackIds(moved, edges);
+    // le groupe de m1 (a, b, c) n'est plus une pile ; ceux de m2 et m3 restent empilés
+    expect(geometric.has("a")).toBe(false);
+    expect(geometric.has("b")).toBe(false);
+    expect(geometric.has("d")).toBe(true);
+    expect(geometric.has("g")).toBe(true);
+    expect(geometric.size).toBe(6);
   });
 });
 

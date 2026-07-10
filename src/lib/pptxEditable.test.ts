@@ -49,6 +49,24 @@ describe("buildEditableSpec", () => {
     ).toBe(true);
   });
 
+  it("cartes côte à côte : connecteur latéral, ancré au milieu des bords verticaux", () => {
+    const nodes: OrgNode[] = [
+      { id: "a", position: { x: 0, y: 0 }, data: { name: "Claire Dubois" } },
+      { id: "b", position: { x: 600, y: 40 }, data: { name: "Marc Lefèvre" } },
+    ];
+    const edges: OrgEdge[] = [{ id: "e1", source: "a", target: "b" }];
+    const spec = buildEditableSpec(nodes, edges, glassCapTheme, AREA);
+    const [conn] = spec.connectors;
+    const first = conn.points[0];
+    const last = conn.points[conn.points.length - 1];
+    const [cardA, cardB] = spec.cards;
+    // Sortie au milieu du bord droit de A, arrivée au milieu du bord gauche de B
+    expect(first.x).toBeCloseTo(cardA.x + cardA.w, 6);
+    expect(first.y).toBeCloseTo(cardA.y + cardA.h / 2, 6);
+    expect(last.x).toBeCloseTo(cardB.x, 6);
+    expect(last.y).toBeCloseTo(cardB.y + cardB.h / 2, 6);
+  });
+
   it("thème glass : fond blanc, bordure accent ; thème flat : fond palette + texte contrasté", () => {
     const { nodes, edges } = org();
     const glass = buildEditableSpec(nodes, edges, glassCapTheme, AREA);

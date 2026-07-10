@@ -80,6 +80,14 @@ export const OrgEdgeSchema = z.object({
   source: z.string(),
   target: z.string(),
   kind: OrgEdgeKindSchema.optional(),
+  // Corridor manuel optionnel du connecteur orthogonal. Son absence conserve
+  // le routage automatique anti-collision (compatibilité des fichiers v2).
+  routing: z
+    .object({
+      axis: z.enum(["x", "y"]),
+      value: z.number(),
+    })
+    .optional(),
 });
 export type OrgEdge = z.infer<typeof OrgEdgeSchema>;
 

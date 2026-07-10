@@ -2,8 +2,9 @@ import { useState } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { ChevronDown, ChevronUp, Copy, FilePlus2, Layers, PanelLeftClose, Trash } from "lucide-react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
-import { computeFrameMembership, frameRectPx, frameSizePx } from "../lib/frames";
-import { CARD_HEIGHT, CARD_WIDTH } from "../lib/compactLayout";
+import { computeFrameMembership, frameRectPx, frameSizePx, nodesBounds } from "../lib/frames";
+import { computeNodeHeight, computeNodeWidth } from "../lib/nodeStyle";
+import { resolveDisplay } from "../types/orgchart";
 
 /**
  * Navigateur de pages : panneau ancré à gauche du canevas (style Figma).
@@ -19,6 +20,7 @@ interface PageRailProps {
 export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
   const frames = useOrgChartStore((s) => s.frames);
   const nodes = useOrgChartStore((s) => s.nodes);
+  const theme = useOrgChartStore((s) => s.theme);
   const addFrame = useOrgChartStore((s) => s.addFrame);
   const updateFrame = useOrgChartStore((s) => s.updateFrame);
   const deleteFrame = useOrgChartStore((s) => s.deleteFrame);
@@ -62,17 +64,18 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
   }`;
 
   const membership = computeFrameMembership(frames, nodes);
+  const display = resolveDisplay(theme);
 
   return (
-    <div className="flex flex-col h-full w-full bg-panel-bg-light dark:bg-panel-bg-dark">
+    <div className={`flex h-full w-full flex-col ${dark ? "bg-[#0d0d10]" : "bg-[#fbfbfc]"}`}>
       {/* Header Figma-style */}
       <div
         className={`flex h-12 items-center justify-between px-4 border-b ${
-          dark ? "border-border-dark bg-zinc-950/20" : "border-border-light bg-zinc-50/50"
+          dark ? "border-zinc-800/80 bg-[#111115]" : "border-zinc-200/80 bg-white"
         }`}
       >
         <span className={`text-xs font-semibold tracking-wide ${dark ? "text-zinc-200" : "text-zinc-800"}`}>
-          Pages{frames.length > 0 ? ` (${frames.length})` : ""}
+          Pages ({Math.max(1, frames.length)})
         </span>
         <div className="flex items-center gap-1.5">
           <button
@@ -95,25 +98,27 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
       </div>
 
       {frames.length === 0 ? (
-        /* État d'accueil Figma-style */
-        <div className="flex flex-col items-center justify-center p-6 text-center h-full flex-1">
-          <div className={`mb-4 rounded-full p-4 ${dark ? "bg-primary-950/20 text-primary-400" : "bg-primary-50 text-primary-600"}`}>
-            <Layers className="h-7 w-7" />
-          </div>
-          <h3 className={`text-sm font-semibold ${dark ? "text-zinc-200" : "text-zinc-800"}`}>
-            Aucune page
-          </h3>
-          <p className={`mt-2 text-[11px] leading-relaxed max-w-[185px] ${dark ? "text-zinc-400" : "text-zinc-500"}`}>
-            Découpez le document en <strong>pages A4/A3</strong> pour un export multi-pages de qualité professionnelle.
-          </p>
+        /* Compatibilité : anciens fichiers sans `frames` = une page implicite. */
+        <div className="flex flex-col p-3 h-full flex-1">
+          <button
+            onClick={() => fitBounds(nodesBounds(nodes) ?? { x: 0, y: 0, width: 800, height: 560 }, { duration: reduceMotion ? 0 : 300, padding: 0.2 })}
+            className={`rounded-xl border p-2.5 text-left transition-colors cursor-pointer ${dark ? "border-primary-400/50 bg-zinc-900/30 hover:bg-zinc-900/50" : "border-primary-600/40 bg-white hover:bg-primary-50/30"}`}
+          >
+            <div className={`flex aspect-[1.414/1] items-center justify-center rounded-md border ${dark ? "border-zinc-800 bg-zinc-900" : "border-zinc-200 bg-white"}`}>
+              <Layers className={`h-6 w-6 ${dark ? "text-primary-400" : "text-primary-600"}`} />
+            </div>
+            <div className="mt-2.5 flex items-center justify-between">
+              <span className={`text-xs font-semibold ${dark ? "text-zinc-200" : "text-zinc-800"}`}>Page 1</span>
+              <span className={`rounded-full px-1.5 py-0.5 font-mono text-[9px] ${dark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>{nodes.length}</span>
+            </div>
+            <p className={`mt-1 text-[9px] ${dark ? "text-zinc-500" : "text-zinc-400"}`}>Page unique d’un fichier historique</p>
+          </button>
           <button
             onClick={handleAddFrame}
-            className={`mt-5 flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] cursor-pointer ${
-              dark ? "bg-primary-600 text-white hover:bg-primary-500" : "bg-primary-700 text-white hover:bg-primary-600"
-            }`}
+            className={`mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-3 py-2.5 text-xs font-semibold transition-colors cursor-pointer ${dark ? "border-zinc-800 text-zinc-400 hover:border-primary-400/50 hover:text-primary-300" : "border-zinc-200 text-zinc-500 hover:border-primary-600/40 hover:text-primary-700"}`}
           >
             <FilePlus2 className="h-3.5 w-3.5" />
-            <span>Créer la première page</span>
+            <span>Activer les pages</span>
           </button>
         </div>
       ) : (
@@ -130,16 +135,17 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
               <div
                 key={frame.id}
                 onClick={() => selectFrame(frame.id)}
-                className={`group rounded-xl border p-2.5 transition-all duration-200 cursor-pointer ${
+                className={`group relative overflow-hidden rounded-2xl border p-2.5 transition-[border-color,background-color,box-shadow] duration-200 cursor-pointer ${
                   isSelected
                     ? dark
-                      ? "border-primary-400/70 bg-zinc-900/30 shadow-sm ring-1 ring-primary-400/30"
-                      : "border-primary-600/60 bg-white shadow-sm ring-1 ring-primary-600/20"
+                      ? "border-primary-500/70 bg-primary-950/20 shadow-[0_12px_30px_-20px_rgba(109,74,174,0.9)] ring-1 ring-primary-400/20"
+                      : "border-primary-500/60 bg-white shadow-[0_12px_30px_-20px_rgba(71,47,116,0.45)] ring-1 ring-primary-500/15"
                     : dark
-                    ? "border-zinc-800/60 bg-zinc-900/10 hover:border-primary-400/40 hover:bg-zinc-900/20 hover:shadow-sm"
-                    : "border-zinc-200 bg-zinc-50/40 hover:border-primary-600/30 hover:bg-white hover:shadow-sm"
+                    ? "border-zinc-800 bg-zinc-900/25 hover:border-zinc-700 hover:bg-zinc-900/45"
+                    : "border-zinc-200/90 bg-white/80 hover:border-zinc-300 hover:bg-white hover:shadow-sm"
                 }`}
               >
+                {isSelected && <span className="absolute inset-y-3 left-0 w-0.5 rounded-r-full bg-primary-500" aria-hidden="true" />}
                 {/* Miniature schématique : feuille + cartes en rectangles */}
                 <button
                   onClick={() => jumpTo(frame.id)}
@@ -148,7 +154,7 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
                 >
                   <svg
                     viewBox={`0 0 ${size.width} ${size.height}`}
-                    className="w-full rounded-md shadow-sm transition-shadow hover:shadow-md"
+                    className="max-h-44 w-full rounded-xl shadow-sm transition-shadow hover:shadow-md"
                     style={{
                       background: dark ? "#1c1c1e" : "#ffffff",
                       border: `1px solid ${dark ? "rgba(255,255,255,0.08)" : "rgba(24,24,27,0.08)"}`,
@@ -162,10 +168,10 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
                         key={n.id}
                         x={n.position.x - frame.position.x}
                         y={n.position.y - frame.position.y}
-                        width={CARD_WIDTH}
-                        height={CARD_HEIGHT}
-                        rx={24}
-                        fill={dark ? "rgba(157, 131, 203, 0.7)" : "rgba(109, 74, 174, 0.55)"}
+                        width={computeNodeWidth(n, display.showPhotos)}
+                        height={computeNodeHeight(n, display)}
+                        rx={14}
+                        fill={dark ? "rgba(157, 131, 203, 0.78)" : "rgba(109, 74, 174, 0.66)"}
                       />
                     ))}
                   </svg>
@@ -174,7 +180,7 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
                 {/* Nom (double-clic pour renommer) + effectif */}
                 <div className="mt-2.5 flex items-center justify-between gap-1.5">
                   <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                    <span className={`font-mono text-[9px] ${dark ? "text-zinc-500" : "text-zinc-400"}`}>
+                    <span className={`flex h-5 min-w-5 items-center justify-center rounded-md font-mono text-[9px] font-bold ${isSelected ? "bg-primary-600 text-white" : dark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
                       {index + 1}
                     </span>
                     {renamingId === frame.id ? (
@@ -209,8 +215,8 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
                       </button>
                     )}
                   </div>
-                  <span className={`shrink-0 px-1.5 py-0.5 rounded-full font-mono text-[9px] font-medium ${
-                    dark ? "bg-zinc-800/80 text-zinc-400" : "bg-zinc-100 text-zinc-500"
+                  <span className={`shrink-0 px-2 py-1 rounded-full font-mono text-[9px] font-semibold ${
+                    isSelected ? dark ? "bg-primary-500/15 text-primary-300" : "bg-primary-50 text-primary-700" : dark ? "bg-zinc-800/80 text-zinc-400" : "bg-zinc-100 text-zinc-500"
                   }`}>
                     {memberIds.length}
                   </span>
@@ -219,7 +225,7 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
                 {/* Format papier : lecture seule ici — cliquer la page l'ouvre
                     dans le panneau Propriétés (à droite) pour le modifier. */}
                 <div
-                  className={`mt-2 flex items-center gap-1.5 text-[9px] font-medium uppercase tracking-wide ${
+                  className={`mt-2 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wide ${
                     isSelected
                       ? dark
                         ? "text-primary-300"
@@ -229,14 +235,14 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
                       : "text-zinc-400"
                   }`}
                 >
-                  <span>
+                  <span className={`rounded-md px-1.5 py-1 ${dark ? "bg-zinc-800/70" : "bg-zinc-100/80"}`}>
                     {frame.page.format.toUpperCase()} · {frame.page.orientation === "landscape" ? "Paysage" : "Portrait"}
                   </span>
                   {isSelected && <span className="normal-case font-normal opacity-80">— réglable à droite →</span>}
                 </div>
 
                 {/* Actions (toujours visibles mais atténuées, s'activent au survol) */}
-                <div className="mt-2.5 pt-2 flex items-center justify-between border-t border-zinc-200/50 dark:border-zinc-800/40 opacity-40 group-hover:opacity-100 transition-opacity duration-200">
+                <div className="mt-2.5 flex items-center justify-between border-t border-zinc-200/60 pt-2 dark:border-zinc-800/70">
                   <div className="flex items-center gap-0.5">
                     <button
                       onClick={(e) => {

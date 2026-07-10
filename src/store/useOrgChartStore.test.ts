@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useOrgChartStore } from "./useOrgChartStore";
-import { createBlankChart } from "../templates/blank";
+import { createBlankChart, createEmptyChart } from "../templates/blank";
+import { frameRectPx } from "../lib/frames";
 
 describe("useOrgChartStore", () => {
   beforeEach(() => {
@@ -19,6 +20,41 @@ describe("useOrgChartStore", () => {
     expect(state.edges).toContainEqual(
       expect.objectContaining({ source: rootId, target: state.nodes[1].id })
     );
+  });
+
+  it("addNode place chaque nouveau subordonné à droite de la fratrie, sans chevauchement", () => {
+    const { addNode } = useOrgChartStore.getState();
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+
+    addNode(rootId);
+    addNode(rootId);
+    addNode(rootId);
+
+    const state = useOrgChartStore.getState();
+    const root = state.nodes.find((n) => n.id === rootId)!;
+    const children = state.nodes.filter((n) => n.id !== rootId);
+    expect(children).toHaveLength(3);
+    // Premier enfant : sous le parent
+    expect(children[0].position.x).toBe(root.position.x);
+    expect(children[0].position.y).toBeGreaterThan(root.position.y);
+    // Les suivants : alignés sur la rangée, chacun à droite du précédent
+    for (let i = 1; i < children.length; i++) {
+      expect(children[i].position.y).toBe(children[0].position.y);
+      expect(children[i].position.x).toBeGreaterThanOrEqual(children[i - 1].position.x + 240);
+    }
+  });
+
+  it("place la première personne au centre de la page active", () => {
+    useOrgChartStore.getState().loadFile(createEmptyChart());
+
+    useOrgChartStore.getState().addNode();
+
+    const state = useOrgChartStore.getState();
+    const frame = state.frames[0];
+    const node = state.nodes[0];
+    const rect = frameRectPx(frame);
+    expect(node.position.x + 120).toBeCloseTo(rect.x + rect.width / 2);
+    expect(node.position.y + 55).toBeCloseTo(rect.y + rect.height / 2);
   });
 
   it("addEdge refuses to create a cycle", () => {
@@ -128,6 +164,23 @@ describe("useOrgChartStore", () => {
     expect(updated.source).toBe(rootId);
   });
 
+  it("personnalise puis réinitialise le corridor d'un lien avec undo", () => {
+    const edgeId = useOrgChartStore.getState().edges[0]?.id;
+    if (!edgeId) {
+      const rootId = useOrgChartStore.getState().nodes[0].id;
+      useOrgChartStore.getState().addNode(rootId);
+    }
+    const id = useOrgChartStore.getState().edges[0].id;
+
+    useOrgChartStore.getState().setEdgeRouting(id, { axis: "y", value: 180 });
+    expect(useOrgChartStore.getState().edges[0].routing).toEqual({ axis: "y", value: 180 });
+
+    useOrgChartStore.getState().setEdgeRouting(id, undefined);
+    expect(useOrgChartStore.getState().edges[0].routing).toBeUndefined();
+    useOrgChartStore.getState().undo();
+    expect(useOrgChartStore.getState().edges[0].routing).toEqual({ axis: "y", value: 180 });
+  });
+
   it("setManager remplace le responsable, le retire, et refuse les cycles", () => {
     const { addNode, setManager } = useOrgChartStore.getState();
     const rootId = useOrgChartStore.getState().nodes[0].id;
@@ -226,7 +279,8 @@ describe("useOrgChartStore", () => {
 
 describe("useOrgChartStore — frames multi-pages", () => {
   beforeEach(() => {
-    useOrgChartStore.getState().loadFile(createBlankChart("blank"));
+    const legacy = createBlankChart("blank");
+    useOrgChartStore.getState().loadFile({ ...legacy, frames: undefined });
   });
 
   it("addFrame crée une page nommée, undoable, sérialisée dans le fichier", () => {

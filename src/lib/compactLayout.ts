@@ -62,6 +62,52 @@ export function computeStackedIds(nodes: OrgNode[], edges: OrgEdge[]): Set<strin
   return stacked;
 }
 
+/** Tolérance d'alignement gauche pour reconnaître une pile (px canvas). */
+const STACK_X_TOLERANCE = 8;
+
+/**
+ * Nœuds réellement dessinés en pile : `computeStackedIds` dit quels groupes
+ * *seraient* empilés par la disposition compacte, sans regarder les positions.
+ * Le rendu « en épine » (poignée gauche, tracé le long de la pile) n'a de sens
+ * que si les cartes forment effectivement une pile indentée sous leur parent —
+ * la signature géométrique produite par `layoutCompact`. Dès que l'utilisateur
+ * dispose la fratrie autrement (rangée, cartes déplacées…), les liens doivent
+ * retomber sur le snap géométrique standard (lib/edgeRouting.chooseEdgeSides).
+ * Partagé canvas ↔ exports pour garantir le WYSIWYG.
+ */
+export function computeGeometricStackIds(nodes: OrgNode[], edges: OrgEdge[]): Set<string> {
+  const candidates = computeStackedIds(nodes, edges);
+  const result = new Set<string>();
+  if (candidates.size === 0) return result;
+
+  const children = buildChildrenMap(nodes, edges);
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  for (const [parentId, kids] of children) {
+    if (kids.length < STACK_MIN_CHILDREN || !kids.every((k) => candidates.has(k))) continue;
+    const parent = byId.get(parentId);
+    const kidNodes = kids.map((k) => byId.get(k)).filter((n): n is OrgNode => Boolean(n));
+    if (!parent || kidNodes.length !== kids.length) continue;
+
+    // Signature d'une pile : cartes alignées à gauche, indentées par rapport
+    // au parent (mais sous sa moitié gauche, pour que l'épine ait la place de
+    // descendre), et empilées verticalement sous lui sans chevauchement.
+    const xs = kidNodes.map((k) => k.position.x);
+    const x0 = Math.min(...xs);
+    const leftAligned = Math.max(...xs) - x0 <= STACK_X_TOLERANCE;
+    const indented = x0 > parent.position.x && x0 < parent.position.x + CARD_WIDTH / 2;
+    const sorted = [...kidNodes].sort((a, b) => a.position.y - b.position.y);
+    let stackedVertically = sorted[0].position.y >= parent.position.y + CARD_HEIGHT;
+    for (let i = 1; i < sorted.length && stackedVertically; i++) {
+      if (sorted[i].position.y < sorted[i - 1].position.y + CARD_HEIGHT) stackedVertically = false;
+    }
+
+    if (leftAligned && indented && stackedVertically) {
+      for (const k of kids) result.add(k);
+    }
+  }
+  return result;
+}
+
 interface SubtreeSize {
   width: number;
   height: number;

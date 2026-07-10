@@ -2,7 +2,7 @@ import { isHierarchyEdge, type OrgEdge, type OrgNode } from "../types/orgchart";
 
 /**
  * Export de l'annuaire en CSV — l'inverse exact de csvImport : mêmes colonnes
- * (`Nom;Poste;Pôle;Email;Responsable`), séparateur `;` à la française et BOM
+ * (`Nom;Poste;Pôle;Email;Téléphone;Responsable`), séparateur `;` à la française et BOM
  * UTF-8 pour qu'Excel ouvre le fichier correctement. Un fichier exporté se
  * réimporte à l'identique (round-trip), ce qui fait d'Excel / Google Sheets
  * un éditeur de masse pour l'organigramme.

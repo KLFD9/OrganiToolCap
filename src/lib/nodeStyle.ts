@@ -1,4 +1,14 @@
-import { isHierarchyEdge, type OrgEdge, type OrgNode, type OrgNodeStyle, type OrgTheme } from "../types/orgchart";
+import { isHierarchyEdge, type OrgDisplayOptions, type OrgEdge, type OrgNode, type OrgNodeStyle, type OrgTheme } from "../types/orgchart";
+
+/** Hauteur contractuelle de NodeCard, partagée avec le routage et les exports. */
+export function computeNodeHeight(node: OrgNode, display: OrgDisplayOptions): number {
+  const hasDepartment = display.showDepartments && Boolean(node.data.department);
+  const contactCount = [
+    display.showEmails && Boolean(node.data.email),
+    display.showPhones && Boolean(node.data.phone),
+  ].filter(Boolean).length;
+  return 110 + (hasDepartment ? 22 : 0) + (contactCount === 1 ? 34 : contactCount >= 2 ? 52 : 0);
+}
 
 /**
  * Calcule la profondeur de chaque nœud par BFS depuis les racines (nœuds sans

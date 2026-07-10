@@ -6,12 +6,12 @@ import { Canvas } from "./components/Canvas";
 import { Inspector } from "./components/Inspector";
 import { ExportDialog } from "./components/ExportDialog";
 import { useOrgChartStore } from "./store/useOrgChartStore";
-import { saveDraft, loadDraft, clearDraft } from "./lib/db";
+import { saveDraft, loadDraft } from "./lib/db";
 import { computeHiddenNodeIds } from "./lib/hierarchy";
 import { TemplatePicker } from "./components/TemplatePicker";
 import { Directory } from "./components/Directory";
 import { PageRail } from "./components/PageRail";
-import { createBlankChart } from "./templates/blank";
+import { createBlankChart, createEmptyChart, prepareDraftForResume } from "./templates/blank";
 
 const AUTOSAVE_DEBOUNCE_MS = 1500;
 
@@ -19,7 +19,8 @@ function App() {
   const canvasRef = useRef<HTMLDivElement>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
-  const [draftBanner, setDraftBanner] = useState<{ savedAt: string } | null>(null);
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null);
+  const [draftHydrated, setDraftHydrated] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(true);
   const [pageRailOpen, setPageRailOpen] = useState(true);
   const [showGroups, setShowGroups] = useState(false);
@@ -37,13 +38,13 @@ function App() {
   });
 
   const isDirty = useOrgChartStore((s) => s.isDirty);
-  const toFile = useOrgChartStore((s) => s.toFile);
   const loadFile = useOrgChartStore((s) => s.loadFile);
   const undo = useOrgChartStore((s) => s.undo);
   const redo = useOrgChartStore((s) => s.redo);
   const selectedNodeIds = useOrgChartStore((s) => s.selectedNodeIds);
   const deleteNodes = useOrgChartStore((s) => s.deleteNodes);
   const nodes = useOrgChartStore((s) => s.nodes);
+  const frames = useOrgChartStore((s) => s.frames);
   const setNodePosition = useOrgChartStore((s) => s.setNodePosition);
   const addNode = useOrgChartStore((s) => s.addNode);
   const edges = useOrgChartStore((s) => s.edges);
@@ -63,23 +64,56 @@ function App() {
     }
   }, [themeMode]);
 
-  // Vérifie au démarrage si un brouillon local existe
+  // Reprend automatiquement le dernier travail local. IndexedDB reste un
+  // brouillon de confort : le fichier .orgchart.json demeure la source de vérité.
   useEffect(() => {
-    loadDraft().then((draft) => {
-      if (draft) setDraftBanner({ savedAt: draft.savedAt });
-    });
-  }, []);
+    let active = true;
+    loadDraft()
+      .then((draft) => {
+        if (!active || !draft) return;
+        loadFile(prepareDraftForResume(draft.data));
+        useOrgChartStore.setState({ isDirty: true });
+        setResumeNotice(`Dernier travail repris · ${new Date(draft.savedAt).toLocaleString("fr-FR", { dateStyle: "short", timeStyle: "short" })}`);
+      })
+      .catch(() => {
+        // Un brouillon IndexedDB illisible ne doit jamais bloquer l'éditeur.
+      })
+      .finally(() => {
+        if (active) setDraftHydrated(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [loadFile]);
+
+  useEffect(() => {
+    if (!resumeNotice) return;
+    const timer = window.setTimeout(() => setResumeNotice(null), 4500);
+    return () => window.clearTimeout(timer);
+  }, [resumeNotice]);
 
   // Autosave de confort dans IndexedDB (debounce) — uniquement si des
   // modifications non enregistrées existent, pour ne pas réécrire le
   // brouillon en boucle quand l'état est propre.
   useEffect(() => {
-    if (!isDirty) return;
-    const timer = setTimeout(() => {
-      saveDraft(toFile());
-    }, AUTOSAVE_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  });
+    let timer: number | undefined;
+    const unsubscribe = useOrgChartStore.subscribe((state, previous) => {
+      const documentChanged =
+        state.meta !== previous.meta ||
+        state.theme !== previous.theme ||
+        state.nodes !== previous.nodes ||
+        state.edges !== previous.edges ||
+        state.layout !== previous.layout ||
+        state.frames !== previous.frames;
+      if (!state.isDirty || !documentChanged) return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void saveDraft(state.toFile()), AUTOSAVE_DEBOUNCE_MS);
+    });
+    return () => {
+      unsubscribe();
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   // Avertissement avant fermeture si modifications non enregistrées
   useEffect(() => {
@@ -186,21 +220,10 @@ function App() {
     return () => window.removeEventListener("keydown", handler);
   }, [undo, redo, selectedNodeIds, deleteNodes, nodes, setNodePosition, presentationMode, directoryOpen, addNode, edges]);
 
-  const handleRestoreDraft = async () => {
-    const draft = await loadDraft();
-    if (draft) loadFile(draft.data);
-    setDraftBanner(null);
-  };
-
-  const handleDismissDraft = async () => {
-    await clearDraft();
-    setDraftBanner(null);
-  };
-
   const handleNew = (choice: string) => {
     setTemplatePickerOpen(false);
     if (choice === "blank") {
-      loadFile(createBlankChart("glass-cap"));
+      loadFile(createEmptyChart("glass-cap"));
     } else {
       loadFile(createBlankChart(choice));
     }
@@ -234,60 +257,21 @@ function App() {
           />
         )}
 
-        {/* Toast Notification pour brouillon */}
-        {!presentationMode && draftBanner && (
+        {/* Confirmation discrète : la reprise est automatique et réversible via Nouveau/Ouvrir. */}
+        {!presentationMode && resumeNotice && (
           <div
             className={`fixed bottom-6 ${
               !presentationMode && !directoryOpen && pageRailOpen ? "left-[280px]" : "left-6"
-            } z-50 max-w-sm border p-5 shadow-2xl backdrop-blur-md rounded-2xl transition-all duration-300 animate-slide-in ${
+            } z-50 max-w-sm border px-4 py-3 shadow-xl backdrop-blur-md rounded-xl transition-all duration-300 animate-slide-in ${
               themeMode === "dark"
                 ? "border-zinc-800 bg-zinc-950/95 text-zinc-100 shadow-black/40"
                 : "border-zinc-200 bg-white/95 text-zinc-800 shadow-zinc-200/50"
             }`}
           >
-            <div className="flex items-start gap-3.5">
-              <div
-                className={`mt-0.5 shrink-0 p-1.5 rounded-xl ${
-                  themeMode === "dark" ? "bg-amber-500/10 text-amber-400" : "bg-amber-500/10 text-amber-600"
-                }`}
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                  />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <div className="text-xs font-bold tracking-tight">Restauration de brouillon</div>
-                <p className="mt-1 text-[11px] leading-relaxed opacity-75">
-                  Une sauvegarde automatique locale du {new Date(draftBanner.savedAt).toLocaleDateString("fr-FR")} à {new Date(draftBanner.savedAt).toLocaleTimeString("fr-FR")} est disponible sur ce navigateur.
-                </p>
-                <div className="mt-4 flex justify-end gap-2.5 text-[10px]">
-                  <button
-                    onClick={handleDismissDraft}
-                    className={`rounded-lg px-2.5 py-1.5 font-semibold transition-colors cursor-pointer ${
-                      themeMode === "dark"
-                        ? "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900"
-                        : "text-zinc-500 hover:text-zinc-700 hover:bg-zinc-50"
-                    }`}
-                  >
-                    Ignorer
-                  </button>
-                  <button
-                    onClick={handleRestoreDraft}
-                    className={`rounded-lg px-3.5 py-2 font-bold transition-all shadow-sm cursor-pointer hover:scale-102 active:scale-98 ${
-                      themeMode === "dark"
-                        ? "bg-primary-600 text-white hover:bg-primary-500"
-                        : "bg-primary-700 text-white hover:bg-primary-600"
-                    }`}
-                  >
-                    Restaurer le travail
-                  </button>
-                </div>
-              </div>
+            <div className="flex items-center gap-2 text-xs font-semibold">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />
+              <span>{resumeNotice}</span>
+              <button onClick={() => setResumeNotice(null)} aria-label="Fermer la notification" className="ml-2 opacity-50 hover:opacity-100">×</button>
             </div>
           </div>
         )}
@@ -313,6 +297,28 @@ function App() {
 
           <div className="relative min-w-0 flex-1 h-full">
             <Canvas ref={canvasRef} themeMode={themeMode} showGroups={showGroups} />
+
+            {!draftHydrated && !directoryOpen && !presentationMode && (
+              <div className="pointer-events-none absolute inset-0 z-[6] flex items-center justify-center">
+                <span className="rounded-full border border-zinc-200 bg-white/90 px-3 py-1.5 text-[11px] font-semibold text-zinc-500 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/90 dark:text-zinc-400">Reprise du travail local…</span>
+              </div>
+            )}
+
+            {draftHydrated && nodes.length === 0 && !directoryOpen && !presentationMode && (
+              <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center p-6">
+                <div className={`pointer-events-auto w-full max-w-sm rounded-2xl border p-6 text-center shadow-xl backdrop-blur-md ${themeMode === "dark" ? "border-zinc-800 bg-zinc-950/90" : "border-zinc-200 bg-white/95"}`}>
+                  <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-primary-100 text-xl text-primary-700 dark:bg-primary-950/60 dark:text-primary-300">+</div>
+                  <h2 className="text-sm font-bold">Commencez votre organigramme</h2>
+                  <p className="mt-1.5 text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">Ajoutez la première personne. Vous pourrez ensuite créer son équipe avec Tab ou par glisser-déposer.</p>
+                  <button onClick={() => addNode()} className="mt-5 w-full rounded-xl bg-primary-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition-colors hover:bg-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2">Ajouter la première personne</button>
+                  <div className="mt-3 flex justify-center gap-4 text-[11px] font-semibold">
+                    <button onClick={() => document.querySelector<HTMLButtonElement>("[data-action='import-csv']")?.click()} className="text-zinc-500 hover:text-primary-700 dark:hover:text-primary-300">Importer Excel / CSV</button>
+                    <button onClick={() => document.querySelector<HTMLButtonElement>("[data-action='open']")?.click()} className="text-zinc-500 hover:text-primary-700 dark:hover:text-primary-300">Ouvrir un fichier</button>
+                    <button onClick={() => setTemplatePickerOpen(true)} className="text-zinc-500 hover:text-primary-700 dark:hover:text-primary-300">Choisir un modèle</button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Vue annuaire : surcouche du canvas (le canvas reste monté) */}
             {directoryOpen && !presentationMode && (

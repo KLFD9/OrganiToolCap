@@ -25,6 +25,7 @@ import { useOrgChartStore } from "../store/useOrgChartStore";
 import { openOrgChartFile, saveOrgChartFile, FileFormatError } from "../lib/fileIO";
 import { importPeopleCsv, CsvFormatError } from "../lib/csvImport";
 import { demoCompany } from "../templates/demoCompany";
+import { clearDraft } from "../lib/db";
 
 interface ToolbarProps {
   onExportClick: () => void;
@@ -101,6 +102,7 @@ export function Toolbar({
     try {
       const handle = await saveOrgChartFile(toFile(), fileHandle);
       markSaved(handle);
+      await clearDraft();
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setError("Échec de l'enregistrement.");
@@ -113,6 +115,7 @@ export function Toolbar({
     try {
       const handle = await saveOrgChartFile(toFile());
       markSaved(handle);
+      await clearDraft();
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       setError("Échec de l'enregistrement.");
@@ -143,6 +146,7 @@ export function Toolbar({
       const result = await openOrgChartFile();
       if (result.kind === "orgchart") {
         loadFile(result.file, result.handle);
+        await clearDraft();
         return;
       }
 
@@ -151,6 +155,7 @@ export function Toolbar({
       const imported = await importPptxFile(result.data);
       if (imported.kind === "orgchart") {
         loadFile(imported.file);
+        await clearDraft();
         return;
       }
 
@@ -411,6 +416,7 @@ export function Toolbar({
           {/* Importer une liste CSV (Excel / Google Sheets) */}
           <div className="relative group">
             <button
+              data-action="import-csv"
               aria-label="Importer un CSV"
               onClick={() => csvInputRef.current?.click()}
               className={getButtonClass(false)}

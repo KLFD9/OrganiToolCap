@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeLevels, computeNodeStyle } from "./nodeStyle";
+import { computeLevels, computeNodeHeight, computeNodeStyle } from "./nodeStyle";
 import type { OrgEdge, OrgNode, OrgTheme } from "../types/orgchart";
 
 function makeNode(id: string): OrgNode {
@@ -59,5 +59,37 @@ describe("computeNodeStyle", () => {
     const style = computeNodeStyle(theme, 0, { accentColor: "#ff0000" });
     expect(style.accentColor).toBe("#ff0000");
     expect(style.background).toBe("#ffffff"); // base "card" style préservé
+  });
+});
+
+describe("computeNodeHeight", () => {
+  const display = {
+    showPhotos: true,
+    showRoles: true,
+    showDepartments: true,
+    showEmails: true,
+    showPhones: true,
+  };
+
+  it("réserve la place des informations visibles sans modifier les cartes simples", () => {
+    const simple = makeNode("simple");
+    const detailed: OrgNode = {
+      ...makeNode("detailed"),
+      data: { name: "Détaillé", department: "Finance", email: "a@b.fr", phone: "0102030405" },
+    };
+
+    expect(computeNodeHeight(simple, display)).toBe(110);
+    expect(computeNodeHeight(detailed, display)).toBe(184);
+  });
+
+  it("ignore les champs masqués par le thème", () => {
+    const node: OrgNode = {
+      ...makeNode("hidden"),
+      data: { name: "Masqué", department: "RH", email: "a@b.fr", phone: "0102030405" },
+    };
+
+    expect(
+      computeNodeHeight(node, { ...display, showDepartments: false, showEmails: false, showPhones: false })
+    ).toBe(110);
   });
 });

@@ -81,7 +81,18 @@ const links: OrgEdge[] = [
   { id: "e1-7d", source: "n1", target: "n7", kind: "dotted" },
 ];
 
-const { nodes: placedPeople } = layoutCompact(people, links);
+const { nodes: compactPeople } = layoutCompact(people, links);
+const demoMinX = Math.min(...compactPeople.map((n) => n.position.x));
+// La démo est volontairement dense (17 personnes + contacts). On resserre
+// légèrement les espacements horizontaux calculés pour conserver la promesse
+// d'ouverture : A4 paysage lisible sans demander une première réorganisation.
+const placedPeople = compactPeople.map((node) => ({
+  ...node,
+  position: {
+    ...node.position,
+    x: demoMinX + (node.position.x - demoMinX) * 0.9,
+  },
+}));
 
 export const demoCompany: OrgChartFile = {
   format: "orgchart",

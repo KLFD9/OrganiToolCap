@@ -37,7 +37,7 @@ describe("buildPeopleCsv", () => {
     const { nodes, edges } = org();
     const csv = buildPeopleCsv(nodes, edges);
     const lines = csv.split("\r\n");
-    expect(lines[0]).toBe("Nom;Poste;Pôle;Email;Responsable");
+    expect(lines[0]).toBe("Nom;Poste;Pôle;Email;Téléphone;Responsable");
     expect(lines).toHaveLength(4);
     expect(lines[1]).toContain("Claire Dubois");
     expect(lines[2]).toContain("Claire Dubois"); // responsable de Marc

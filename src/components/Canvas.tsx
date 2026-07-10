@@ -18,9 +18,9 @@ import {
 } from "@xyflow/react";
 import { Eye, EyeOff } from "lucide-react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
-import { computeLevels, computeNodeWidth } from "../lib/nodeStyle";
+import { computeLevels, computeNodeHeight, computeNodeWidth } from "../lib/nodeStyle";
 import { computeDepartmentGroups, buildGroupTheme } from "../lib/groups";
-import { computeStackedIds, CARD_WIDTH, CARD_HEIGHT } from "../lib/compactLayout";
+import { computeGeometricStackIds, CARD_WIDTH, CARD_HEIGHT } from "../lib/compactLayout";
 import { buildChildrenMap, computeDescendantCounts, computeHiddenNodeIds, wouldCreateHierarchyCycle } from "../lib/hierarchy";
 import { resolveDisplay, isHierarchyEdge, type ChromeElement, type ChromeKey, type ChromeLayout } from "../types/orgchart";
 import {
@@ -31,6 +31,7 @@ import {
   frameSizePx,
   resolveFrameChrome,
 } from "../lib/frames";
+import { computeSmartRoute, type NodeRect } from "../lib/edgeRouting";
 import {
   mergeTargets,
   neighborGaps,
@@ -168,6 +169,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const deleteNode = useOrgChartStore((s) => s.deleteNode);
   const deleteEdge = useOrgChartStore((s) => s.deleteEdge);
   const setEdgeKind = useOrgChartStore((s) => s.setEdgeKind);
+  const setEdgeRouting = useOrgChartStore((s) => s.setEdgeRouting);
   const toggleCollapsed = useOrgChartStore((s) => s.toggleCollapsed);
   const expandAll = useOrgChartStore((s) => s.expandAll);
   const applyAutoLayout = useOrgChartStore((s) => s.applyAutoLayout);
@@ -187,6 +189,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
 
   const { screenToFlowPosition, fitView, fitBounds, getZoom } = useReactFlow();
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [showMiniMap, setShowMiniMap] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("organi_show_minimap");
@@ -213,11 +216,14 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     [storeNodes, hiddenIds]
   );
 
-  // En disposition compacte, les groupes de feuilles sont empilés : poignée
-  // cible à gauche et lien parent routé « en épine ».
+  // Groupes de feuilles effectivement empilés (disposition compacte) :
+  // poignée cible à gauche et lien parent routé « en épine ». La détection est
+  // géométrique — dès que la fratrie est disposée autrement (rangée, carte
+  // déplacée), les liens retombent sur le snap standard, quel que soit le
+  // mode de layout. Même logique que l'export (WYSIWYG).
   const stackedIds = useMemo(
-    () => (layout.mode === "compact" ? computeStackedIds(storeNodes, storeEdges) : new Set<string>()),
-    [layout.mode, storeNodes, storeEdges]
+    () => computeGeometricStackIds(storeNodes, storeEdges),
+    [storeNodes, storeEdges]
   );
 
   // Cadre de page : feuille A4/A3 à l'échelle « confort », centrée sur le
@@ -576,34 +582,83 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     [pageGuideNodes, frameGuideNodes, chromeElementNodes, groupNodes, memberRfNodes]
   );
 
+  // Rectangles des cartes (espace px du canvas) pour le snap géométrique des
+  // liens : le côté d'attache est recalculé à chaque déplacement de carte.
+  const nodeRects = useMemo(() => {
+    const display = resolveDisplay(theme);
+    const rects = new Map<string, NodeRect>();
+    for (const n of visibleNodes) {
+      rects.set(n.id, {
+        x: n.position.x,
+        y: n.position.y,
+        width: computeNodeWidth(n, display.showPhotos),
+        height: computeNodeHeight(n, display),
+      });
+    }
+    return rects;
+  }, [visibleNodes, theme]);
+
   // Adapter les connexions (edges) avec un tracé ultra-propre et une animation subtile
   const initialRfEdges = useMemo<Edge[]>(
     () =>
       storeEdges
         .filter((e) => !hiddenIds.has(e.source) && !hiddenIds.has(e.target))
         .map((e) => {
-        const isSelected = selectedNodeIds.includes(e.source) || selectedNodeIds.includes(e.target);
+        const touchesSelectedNode = selectedNodeIds.includes(e.source) || selectedNodeIds.includes(e.target);
+        const isSelected = selectedEdgeId === e.id;
         const isDotted = e.kind === "dotted";
+        // Snap intelligent : côté d'attache choisi selon la géométrie relative
+        // des deux cartes (subordonné dessous → haut de sa carte ; à côté →
+        // latéral). Les subordonnés empilés (disposition compacte) gardent le
+        // tracé « en épine » historique : bas du parent → côté gauche.
+        // Un corridor manuel prend la main même sur une arête issue de la
+        // disposition compacte ; « Réinitialiser » restaure alors l'épine.
+        const spine = !isDotted && stackedIds.has(e.target) && !e.routing;
+        const sourceRect = nodeRects.get(e.source);
+        const targetRect = nodeRects.get(e.target);
+        const obstacles = [...nodeRects.entries()]
+          .filter(([id]) => id !== e.source && id !== e.target)
+          .map(([, rect]) => rect);
+        const smartRoute =
+          !spine && sourceRect && targetRect
+            ? computeSmartRoute(sourceRect, targetRect, obstacles, e.routing)
+            : undefined;
+        const sides =
+          smartRoute
+            ? smartRoute
+            : { sourceSide: "bottom" as const, targetSide: spine ? ("left" as const) : ("top" as const) };
+        const routeAxis =
+          sides.sourceSide === "left" || sides.sourceSide === "right" ? ("x" as const) : ("y" as const);
         return {
           id: e.id,
           source: e.source,
           target: e.target,
+          sourceHandle: `s-${sides.sourceSide}`,
+          targetHandle: `t-${sides.targetSide}`,
           type: "org",
-          animated: isSelected, // anime le flux des connexions liées au nœud sélectionné
-          data: { spine: !isDotted && stackedIds.has(e.target), dotted: isDotted },
+          selected: isSelected,
+          animated: touchesSelectedNode,
+          data: {
+            spine,
+            dotted: isDotted,
+            routePoints: smartRoute?.points,
+            routeAxis,
+            routing: e.routing?.axis === routeAxis ? e.routing : undefined,
+            onRoutingChange: (routing: NonNullable<typeof e.routing>) => setEdgeRouting(e.id, routing),
+          },
           style: {
-            stroke: isSelected
+            stroke: isSelected || touchesSelectedNode
               ? theme.accent
               : themeMode === "dark"
               ? "rgba(161, 161, 170, 0.25)"
               : "rgba(39, 39, 42, 0.15)",
-            strokeWidth: isSelected ? 2 : 1.25,
+            strokeWidth: isSelected ? 2.25 : touchesSelectedNode ? 2 : 1.25,
             // Rattachement fonctionnel : trait pointillé (format v2)
             strokeDasharray: isDotted ? "6 5" : undefined,
           },
         };
       }),
-    [storeEdges, theme.accent, selectedNodeIds, themeMode, stackedIds, hiddenIds]
+    [storeEdges, theme.accent, selectedNodeIds, selectedEdgeId, themeMode, stackedIds, hiddenIds, nodeRects, setEdgeRouting]
   );
 
   const [rfNodes, setRfNodes, onNodesChangeBase] = useNodesState(initialRfNodes);
@@ -635,6 +690,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         if (!parseChromeNodeId(change.id) && !frameIdFromNodeId(change.id)) {
           const node = storeNodes.find((n) => n.id === change.id);
           const nodeW = node ? computeNodeWidth(node, theme.display?.showPhotos ?? true) : CARD_WIDTH;
+          const nodeH = node ? computeNodeHeight(node, resolveDisplay(theme)) : CARD_HEIGHT;
 
           const targets = snapTargetsRef.current;
           if (targets) {
@@ -643,7 +699,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
               change.position.x,
               change.position.y,
               nodeW,
-              CARD_HEIGHT,
+              nodeH,
               targets,
               threshold
             );
@@ -659,10 +715,52 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
 
           if (change.dragging && neighborRectsRef.current.length > 0) {
             const result = neighborGaps(
-              { x: change.position.x, y: change.position.y, width: nodeW, height: CARD_HEIGHT },
+              { x: change.position.x, y: change.position.y, width: nodeW, height: nodeH },
               neighborRectsRef.current
             );
             setGaps(result.left || result.right || result.top || result.bottom ? result : null);
+          }
+
+          // Re-snap et évitement en direct : la carte déplacée peut être une
+          // extrémité OU un obstacle pour n'importe quel connecteur.
+          if (change.dragging) {
+            const draggedRect: NodeRect = {
+              x: change.position.x,
+              y: change.position.y,
+              width: nodeW,
+              height: nodeH,
+            };
+            const liveRects = new Map(nodeRects);
+            liveRects.set(change.id, draggedRect);
+            setRfEdges((eds) =>
+              eds.map((ed) => {
+                if ((ed.data as { spine?: boolean } | undefined)?.spine) return ed;
+                const sourceRect = liveRects.get(ed.source);
+                const targetRect = liveRects.get(ed.target);
+                if (!sourceRect || !targetRect) return ed;
+                const stored = storeEdges.find((edge) => edge.id === ed.id);
+                const obstacles = [...liveRects.entries()]
+                  .filter(([id]) => id !== ed.source && id !== ed.target)
+                  .map(([, rect]) => rect);
+                const route = computeSmartRoute(sourceRect, targetRect, obstacles, stored?.routing);
+                const sides = route;
+                const sourceHandle = `s-${sides.sourceSide}`;
+                const targetHandle = `t-${sides.targetSide}`;
+                const routeAxis =
+                  sides.sourceSide === "left" || sides.sourceSide === "right" ? ("x" as const) : ("y" as const);
+                return {
+                  ...ed,
+                  sourceHandle,
+                  targetHandle,
+                  data: {
+                    ...ed.data,
+                    routePoints: route.points,
+                    routeAxis,
+                    routing: stored?.routing?.axis === routeAxis ? stored.routing : undefined,
+                  },
+                };
+              })
+            );
           }
         }
       }
@@ -701,7 +799,10 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
       setFrameChromeElement,
       getZoom,
       storeNodes,
-      theme.display?.showPhotos,
+      theme,
+      nodeRects,
+      storeEdges,
+      setRfEdges,
     ]
   );
 
@@ -806,15 +907,18 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   // Tirer un lien depuis la poignée source et le lâcher dans le vide crée
   // directement un subordonné à cet endroit (pattern « add node on edge drop »).
   const onConnectEnd = useCallback(
-    (_event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
+    (event: MouseEvent | TouchEvent, connectionState: FinalConnectionState) => {
       if (connectionState.isValid) return;
       const from = connectionState.fromNode;
       if (!from || from.type !== "orgNode" || connectionState.fromHandle?.type !== "source") return;
-      const to = connectionState.to;
-      if (!to) return;
+      // connectionState.to est en coordonnées écran relatives au conteneur,
+      // pas en coordonnées flow — on repart du pointeur (souris ou tactile).
+      const point = "changedTouches" in event ? event.changedTouches[0] : event;
+      if (!point) return;
+      const to = screenToFlowPosition({ x: point.clientX, y: point.clientY });
       addNodeAt({ x: to.x - CARD_WIDTH / 2, y: to.y - CARD_HEIGHT / 2 }, from.id);
     },
-    [addNodeAt]
+    [addNodeAt, screenToFlowPosition]
   );
 
   const onNodeContextMenu = useCallback(
@@ -842,7 +946,12 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
 
   const onEdgeContextMenu = useCallback((event: React.MouseEvent, edge: Edge) => {
     event.preventDefault();
+    setSelectedEdgeId(edge.id);
     setMenu({ x: event.clientX, y: event.clientY, edgeId: edge.id });
+  }, []);
+
+  const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
+    setSelectedEdgeId(edge.id);
   }, []);
 
   const onPaneContextMenu = useCallback(
@@ -905,6 +1014,23 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
       );
       const cycleBlocked = isDotted && wouldCreateHierarchyCycle(conversionBase, edge.source, edge.target);
       return [
+        {
+          label: edge.routing ? "Réinitialiser le tracé automatique" : "Ajuster le tracé",
+          hint: edge.routing ? "évite les cartes" : "faire glisser la poignée",
+          onClick: () => {
+            if (edge.routing) {
+              setEdgeRouting(edge.id, undefined);
+              return;
+            }
+            const sourceRect = nodeRects.get(edge.source);
+            const targetRect = nodeRects.get(edge.target);
+            if (!sourceRect || !targetRect) return;
+            const route = computeSmartRoute(sourceRect, targetRect);
+            const axis = route.sourceSide === "left" || route.sourceSide === "right" ? "x" : "y";
+            const middle = route.points[Math.floor(route.points.length / 2)];
+            setEdgeRouting(edge.id, { axis, value: axis === "x" ? middle.x : middle.y });
+          },
+        },
         {
           label: isDotted ? "Convertir en lien hiérarchique" : "Convertir en lien fonctionnel",
           hint: isDotted ? (cycleBlocked ? "créerait un cycle" : undefined) : "pointillé",
@@ -1044,6 +1170,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     collapsedNodeIds,
     descendantCounts,
     storeEdges,
+    nodeRects,
     frames,
     membership,
     hasFrames,
@@ -1056,6 +1183,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     expandAll,
     applyAutoLayout,
     setEdgeKind,
+    setEdgeRouting,
     fitView,
     fitBounds,
     addFrame,
@@ -1069,7 +1197,10 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   ]);
 
   const onSelectionChange: OnSelectionChangeFunc = useCallback(
-    ({ nodes }) => selectNodes(nodes.map((n) => n.id)),
+    ({ nodes, edges }) => {
+      selectNodes(nodes.map((n) => n.id));
+      setSelectedEdgeId(edges[0]?.id ?? null);
+    },
     [selectNodes]
   );
 
@@ -1079,6 +1210,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const onPaneClick = useCallback(() => {
     selectNodes([]);
     selectFrame(null);
+    setSelectedEdgeId(null);
   }, [selectNodes, selectFrame]);
 
   // Couleurs de fond de la grille
@@ -1108,6 +1240,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         onNodeDrag={onNodeDrag}
         onNodeDragStop={onNodeDragStop}
         onNodeContextMenu={onNodeContextMenu}
+        onEdgeClick={onEdgeClick}
         onEdgeContextMenu={onEdgeContextMenu}
         onPaneContextMenu={onPaneContextMenu}
         onSelectionChange={onSelectionChange}

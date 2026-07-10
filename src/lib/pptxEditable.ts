@@ -1,7 +1,14 @@
 import { resolveDisplay, type OrgEdge, type OrgNode, type OrgTheme } from "../types/orgchart";
-import { computeLevels, computeNodeStyle, getContrastColor, computeNodeWidth, formatPhoneNumber } from "./nodeStyle";
-import { computeStackedIds, CARD_WIDTH, CARD_HEIGHT } from "./compactLayout";
-import { computeElbowRoute, computeSpineRoute, isSpineDirection, type EdgeRoutePoint } from "./edgeRouting";
+import { computeLevels, computeNodeHeight, computeNodeStyle, getContrastColor, computeNodeWidth, formatPhoneNumber } from "./nodeStyle";
+import { computeGeometricStackIds } from "./compactLayout";
+import {
+  computeElbowRoute,
+  computeSmartRoute,
+  computeSpineRoute,
+  isSpineDirection,
+  type EdgeRoutePoint,
+  type NodeRect,
+} from "./edgeRouting";
 import { nameInitials } from "./nameInitials";
 import { blendHex } from "./colorBlend";
 import type { FramePageContent } from "./frames";
@@ -88,7 +95,8 @@ export function buildEditableSpec(
   const minY = Math.min(...ys);
   const maxRight = Math.max(...nodes.map((n) => n.position.x + computeNodeWidth(n, display.showPhotos)));
   const boundsW = maxRight - minX;
-  const boundsH = Math.max(...ys) - minY + CARD_HEIGHT;
+  const maxBottom = Math.max(...nodes.map((n) => n.position.y + computeNodeHeight(n, display)));
+  const boundsH = maxBottom - minY;
 
   const scale = Math.min(area.width / boundsW, area.height / boundsH); // pouces par px
   const offsetX = area.x + (area.width - boundsW * scale) / 2;
@@ -99,7 +107,7 @@ export function buildEditableSpec(
   const posY = (px: number) => offsetY + (px - minY) * scale;
 
   const levels = computeLevels(nodes, edges);
-  const stackedIds = computeStackedIds(nodes, edges);
+  const stackedIds = computeGeometricStackIds(nodes, edges);
   const byId = new Map(nodes.map((n) => [n.id, n]));
 
   const namePt = clamp(12 * scale * PT_PER_IN * (96 / 72), MIN_FONT_PT, MAX_NAME_PT);
@@ -142,7 +150,7 @@ export function buildEditableSpec(
       x: posX(n.position.x),
       y: posY(n.position.y),
       w: toIn(computeNodeWidth(n, display.showPhotos)),
-      h: toIn(CARD_HEIGHT),
+      h: toIn(computeNodeHeight(n, display)),
       radiusIn: toIn(theme.cornerRadius),
       fillColor,
       lineColor: accent,
@@ -169,21 +177,47 @@ export function buildEditableSpec(
     const target = byId.get(e.target);
     if (!source || !target) continue;
 
-    // Départ : bas-centre du responsable. Arrivée : haut-centre du subordonné,
-    // ou côté gauche pour les subordonnés empilés (disposition compacte) —
-    // même géométrie que le canvas (cf. components/OrgEdge.tsx), calculée en
-    // px canvas puis mise à l'échelle point par point pour garantir le WYSIWYG.
+    // Même géométrie que le canvas (cf. components/OrgEdge.tsx), calculée en
+    // px canvas puis mise à l'échelle point par point pour garantir le
+    // WYSIWYG. Subordonnés empilés (disposition compacte) : tracé « en
+    // épine » historique (bas du parent → côté gauche de la pile). Sinon :
+    // snap géométrique partagé (computeSmartRoute) — attache haut/bas ou
+    // latérale selon la position relative des cartes.
     const dashed = e.kind === "dotted";
-    const sxPx = source.position.x + CARD_WIDTH / 2;
-    const syPx = source.position.y + CARD_HEIGHT;
     const stacked = !dashed && stackedIds.has(e.target);
-    const txPx = stacked ? target.position.x : target.position.x + CARD_WIDTH / 2;
-    const tyPx = stacked ? target.position.y + CARD_HEIGHT / 2 : target.position.y;
+    const sourceRect: NodeRect = {
+      x: source.position.x,
+      y: source.position.y,
+      width: computeNodeWidth(source, display.showPhotos),
+      height: computeNodeHeight(source, display),
+    };
+    const targetRect: NodeRect = {
+      x: target.position.x,
+      y: target.position.y,
+      width: computeNodeWidth(target, display.showPhotos),
+      height: computeNodeHeight(target, display),
+    };
 
-    const routePx =
-      stacked && isSpineDirection(sxPx, syPx, txPx, tyPx)
+    let routePx: EdgeRoutePoint[];
+    if (stacked) {
+      const sxPx = sourceRect.x + sourceRect.width / 2;
+      const syPx = sourceRect.y + sourceRect.height;
+      const txPx = targetRect.x;
+      const tyPx = targetRect.y + targetRect.height / 2;
+      routePx = isSpineDirection(sxPx, syPx, txPx, tyPx)
         ? computeSpineRoute(sxPx, syPx, txPx, tyPx)
         : computeElbowRoute(sxPx, syPx, txPx, tyPx);
+    } else {
+      const obstacles: NodeRect[] = nodes
+        .filter((node) => node.id !== e.source && node.id !== e.target)
+        .map((node) => ({
+          x: node.position.x,
+          y: node.position.y,
+          width: computeNodeWidth(node, display.showPhotos),
+          height: computeNodeHeight(node, display),
+        }));
+      routePx = computeSmartRoute(sourceRect, targetRect, obstacles, e.routing).points;
+    }
 
     connectors.push({
       points: routePx.map((p) => ({ x: posX(p.x), y: posY(p.y) })),

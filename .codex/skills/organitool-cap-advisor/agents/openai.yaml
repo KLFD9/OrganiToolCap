@@ -1,0 +1,4 @@
+interface:
+  display_name: "OrganiTool CAP Advisor"
+  short_description: "Valide les choix produit et techniques pour OrganiTool CAP."
+  default_prompt: "Analyse cette évolution OrganiTool CAP, challenge l’approche, puis propose les next steps les plus utiles côté produit, client et validation."

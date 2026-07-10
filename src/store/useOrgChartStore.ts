@@ -12,9 +12,9 @@ import {
   type OrgNodeStyle,
   type OrgTheme,
 } from "../types/orgchart";
-import { demoCompany } from "../templates/demoCompany";
+import { createEmptyChart } from "../templates/blank";
 import { layoutWithElk } from "../lib/elkLayout";
-import { layoutCompact } from "../lib/compactLayout";
+import { CARD_HEIGHT, CARD_WIDTH, layoutCompact } from "../lib/compactLayout";
 import { computeDescendants, computeHiddenNodeIds, wouldCreateHierarchyCycle } from "../lib/hierarchy";
 import {
   availableAreaForSetup,
@@ -27,6 +27,7 @@ import {
   computeFrameMembership,
   defaultFrameName,
   FRAME_GAP_PX,
+  frameRectPx,
   nextFramePosition,
   nodesBounds,
 } from "../lib/frames";
@@ -107,6 +108,8 @@ interface OrgChartState {
   addDottedEdge: (source: string, target: string) => void;
   /** Convertit un lien hiérarchique ⇄ fonctionnel (avec garde anti-cycle et parent unique). */
   setEdgeKind: (id: string, kind: "hierarchy" | "dotted") => void;
+  /** Fixe ou réinitialise le corridor manuel d'un connecteur. */
+  setEdgeRouting: (id: string, routing?: OrgEdge["routing"]) => void;
   /**
    * Change (ou retire, si undefined) le responsable hiérarchique d'un membre
    * en une seule entrée d'historique. Refuse les cycles.
@@ -189,19 +192,21 @@ function pushHistory(s: OrgChartState): Pick<OrgChartState, "past" | "future"> {
 }
 
 
+const initialChart = createEmptyChart();
+
 export const useOrgChartStore = create<OrgChartState>((set, get) => ({
-  meta: demoCompany.meta,
-  templateId: demoCompany.templateId,
-  theme: demoCompany.theme,
-  nodes: demoCompany.nodes,
-  edges: demoCompany.edges,
-  layout: demoCompany.layout,
-  frames: demoCompany.frames ?? [],
+  meta: initialChart.meta,
+  templateId: initialChart.templateId,
+  theme: initialChart.theme,
+  nodes: initialChart.nodes,
+  edges: initialChart.edges,
+  layout: initialChart.layout,
+  frames: initialChart.frames ?? [],
 
   fileHandle: undefined,
   isDirty: false,
   selectedNodeIds: [],
-  selectedFrameId: null,
+  selectedFrameId: initialChart.frames?.[0]?.id ?? null,
   collapsedNodeIds: [],
   pageGuide: true,
 
@@ -264,6 +269,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       fileHandle: handle,
       isDirty: false,
       selectedNodeIds: [],
+      selectedFrameId: file.frames?.[0]?.id ?? null,
       collapsedNodeIds: [],
       past: [],
       future: [],
@@ -394,11 +400,37 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       if (parentId) {
         const parent = s.nodes.find((n) => n.id === parentId);
         if (parent) {
-          position = { x: parent.position.x, y: parent.position.y + 160 };
+          // Sous le parent s'il n'a pas encore d'enfant ; sinon à droite du
+          // subordonné le plus à droite, aligné sur sa rangée — jamais empilé
+          // au même point que la fratrie.
+          const byId = new Map(s.nodes.map((n) => [n.id, n]));
+          const siblings = s.edges
+            .filter((e) => isHierarchyEdge(e) && e.source === parentId)
+            .map((e) => byId.get(e.target))
+            .filter((n): n is OrgNode => Boolean(n));
+          if (siblings.length === 0) {
+            position = { x: parent.position.x, y: parent.position.y + 160 };
+          } else {
+            const rightmost = siblings.reduce((a, b) => (b.position.x > a.position.x ? b : a));
+            position = {
+              x: rightmost.position.x + CARD_WIDTH + 48,
+              y: rightmost.position.y,
+            };
+          }
         }
       } else if (s.nodes.length > 0) {
         const last = s.nodes[s.nodes.length - 1];
         position = { x: last.position.x + 260, y: last.position.y };
+      } else if (s.frames.length > 0) {
+        // Première personne : centre de la page active (ou de la première),
+        // jamais l'origine arbitraire du canvas.
+        const frame =
+          s.frames.find((candidate) => candidate.id === s.selectedFrameId) ?? s.frames[0];
+        const rect = frameRectPx(frame);
+        position = {
+          x: rect.x + (rect.width - CARD_WIDTH) / 2,
+          y: rect.y + (rect.height - CARD_HEIGHT) / 2,
+        };
       }
 
       const newNode: OrgNode = {
@@ -554,6 +586,17 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
         ...pushHistory(s),
         edges: s.edges.map((e) => (e.id === id ? { ...e, kind: "dotted" as const } : e)),
         isDirty: true,
+      };
+    }),
+
+  setEdgeRouting: (id, routing) =>
+    set((s) => {
+      if (!s.edges.some((edge) => edge.id === id)) return s;
+      return {
+        ...pushHistory(s),
+        edges: s.edges.map((edge) => (edge.id === id ? { ...edge, routing } : edge)),
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
       };
     }),
 

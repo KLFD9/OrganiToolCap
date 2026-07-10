@@ -12,7 +12,7 @@ npm test         # tests unitaires (vitest)
 npm run lint     # eslint
 ```
 
-L'app démarre sur l'organigramme de démonstration **Société Horizon** (PME généraliste de 14 personnes : direction, finance & RH, commercial, opérations, informatique) pour valider le rendu immédiatement — son titre « Exemple » rappelle qu'il est à remplacer.
+L'app reprend automatiquement le dernier brouillon local disponible. Au premier lancement, elle ouvre une page vierge et guide l'ajout de la première personne ; la démonstration **Société Horizon** reste accessible volontairement depuis le menu d'aide.
 
 ## Principes de données
 
@@ -25,6 +25,7 @@ L'app démarre sur l'organigramme de démonstration **Société Horizon** (PME g
 - **Édition** : ajout / duplication / suppression de membres, rattachement par glisser-déposer des liens (anti-cycle, un seul responsable par personne), photos et fiches détaillées (poste, pôle, e-mail), sélection multiple.
 - **Édition rapide au canvas** : **clic droit** sur un membre (subordonné, collègue, dupliquer, replier, détacher, supprimer), sur un lien (convertir hiérarchique ⇄ fonctionnel, supprimer) ou sur le fond (ajouter ici, ranger, recadrer) ; **tirer la poignée d'une carte dans le vide** crée un subordonné à cet endroit ; **Tab** ajoute un subordonné et **Entrée** un collègue au membre sélectionné (façon Miro/FigJam).
 - **Rattachements fonctionnels (liens en pointillés)** : en plus de son responsable hiérarchique, un membre peut être rattaché fonctionnellement à d'autres (n+1 fonctionnel, mission transverse) — trait pointillé sur l'organigramme et dans les exports PDF/PPTX. Gérés depuis la fiche membre ou par clic droit sur un lien ; ils n'affectent ni les layouts, ni le repli, ni les statistiques, ni la colonne Responsable du CSV. *(Format de fichier v2 — les fichiers v1 s'ouvrent et sont migrés automatiquement.)*
+- **Routage intelligent des liens** : les connecteurs orthogonaux choisissent automatiquement leurs côtés d'attache et contournent les cartes intermédiaires. Sélectionner un lien affiche une poignée pour déplacer son corridor ; un clic droit permet de revenir au tracé automatique. Le réglage est conservé dans le fichier et reproduit dans les exports PDF/PPTX.
 - **Replier / déplier les branches** : chaque responsable porte un bouton de repli ; la branche masquée est résumée par un badge d'effectif (`+N`) et un rappel « Tout déplier » reste affiché. L'export suit l'affichage : replier des branches permet d'exporter une vue partielle (par direction, par pôle).
 - **Statistiques d'effectifs** : effectif total, nombre d'encadrants, profondeur hiérarchique et répartition par pôle dans l'inspecteur ; taille d'équipe (directs / total) sur la fiche de chaque responsable.
 - **Vue annuaire (éditable)** : table triable et filtrable de tous les membres, synchronisée avec le canvas — et véritable poste de travail : **double-clic sur une cellule pour la modifier** (nom, poste, pôle, e-mail, et même le responsable via un sélecteur avec garde anti-cycle), ajout de membres et de subordonnés, suppression, le tout annulable (Ctrl+Z). Sélectionner une ligne ouvre la fiche dans l'inspecteur, « voir dans l'organigramme » recentre la vue sur la personne. **Export CSV** au format de l'import (round-trip complet : Excel / Google Sheets reste utilisable en édition de masse).

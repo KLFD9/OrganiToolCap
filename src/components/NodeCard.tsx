@@ -1,7 +1,7 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { resolveDisplay, type OrgNode, type OrgTheme } from "../types/orgchart";
-import { computeNodeStyle, getContrastColor, computeNodeWidth, formatPhoneNumber } from "../lib/nodeStyle";
+import { computeNodeHeight, computeNodeStyle, getContrastColor, computeNodeWidth, formatPhoneNumber } from "../lib/nodeStyle";
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import { Mail, Phone } from "lucide-react";
 
@@ -24,6 +24,22 @@ export interface NodeCardData extends Record<string, unknown> {
    */
   outOfPage?: boolean;
 }
+
+const ATTACH_SIDES = ["top", "bottom", "left", "right"] as const;
+
+const SIDE_TO_POSITION: Record<(typeof ATTACH_SIDES)[number], Position> = {
+  top: Position.Top,
+  bottom: Position.Bottom,
+  left: Position.Left,
+  right: Position.Right,
+};
+
+const HANDLE_VISIBLE_CLASS =
+  "!w-2.5 !h-2.5 !bg-zinc-400 dark:!bg-zinc-500 !border-2 !border-white dark:!border-zinc-950 !rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200";
+
+/** Ancre muette : sert uniquement de point d'attache aux liens « snappés ». */
+const HANDLE_ANCHOR_CLASS =
+  "!w-px !h-px !min-w-0 !min-h-0 !border-0 !bg-transparent opacity-0 !pointer-events-none";
 
 function initials(name: string): string {
   return name
@@ -57,9 +73,12 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
   const isFlat = theme.nodeStyle === "flat";
   const isNeon = theme.nodeStyle === "neon";
   const isMinimal = theme.nodeStyle === "minimal";
-  const sourcePos = direction === "TB" ? Position.Bottom : Position.Right;
-  const targetPos =
-    targetSide === "left" ? Position.Left : direction === "TB" ? Position.Top : Position.Left;
+  // Poignées interactives (visibles au survol, utilisables au drag) : celles
+  // du sens de lecture courant. Les autres côtés portent des ancres muettes
+  // (invisibles, non connectables) sur lesquelles le Canvas fait « snapper »
+  // les liens selon la géométrie relative des cartes (cf. chooseEdgeSides).
+  const interactiveSource = direction === "TB" ? "bottom" : "right";
+  const interactiveTarget = targetSide === "left" ? "left" : direction === "TB" ? "top" : "left";
 
   // Configuration de l'ombre néon (glowing)
   const neonGlow = `0 0 14px ${style.accentColor}2c, 0 4px 18px rgba(0,0,0,0.5)`;
@@ -107,12 +126,14 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
   const deptColor = isColoredBg ? style.textColor : style.accentColor;
 
   const cardWidth = computeNodeWidth(orgNode, display.showPhotos);
+  const cardHeight = computeNodeHeight(orgNode, display);
 
   return (
     <div
-      className="relative px-5 py-4 border transition-all duration-300 ease-out group hover:scale-[1.03] cursor-pointer"
+      className="relative px-5 py-4 border transition-[box-shadow,transform,border-color] duration-200 ease-out group hover:-translate-y-0.5 cursor-pointer"
       style={{
         width: cardWidth,
+        height: cardHeight,
         background: style.background,
         color: style.textColor,
         borderColor: style.borderColor,
@@ -139,17 +160,24 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
           hors page
         </div>
       )}
-      {/* Target connection point - invisible par défaut, s'affiche au survol */}
-      <Handle
-        type="target"
-        position={targetPos}
-        className="!w-2.5 !h-2.5 !bg-zinc-400 dark:!bg-zinc-500 !border-2 !border-white dark:!border-zinc-950 !rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200"
-      />
+      {/* Points de connexion cible : un par côté. Seul celui du sens de
+          lecture est interactif (visible au survol) ; les autres sont des
+          ancres muettes pour le snap géométrique des liens. */}
+      {ATTACH_SIDES.map((side) => (
+        <Handle
+          key={`t-${side}`}
+          id={`t-${side}`}
+          type="target"
+          position={SIDE_TO_POSITION[side]}
+          isConnectable={side === interactiveTarget}
+          className={side === interactiveTarget ? HANDLE_VISIBLE_CLASS : HANDLE_ANCHOR_CLASS}
+        />
+      ))}
 
       {/* Pôle / Département */}
       {department && display.showDepartments && (
         <div
-          className="mb-2.5 inline-block rounded-md px-2 py-0.5 font-mono text-[8px] font-bold uppercase tracking-widest"
+          className="mb-2.5 inline-flex max-w-full items-center rounded-full px-2.5 py-0.5 font-mono text-[8px] font-bold uppercase tracking-widest"
           style={{
             background: deptBg,
             color: deptColor,
@@ -202,13 +230,13 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
           {email && display.showEmails && (
             <div className={`flex items-center gap-2 text-[10px] tracking-tight break-all ${isDarkText ? "opacity-70" : "opacity-60"}`}>
               <Mail className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} style={{ color: style.textColor }} />
-              <span>{email}</span>
+              <span className="truncate" title={email}>{email}</span>
             </div>
           )}
           {phone && display.showPhones && (
             <div className={`flex items-center gap-2 text-[10px] tracking-tight break-all ${isDarkText ? "opacity-70" : "opacity-60"}`}>
               <Phone className="h-3.5 w-3.5 shrink-0" strokeWidth={1.8} style={{ color: style.textColor }} />
-              <span>{formatPhoneNumber(phone)}</span>
+              <span className="truncate" title={formatPhoneNumber(phone)}>{formatPhoneNumber(phone)}</span>
             </div>
           )}
         </div>
@@ -243,12 +271,17 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
         </button>
       )}
 
-      {/* Source connection point - invisible par défaut, s'affiche au survol */}
-      <Handle
-        type="source"
-        position={sourcePos}
-        className="!w-2.5 !h-2.5 !bg-zinc-400 dark:!bg-zinc-500 !border-2 !border-white dark:!border-zinc-950 !rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200"
-      />
+      {/* Points de connexion source : un par côté, même logique que les cibles. */}
+      {ATTACH_SIDES.map((side) => (
+        <Handle
+          key={`s-${side}`}
+          id={`s-${side}`}
+          type="source"
+          position={SIDE_TO_POSITION[side]}
+          isConnectable={side === interactiveSource}
+          className={side === interactiveSource ? HANDLE_VISIBLE_CLASS : HANDLE_ANCHOR_CLASS}
+        />
+      ))}
     </div>
   );
 }

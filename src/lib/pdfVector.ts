@@ -16,7 +16,7 @@ import {
  * canvas — chaque dimension est exprimée en px de la carte à l'écran (240 px
  * de large) puis convertie à l'échelle de la page. Le document imprimé est
  * la copie exacte de ce que montre le canvas et le cadre de page : badge de
- * pôle en pilule, pastille d'initiales, nom 12 px, poste 10 px, e-mail 9 px.
+ * pôle en pilule, pastille d'initiales, nom 12 px, poste 10 px, contact 10 px.
  * Texte net à toutes les échelles, fichier de quelques dizaines de Ko.
  * Limites assumées : police standardisée (Helvetica) et photos remplacées
  * par les initiales ; le mode « image » reste disponible pour le pixel près.
@@ -24,6 +24,10 @@ import {
 
 const MM_PER_IN = 25.4;
 const CONNECTOR_COLOR = "#DBDBDF"; // ≈ rgba(39,39,42,0.15) du canvas, aplati sur blanc
+const CONTACT_ICON_PX = 14;
+const CONTACT_GAP_PX = 8;
+const CONTACT_BORDER_TO_ROW_CENTER_PX = 19;
+const CONTACT_ROW_GAP_PX = 15.5;
 
 /** Tronque un libellé à la largeur donnée (mm) pour la taille de police courante. */
 function truncateToWidth(
@@ -39,12 +43,72 @@ function truncateToWidth(
   return `${t.trimEnd()}…`;
 }
 
+function truncateSpacedTextToWidth(
+  pdf: JsPdfLike,
+  text: string,
+  maxWidthMm: number,
+  charSpaceMm: number
+): string {
+  const width = (value: string) =>
+    pdf.getTextWidth(value) + Math.max(0, value.length - 1) * charSpaceMm;
+  if (width(text) <= maxWidthMm) return text;
+  let truncated = text;
+  while (truncated.length > 1 && width(`${truncated}…`) > maxWidthMm) {
+    truncated = truncated.slice(0, -1);
+  }
+  return `${truncated.trimEnd()}…`;
+}
+
 /** jsPDF sans dépendance de type statique (module chargé à la demande). */
 type JsPdfLike = Awaited<ReturnType<typeof loadPdf>>["pdf"];
 
 async function loadPdf(orientation: PdfExportOptions["orientation"], format: PdfExportOptions["format"]) {
   const { jsPDF } = await import("jspdf");
   return { pdf: new jsPDF({ orientation, unit: "mm", format }) };
+}
+
+function drawMailIcon(pdf: JsPdfLike, x: number, centerY: number, size: number): void {
+  const y = centerY - size / 2;
+  const unit = size / 24;
+  pdf.setLineWidth(unit * 1.8);
+  pdf.setLineCap("round");
+  pdf.setLineJoin("round");
+  // Géométrie Lucide `Mail` (viewBox 24×24, strokeWidth 1.8 comme NodeCard).
+  pdf.roundedRect(x + unit * 2, y + unit * 4, unit * 20, unit * 16, unit * 2, unit * 2, "S");
+  pdf.line(x + unit * 2, y + unit * 6, x + unit * 12, y + unit * 13);
+  pdf.line(x + unit * 22, y + unit * 6, x + unit * 12, y + unit * 13);
+}
+
+function drawPhoneIcon(pdf: JsPdfLike, x: number, centerY: number, size: number): void {
+  const y = centerY - size / 2;
+  const unit = size / 24;
+  const p = (value: number, axis: "x" | "y") => (axis === "x" ? x : y) + value * unit;
+  pdf.setLineWidth(unit * 1.8);
+  pdf.setLineCap("round");
+  pdf.setLineJoin("round");
+  // Géométrie Lucide `Phone`, convertie en courbes jsPDF plutôt qu'une icône
+  // de téléphone mobile (qui expliquait la divergence visible dans le PDF).
+  pdf.path([
+      { op: "m", c: [p(22, "x"), p(16.92, "y")] },
+      { op: "l", c: [p(22, "x"), p(19.92, "y")] },
+      { op: "c", c: [p(22, "x"), p(21.1, "y"), p(20.95, "x"), p(22.03, "y"), p(19.82, "x"), p(21.92, "y")] },
+      { op: "c", c: [p(11.25, "x"), p(20.99, "y"), p(3.01, "x"), p(12.75, "y"), p(2.08, "x"), p(4.18, "y")] },
+      { op: "c", c: [p(1.97, "x"), p(3.05, "y"), p(2.9, "x"), p(2, "y"), p(4.08, "x"), p(2, "y")] },
+      { op: "l", c: [p(7.08, "x"), p(2, "y")] },
+      { op: "c", c: [p(8.1, "x"), p(2, "y"), p(8.96, "x"), p(2.76, "y"), p(9.1, "x"), p(3.72, "y")] },
+      { op: "c", c: [p(9.23, "x"), p(4.68, "y"), p(9.46, "x"), p(5.62, "y"), p(9.8, "x"), p(6.52, "y")] },
+      { op: "c", c: [p(10.08, "x"), p(7.26, "y"), p(9.9, "x"), p(8.1, "y"), p(9.35, "x"), p(8.63, "y")] },
+      { op: "l", c: [p(8.09, "x"), p(9.91, "y")] },
+      { op: "c", c: [p(9.5, "x"), p(12.55, "y"), p(11.45, "x"), p(14.5, "y"), p(14.09, "x"), p(15.91, "y")] },
+      { op: "l", c: [p(15.36, "x"), p(14.64, "y")] },
+      { op: "c", c: [p(15.9, "x"), p(14.1, "y"), p(16.73, "x"), p(13.93, "y"), p(17.48, "x"), p(14.2, "y")] },
+      { op: "c", c: [p(18.39, "x"), p(14.54, "y"), p(19.33, "x"), p(14.77, "y"), p(20.29, "x"), p(14.9, "y")] },
+      { op: "c", c: [p(21.27, "x"), p(15.04, "y"), p(22, "x"), p(15.88, "y"), p(22, "x"), p(16.92, "y")] },
+  ]);
+  // Contrairement à `line`/`roundedRect`, jsPDF.path ignore totalement son
+  // ancien argument de style : le contour doit être déclenché explicitement,
+  // sinon le chemin est peint plus tard avec la couleur d'un autre élément.
+  pdf.stroke();
 }
 
 /**
@@ -172,16 +236,24 @@ function drawEditableSpec(pdf: JsPdfLike, spec: EditableSlideSpec, theme: OrgThe
     if (card.department) {
       pdf.setFont("helvetica", "bold");
       pdf.setFontSize(pt(8));
-      const label = truncateToWidth(pdf, card.department.toUpperCase(), innerW - px(16));
-      const pillW = pdf.getTextWidth(label) + px(16);
+      const charSpace = px(0.8); // Tailwind `tracking-widest` à 8 px = 0,8 px
+      const pillPadX = px(10); // NodeCard `px-2.5`
+      const label = truncateSpacedTextToWidth(
+        pdf,
+        card.department.toUpperCase(),
+        innerW - pillPadX * 2,
+        charSpace
+      );
+      const labelW = pdf.getTextWidth(label) + Math.max(0, label.length - 1) * charSpace;
+      const pillW = labelW + pillPadX * 2;
       const pillH = px(17);
       const pillBg = solidBg || isNeon
         ? blendHex(card.textColor, card.fillColor, 0.14)
         : blendHex(card.accentColor, card.fillColor, 0.09);
       pdf.setFillColor(`#${pillBg}`);
-      pdf.roundedRect(x + padX, cursorY, pillW, pillH, px(6), px(6), "F");
+      pdf.roundedRect(x + padX, cursorY, pillW, pillH, pillH / 2, pillH / 2, "F");
       pdf.setTextColor(`#${card.deptColor}`);
-      pdf.text(label, x + padX + px(8), cursorY + pillH / 2, { baseline: "middle", charSpace: px(0.8) });
+      pdf.text(label, x + padX + pillPadX, cursorY + pillH / 2, { baseline: "middle", charSpace });
       cursorY += pillH + px(10);
     }
 
@@ -222,23 +294,34 @@ function drawEditableSpec(pdf: JsPdfLike, spec: EditableSlideSpec, theme: OrgThe
       pdf.text(truncateToWidth(pdf, card.role, textW), textX, nameY + px(15), { baseline: "middle" });
     }
 
-    // Contacts (E-mail & Téléphone) : filet + 9 px atténué
+    // Contacts (e-mail & téléphone) : mêmes espacements que NodeCard
+    // (`mt-3.5 pt-3`, icône 14 px, gap 8 px, texte 10 px).
     if (card.email || card.phone) {
-      let contactY = cursorY + rowH + px(10);
+      const lineY = cursorY + rowH + px(14);
       pdf.setDrawColor(textOn(card.fillColor, card.textColor, 0.08));
       pdf.setLineWidth(px(1));
-      pdf.line(x + padX, contactY, x + w - padX, contactY);
+      pdf.line(x + padX, lineY, x + w - padX, lineY);
 
       pdf.setFont("helvetica", "normal");
-      pdf.setFontSize(pt(9));
-      pdf.setTextColor(textOn(card.fillColor, card.textColor, 0.6));
+      pdf.setFontSize(pt(10));
+      const contactColor = textOn(card.fillColor, card.textColor, 0.7);
+      pdf.setTextColor(contactColor);
+      pdf.setDrawColor(contactColor);
+      pdf.setLineWidth(px(1.05));
+
+      let contactCenterY = lineY + px(CONTACT_BORDER_TO_ROW_CENTER_PX);
+      const iconSize = px(CONTACT_ICON_PX);
+      const textX = x + padX + iconSize + px(CONTACT_GAP_PX);
+      const textW = Math.max(1, innerW - iconSize - px(CONTACT_GAP_PX));
 
       if (card.email) {
-        pdf.text(truncateToWidth(pdf, card.email, innerW), x + padX, contactY + px(8), { baseline: "middle" });
-        contactY += px(14);
+        drawMailIcon(pdf, x + padX, contactCenterY, iconSize);
+        pdf.text(truncateToWidth(pdf, card.email, textW), textX, contactCenterY, { baseline: "middle" });
+        contactCenterY += px(CONTACT_ROW_GAP_PX);
       }
       if (card.phone) {
-        pdf.text(truncateToWidth(pdf, card.phone, innerW), x + padX, contactY + px(8), { baseline: "middle" });
+        drawPhoneIcon(pdf, x + padX, contactCenterY, iconSize);
+        pdf.text(truncateToWidth(pdf, card.phone, textW), textX, contactCenterY, { baseline: "middle" });
       }
     }
   }
