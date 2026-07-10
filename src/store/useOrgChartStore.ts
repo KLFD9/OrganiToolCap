@@ -720,7 +720,17 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
   // nœuds (ex. maj des pages), pas seulement au clic utilisateur — ne pas
   // effacer une sélection de page sur une émission vide non déclenchée par
   // un clic (cf. onPaneClick, qui gère explicitement la désélection totale).
-  selectNodes: (ids) => set((s) => ({ selectedNodeIds: ids, selectedFrameId: ids.length > 0 ? null : s.selectedFrameId })),
+  selectNodes: (ids) =>
+    set((s) => {
+      const selectedFrameId = ids.length > 0 ? null : s.selectedFrameId;
+      const unchanged =
+        selectedFrameId === s.selectedFrameId &&
+        ids.length === s.selectedNodeIds.length &&
+        ids.every((id, index) => id === s.selectedNodeIds[index]);
+      // React Flow peut réémettre la même sélection après une synchronisation
+      // d'arêtes. Renvoyer le même état évite une boucle store → edges → store.
+      return unchanged ? s : { selectedNodeIds: [...ids], selectedFrameId };
+    }),
   selectFrame: (id) => set({ selectedFrameId: id, selectedNodeIds: [] }),
 
   toggleCollapsed: (id) =>

@@ -275,6 +275,16 @@ describe("useOrgChartStore", () => {
     expect(after.nodes).toBe(before.nodes);
     expect(after.past).toHaveLength(before.past.length);
   });
+
+  it("selectNodes est idempotent quand React Flow réémet la même sélection", () => {
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+    useOrgChartStore.getState().selectNodes([rootId]);
+    const selected = useOrgChartStore.getState().selectedNodeIds;
+
+    useOrgChartStore.getState().selectNodes([rootId]);
+
+    expect(useOrgChartStore.getState().selectedNodeIds).toBe(selected);
+  });
 });
 
 describe("useOrgChartStore — frames multi-pages", () => {
