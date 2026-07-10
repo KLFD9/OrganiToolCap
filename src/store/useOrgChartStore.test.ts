@@ -285,6 +285,20 @@ describe("useOrgChartStore", () => {
 
     expect(useOrgChartStore.getState().selectedNodeIds).toBe(selected);
   });
+
+  it("selectNodes est idempotent même si la sélection est réémise dans un autre ordre", () => {
+    // React Flow peut réémettre la même composition dans un ordre différent
+    // après une synchronisation d'arêtes : changer d'état à chaque émission
+    // entretient une boucle de reconstructions (Maximum update depth).
+    useOrgChartStore.getState().addNode(useOrgChartStore.getState().nodes[0].id);
+    const [a, b] = useOrgChartStore.getState().nodes.map((n) => n.id);
+    useOrgChartStore.getState().selectNodes([a, b]);
+    const selected = useOrgChartStore.getState().selectedNodeIds;
+
+    useOrgChartStore.getState().selectNodes([b, a]);
+
+    expect(useOrgChartStore.getState().selectedNodeIds).toBe(selected);
+  });
 });
 
 describe("useOrgChartStore — frames multi-pages", () => {

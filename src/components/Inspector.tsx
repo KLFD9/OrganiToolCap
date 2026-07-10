@@ -342,6 +342,9 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
               <button className={segment(frame.page.format === "a3")} onClick={() => setPageOption({ format: "a3" })}>
                 A3
               </button>
+              <button className={segment(frame.page.format === "a2")} onClick={() => setPageOption({ format: "a2" })}>
+                A2
+              </button>
             </div>
           </div>
 

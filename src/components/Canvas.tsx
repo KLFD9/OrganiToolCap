@@ -8,6 +8,7 @@ import {
   useNodesState,
   useEdgesState,
   useReactFlow,
+  useStoreApi,
   SelectionMode,
   Panel,
   type Connection,
@@ -85,7 +86,7 @@ const nodeTypes = {
 };
 const edgeTypes = { org: OrgEdge };
 
-const FORMAT_LABEL = { a4: "A4", a3: "A3" } as const;
+const FORMAT_LABEL = { a4: "A4", a3: "A3", a2: "A2" } as const;
 const ORIENTATION_LABEL = { landscape: "paysage", portrait: "portrait" } as const;
 /** Marge intérieure de la capture autour du contenu (captureFlow). */
 const CAPTURE_MARGIN = 1.12;
@@ -189,6 +190,12 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
 
   const { screenToFlowPosition, fitView, fitBounds, getZoom } = useReactFlow();
   const [menu, setMenu] = useState<MenuState | null>(null);
+  // Sélection d'arêtes : un lien se sélectionne UNIQUEMENT par clic direct
+  // (réglage du corridor). Les arêtes portent `selectable: false` : React
+  // Flow n'écrit jamais leur sélection (lasso compris), seul cet état local
+  // le fait. Deux écrivains (RF + nous) sur les flags `selected` des arêtes
+  // reconstruites créent un écho retardé → boucle infinie StoreUpdater ↔
+  // setRfEdges (« Maximum update depth exceeded » au lasso englobant des liens).
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null);
   const [showMiniMap, setShowMiniMap] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
@@ -469,7 +476,6 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
           parentId,
           extent: "parent",
           position: { x: mmToPx(element.x), y: mmToPx(element.y) },
-          selected: selectedNodeIds.includes(id),
           draggable: true,
           selectable: true,
           zIndex: 5,
@@ -520,7 +526,6 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     secondaryLogoAspect,
     themeMode,
     handleChromeResizeEnd,
-    selectedNodeIds,
   ]);
 
   // Zones de regroupement visuel par pôle / département (nœuds visibles uniquement)
@@ -543,14 +548,17 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     }));
   }, [visibleNodes, theme, showGroups]);
 
-  // Adapter les nœuds pour le canvas
+  // Adapter les nœuds pour le canvas. La sélection n'est PAS estampillée ici :
+  // React Flow en est propriétaire (préservée à la poussée, cf. useEffect) et
+  // le store n'en garde qu'un miroir via onSelectionChange — réinjecter une
+  // copie du store (en retard d'un cycle) crée une boucle infinie de
+  // sélection (« Maximum update depth exceeded »).
   const memberRfNodes = useMemo<Node<NodeCardData>[]>(
     () =>
       visibleNodes.map((n) => ({
         id: n.id,
         type: "orgNode",
         position: n.position,
-        selected: selectedNodeIds.includes(n.id),
         data: {
           orgNode: n,
           theme,
@@ -571,7 +579,6 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
       theme,
       levels,
       layout.direction,
-      selectedNodeIds,
       stackedIds,
       childrenMap,
       descendantCounts,
@@ -643,6 +650,9 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
           targetHandle: `t-${sides.targetSide}`,
           type: "org",
           selected: isSelected,
+          // La sélection d'un lien appartient à cet état local (clic direct) :
+          // React Flow ne doit jamais la piloter (cf. selectedEdgeId).
+          selectable: false,
           animated: touchesSelectedNode,
           data: {
             spine,
@@ -670,8 +680,42 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const [rfNodes, setRfNodes, onNodesChangeBase] = useNodesState(initialRfNodes);
   const [rfEdges, setRfEdges, onEdgesChangeBase] = useEdgesState(initialRfEdges);
 
-  useEffect(() => setRfNodes(initialRfNodes), [initialRfNodes, setRfNodes]);
+  // La poussée préserve la sélection courante de React Flow : elle ne doit
+  // JAMAIS la modifier, sinon chaque poussée déclenche un écho de sélection
+  // qui redéclenche une poussée (boucle infinie). La sélection programmatique
+  // passe par addSelectedNodes (effet dédié ci-dessous).
+  useEffect(() => {
+    setRfNodes((prev) => {
+      const selected = new Set(prev.filter((n) => n.selected).map((n) => n.id));
+      return initialRfNodes.map((n) => (selected.has(n.id) ? { ...n, selected: true } : n));
+    });
+  }, [initialRfNodes, setRfNodes]);
   useEffect(() => setRfEdges(initialRfEdges), [initialRfEdges, setRfEdges]);
+
+  // Sélection programmatique (annuaire, recherche, menus, ajout de membre) :
+  // seule une sélection qui ne PROVIENT PAS du canvas est appliquée côté
+  // React Flow. Les mises à jour miroir (onSelectionChange → store) sont
+  // reconnues via lastCanvasSelectionRef et ignorées ici — réappliquer un
+  // écho du canvas relancerait la boucle infinie de sélection.
+  const rfStoreApi = useStoreApi();
+  const lastCanvasSelectionRef = useRef<string[]>([]);
+  useEffect(() => {
+    // Valeurs lues à l'exécution (pas les captures du rendu) : pendant un
+    // lasso, plusieurs émissions s'enchaînent dans un même lot et un effet
+    // peut s'exécuter avec une capture en retard — comparer du périmé au
+    // frais déclencherait une désélection fantôme.
+    const storeSelection = useOrgChartStore.getState().selectedNodeIds;
+    const mirror = lastCanvasSelectionRef.current;
+    const fromCanvas =
+      mirror.length === storeSelection.length && storeSelection.every((id) => mirror.includes(id));
+    if (fromCanvas) return;
+    // Un membre tout juste créé n'atteint React Flow qu'au commit suivant
+    // (poussée → StoreUpdater) : appliquer trop tôt viderait la sélection.
+    // `rfNodes` en dépendance fait réessayer l'effet quand les nœuds arrivent.
+    const { nodeLookup, addSelectedNodes } = rfStoreApi.getState();
+    if (!storeSelection.every((id) => nodeLookup.has(id))) return;
+    addSelectedNodes(storeSelection);
+  }, [selectedNodeIds, rfNodes, rfStoreApi]);
 
   // Guides magnétiques : cibles construites au début du drag d'une carte,
   // trait(s) violet(s) affichés pendant l'aimantation.
@@ -956,9 +1000,15 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     setMenu({ x: event.clientX, y: event.clientY, edgeId: edge.id });
   }, []);
 
-  const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
-    setSelectedEdgeId(edge.id);
-  }, []);
+  const onEdgeClick = useCallback(
+    (_event: React.MouseEvent, edge: Edge) => {
+      // Parité avec la sélection native de React Flow (addSelectedEdges) :
+      // cliquer un lien désélectionne les cartes.
+      selectNodes([]);
+      setSelectedEdgeId(edge.id);
+    },
+    [selectNodes]
+  );
 
   const onPaneContextMenu = useCallback(
     (event: React.MouseEvent | MouseEvent) => {
@@ -1203,9 +1253,14 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   ]);
 
   const onSelectionChange: OnSelectionChangeFunc = useCallback(
-    ({ nodes, edges }) => {
-      selectNodes(nodes.map((n) => n.id));
-      setSelectedEdgeId(edges[0]?.id ?? null);
+    ({ nodes }) => {
+      const ids = nodes.map((n) => n.id);
+      lastCanvasSelectionRef.current = ids;
+      selectNodes(ids);
+      // Sélectionner des cartes (clic, lasso) désélectionne le lien actif.
+      // Les arêtes émises par React Flow ne sont PAS reflétées ici : ce ne
+      // sont que l'écho de nos propres flags (cf. selectedEdgeId).
+      if (nodes.length > 0) setSelectedEdgeId((prev) => (prev === null ? prev : null));
     },
     [selectNodes]
   );
@@ -1290,7 +1345,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
                 themeMode === "dark" ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
               }`}
             >
-              {(["a4", "a3"] as const).map((fmt) => (
+              {(["a4", "a3", "a2"] as const).map((fmt) => (
                 <button
                   key={fmt}
                   onClick={() => {

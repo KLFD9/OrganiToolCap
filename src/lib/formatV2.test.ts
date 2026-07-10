@@ -103,6 +103,16 @@ describe("migration v1 → v2", () => {
     // Un fichier sans frames reste valide (page implicite)
     expect(parseOrgChartFile(JSON.stringify(v2File())).frames).toBeUndefined();
   });
+
+  it("format A2 : valeur additive du format de page, round-trip sans perte", () => {
+    const withA2: OrgChartFile = {
+      ...v2File(),
+      layout: { direction: "TB", auto: true, page: { format: "a2", orientation: "landscape", margin: 10 } },
+    };
+    const parsed = parseOrgChartFile(JSON.stringify(withA2));
+    expect(parsed.layout.page?.format).toBe("a2");
+    expect(parseOrgChartFile(JSON.stringify(parsed))).toEqual(parsed);
+  });
 });
 
 describe("les liens pointillés sont ignorés par la logique d'arbre", () => {

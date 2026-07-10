@@ -7,7 +7,7 @@ import { computeChromeOffsets, type PdfFormat, type PdfOrientation } from "./pdf
  * tout est mis à l'échelle — y compris le texte. On calcule ici la taille
  * réelle (en points typographiques) qu'aura le nom des cartes une fois
  * imprimé, pour avertir l'utilisateur et lui proposer des solutions
- * (disposition compacte, A3, multi-pages) plutôt que de le laisser
+ * (disposition compacte, A3/A2, multi-pages) plutôt que de le laisser
  * découvrir un PDF illisible.
  */
 
@@ -22,6 +22,7 @@ export const READABLE_PT_LIMIT = 4.5;
 const PAGE_SIZES_MM: Record<PdfFormat, [number, number]> = {
   a4: [210, 297],
   a3: [297, 420],
+  a2: [420, 594],
 };
 
 export type ReadabilityRating = "good" | "warn" | "bad";

@@ -131,9 +131,9 @@ export const ChromeLayoutSchema = z.object({
 export type ChromeLayout = z.infer<typeof ChromeLayoutSchema>;
 export type ChromeKey = keyof ChromeLayout;
 
-/** Format de page cible (cadre de page, frames, export). */
+/** Format de page cible (cadre de page, frames, export). A2 = grande équipe / affiche. */
 export const PageSetupSchema = z.object({
-  format: z.enum(["a4", "a3"]),
+  format: z.enum(["a4", "a3", "a2"]),
   orientation: z.enum(["portrait", "landscape"]),
   margin: z.number(),
 });

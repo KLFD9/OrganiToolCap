@@ -9,7 +9,7 @@ import type { PageSetup } from "./readability";
 const loadHtmlToImage = () => import("html-to-image");
 const loadJsPdf = () => import("jspdf");
 
-export type PdfFormat = "a4" | "a3";
+export type PdfFormat = "a4" | "a3" | "a2";
 export type PdfOrientation = "portrait" | "landscape";
 
 export interface PdfExportOptions {

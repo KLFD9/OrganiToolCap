@@ -14,6 +14,24 @@ describe("pageAvailableArea", () => {
     expect(a3.width).toBeGreaterThan(a4.width);
     expect(a3.height).toBeGreaterThan(a4.height);
   });
+
+  it("l'A2 offre une zone plus grande que l'A3 (grandes équipes)", () => {
+    const a3 = pageAvailableArea("a3", "landscape", 10, 10, 10);
+    const a2 = pageAvailableArea("a2", "landscape", 10, 10, 10);
+    expect(a2.width).toBe(594 - 20);
+    expect(a2.height).toBe(420 - 20);
+    expect(a2.width).toBeGreaterThan(a3.width);
+    expect(a2.height).toBeGreaterThan(a3.height);
+  });
+
+  it("un organigramme illisible en A4 redevient lisible en A2 à disposition égale", () => {
+    // Le cas du client : trop de personnes pour l'A4 sans vouloir toucher à la disposition
+    const a4 = estimateReadability(3900, 800, 277, 160);
+    const a2 = estimateReadability(3900, 800, 574, 400);
+    expect(a4.rating).toBe("bad");
+    expect(a2.fontPt).toBeGreaterThan(a4.fontPt);
+    expect(a2.rating).not.toBe("bad");
+  });
 });
 
 describe("estimateReadability", () => {

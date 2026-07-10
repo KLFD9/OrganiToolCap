@@ -293,7 +293,7 @@ export function Toolbar({
           : "border-zinc-200/80 bg-white text-text-light"
       }`}
     >
-      <div className="flex shrink-0 items-center gap-2.5">
+      <div className="flex shrink-0 items-center gap-2 lg:gap-2.5">
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary-800 text-[11px] font-black tracking-tight text-white shadow-sm" aria-label="OrganiTool CAP">
           CAP
         </div>
@@ -301,20 +301,20 @@ export function Toolbar({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           aria-label="Titre du document"
-          className={`h-9 w-36 rounded-lg border border-transparent bg-transparent px-2 text-sm font-semibold transition-colors focus:outline-none xl:w-44 ${
+          className={`hidden h-9 w-36 rounded-lg border border-transparent bg-transparent px-2 text-sm font-semibold transition-colors focus:outline-none xl:block 2xl:w-44 ${
             themeMode === "dark"
               ? "text-zinc-100 hover:bg-zinc-900 focus:border-zinc-700 focus:bg-zinc-900"
               : "text-zinc-900 hover:bg-zinc-50 focus:border-zinc-200 focus:bg-white"
           }`}
         />
-        <span className={`hidden items-center gap-1.5 whitespace-nowrap text-[10px] font-medium xl:flex ${isDirty ? "text-amber-600 dark:text-amber-400" : "text-zinc-400 dark:text-zinc-500"}`}>
+        <span className={`hidden items-center gap-1.5 whitespace-nowrap text-[10px] font-medium 2xl:flex ${isDirty ? "text-amber-600 dark:text-amber-400" : "text-zinc-400 dark:text-zinc-500"}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${isDirty ? "bg-amber-500" : "bg-emerald-500"}`} />
           {isDirty ? "À enregistrer" : "Enregistré"}
         </span>
       </div>
-      <div className="hidden h-6 w-px bg-zinc-200 dark:bg-zinc-800 lg:block" />
+      <div className="hidden h-6 w-px bg-zinc-200 dark:bg-zinc-800 sm:block" />
 
-      <nav className="hidden items-center gap-1 lg:flex" aria-label="Outils du document">
+      <nav className="hidden items-center gap-1 2xl:flex" aria-label="Outils du document">
         <details className="relative" onToggle={handleMenuToggle}>
           <summary className={menuTrigger}><span>Fichier</span><ChevronDown className="h-3 w-3" /></summary>
           <div className={`${menuPanel} left-0`}>
@@ -347,23 +347,41 @@ export function Toolbar({
         </details>
       </nav>
 
+      <details className="relative 2xl:hidden" onToggle={handleMenuToggle}>
+        <summary className={`${menuTrigger} px-2.5`} aria-label="Ouvrir le menu principal">
+          <SlidersHorizontal className="h-4 w-4" />
+          <span className="hidden lg:inline">Outils</span>
+          <ChevronDown className="hidden h-3 w-3 lg:block" />
+        </summary>
+        <div className={`${menuPanel} left-0 grid w-72 grid-cols-2 gap-1`}>
+          <button data-action="open" className={menuItem} onClick={() => { closeMenus(); void handleOpen(); }}><FolderOpen className="h-4 w-4 text-zinc-400" /><span className="font-semibold">Ouvrir</span></button>
+          <button data-action="import-csv" className={menuItem} onClick={() => { closeMenus(); csvInputRef.current?.click(); }}><FileSpreadsheet className="h-4 w-4 text-zinc-400" /><span className="font-semibold">Importer</span></button>
+          <button disabled={busy} className={menuItem} onClick={() => { closeMenus(); void handleAutoLayout(); }}><Wand2 className="h-4 w-4 text-primary-500" /><span className="font-semibold">Réorganiser</span></button>
+          <button className={menuItem} onClick={() => { closeMenus(); fitView({ duration: motionDuration(300), padding: 0.2 }); }}><Maximize className="h-4 w-4 text-zinc-400" /><span className="font-semibold">Tout afficher</span></button>
+          <button className={menuItem} onClick={() => { closeMenus(); onTogglePresentation(); }}><Presentation className="h-4 w-4 text-zinc-400" /><span className="font-semibold">Présenter</span></button>
+          <button className={menuItem} onClick={() => { closeMenus(); onNewClick(); }}><FilePlus2 className="h-4 w-4 text-zinc-400" /><span className="font-semibold">Nouveau</span></button>
+          <button disabled={!canUndo} className={menuItem} onClick={() => { closeMenus(); undo(); }}><Undo2 className="h-4 w-4 text-zinc-400" /><span className="font-semibold">Annuler</span></button>
+          <button disabled={!canRedo} className={menuItem} onClick={() => { closeMenus(); redo(); }}><Redo2 className="h-4 w-4 text-zinc-400" /><span className="font-semibold">Rétablir</span></button>
+        </div>
+      </details>
+
       <input ref={csvInputRef} type="file" accept=".csv,text/csv,text/tab-separated-values" className="hidden" onChange={handleImportCsv} />
 
-      <div className="mx-auto hidden rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-900 2xl:flex" role="group" aria-label="Changer de vue">
-        <button onClick={() => directoryOpen && onToggleDirectory()} aria-pressed={!directoryOpen} className={`flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold transition-colors ${!directoryOpen ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-white" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"}`}><Frame className="h-3.5 w-3.5" />Organigramme</button>
-        <button onClick={() => !directoryOpen && onToggleDirectory()} aria-pressed={directoryOpen} className={`flex h-8 items-center gap-2 rounded-md px-3 text-xs font-semibold transition-colors ${directoryOpen ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-white" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"}`}><Users className="h-3.5 w-3.5" />Annuaire</button>
+      <div className="mx-auto flex shrink-0 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-900" role="group" aria-label="Changer de vue">
+        <button title="Organigramme" onClick={() => directoryOpen && onToggleDirectory()} aria-pressed={!directoryOpen} className={`flex h-8 items-center gap-2 rounded-md px-2 text-xs font-semibold transition-colors lg:px-3 ${!directoryOpen ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-white" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"}`}><Frame className="h-3.5 w-3.5" /><span className="hidden md:inline">Organigramme</span></button>
+        <button title="Annuaire" onClick={() => !directoryOpen && onToggleDirectory()} aria-pressed={directoryOpen} className={`flex h-8 items-center gap-2 rounded-md px-2 text-xs font-semibold transition-colors lg:px-3 ${directoryOpen ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-white" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"}`}><Users className="h-3.5 w-3.5" /><span className="hidden md:inline">Annuaire</span></button>
       </div>
 
       <div className="ml-auto flex items-center gap-1">
-        <div className="relative hidden xl:block">
+        <div className="relative hidden md:block">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-400" />
-          <input type="search" value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setSearchOpen(true); }} onFocus={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 200)} placeholder="Rechercher…" className={`h-9 w-40 rounded-lg border pl-9 pr-3 text-xs focus:outline-none ${themeMode === "dark" ? "border-zinc-800 bg-zinc-900 text-zinc-200" : "border-zinc-200 bg-zinc-50 text-zinc-700"}`} />
+          <input type="search" value={searchQuery} onChange={(e) => { setSearchQuery(e.target.value); setSearchOpen(true); }} onFocus={() => setSearchOpen(true)} onBlur={() => setTimeout(() => setSearchOpen(false), 200)} placeholder="Rechercher…" className={`h-9 w-28 rounded-lg border pl-9 pr-3 text-xs focus:outline-none lg:w-36 xl:w-40 ${themeMode === "dark" ? "border-zinc-800 bg-zinc-900 text-zinc-200" : "border-zinc-200 bg-zinc-50 text-zinc-700"}`} />
           {searchOpen && searchQuery.trim() && <div className={`${menuPanel} right-0`}>
             {searchResults.length === 0 ? <div className="px-3 py-2 text-xs text-zinc-400">Aucun résultat</div> : searchResults.map((n) => <button key={n.id} onMouseDown={(e) => e.preventDefault()} onClick={() => handleGoToNode(n.id)} className={menuItem}><span><b className="block font-semibold">{n.data.name || "Sans nom"}</b><small className="text-zinc-400">{[n.data.role, n.data.department].filter(Boolean).join(" · ")}</small></span></button>)}
           </div>}
         </div>
-        <button aria-label="Annuler" title="Annuler (Ctrl+Z)" onClick={undo} disabled={!canUndo} className={iconButton}><Undo2 className="h-4 w-4" /></button>
-        <button aria-label="Rétablir" title="Rétablir (Ctrl+Maj+Z)" onClick={redo} disabled={!canRedo} className={iconButton}><Redo2 className="h-4 w-4" /></button>
+        <button aria-label="Annuler" title="Annuler (Ctrl+Z)" onClick={undo} disabled={!canUndo} className={`${iconButton} hidden lg:flex`}><Undo2 className="h-4 w-4" /></button>
+        <button aria-label="Rétablir" title="Rétablir (Ctrl+Maj+Z)" onClick={redo} disabled={!canRedo} className={`${iconButton} hidden lg:flex`}><Redo2 className="h-4 w-4" /></button>
         <button aria-label="Changer de thème" title="Mode clair / sombre" onClick={onToggleTheme} className={`${iconButton} hidden sm:flex`}>{themeMode === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</button>
         <div className="mx-1 h-6 w-px bg-zinc-200 dark:bg-zinc-800" />
         <button data-action="save" onClick={() => void handleSave()} className={`flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition-colors ${isDirty ? "bg-primary-700 text-white hover:bg-primary-600 dark:bg-primary-600 dark:hover:bg-primary-500" : themeMode === "dark" ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}><Save className="h-3.5 w-3.5" /><span className="hidden sm:inline">Enregistrer</span></button>

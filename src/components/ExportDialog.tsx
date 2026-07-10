@@ -236,7 +236,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
       const escalationHint =
         best.estimate.rating === "good"
           ? ""
-          : " Pour aller plus loin : format A3, marges réduites ou multi-pages.";
+          : " Pour aller plus loin : format A3 ou A2, marges réduites ou multi-pages.";
 
       if (best.id === "current") {
         setOptimizeNotice(
@@ -489,7 +489,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                     <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
                   </div>
                   <span className="text-[10px] leading-normal text-zinc-400 dark:text-zinc-500">
-                    Le format papier de chaque page (A4/A3, orientation, marges) est celui de sa feuille sur le
+                    Le format papier de chaque page (A4/A3/A2, orientation, marges) est celui de sa feuille sur le
                     canevas.
                   </span>
                 </label>
@@ -514,6 +514,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                     >
                       <option value="a4">A4</option>
                       <option value="a3">A3</option>
+                      <option value="a2">A2</option>
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
                   </div>
@@ -643,7 +644,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                   {frameReadability.rating !== "good" && (
                     <p className="mt-2 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
                       Réduisez le contenu de cette page (glissez des cartes vers une autre page, ou créez une page
-                      par branche), ou passez sa feuille en A3.
+                      par branche), ou passez sa feuille en A3 ou A2.
                     </p>
                   )}
                 </div>

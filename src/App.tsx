@@ -21,8 +21,9 @@ function App() {
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [resumeNotice, setResumeNotice] = useState<string | null>(null);
   const [draftHydrated, setDraftHydrated] = useState(false);
-  const [inspectorOpen, setInspectorOpen] = useState(true);
-  const [pageRailOpen, setPageRailOpen] = useState(true);
+  const [inspectorOpen, setInspectorOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 1280);
+  const [pageRailOpen, setPageRailOpen] = useState(() => typeof window === "undefined" || window.innerWidth >= 1180);
+  const [compactWorkspace, setCompactWorkspace] = useState(() => typeof window !== "undefined" && window.innerWidth < 1280);
   const [showGroups, setShowGroups] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
   const [directoryOpen, setDirectoryOpen] = useState(false);
@@ -52,6 +53,14 @@ function App() {
   const expandAll = useOrgChartStore((s) => s.expandAll);
 
   const hiddenCount = collapsedNodeIds.length > 0 ? computeHiddenNodeIds(collapsedNodeIds, edges).size : 0;
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 1279px)");
+    const update = () => setCompactWorkspace(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
 
   // Appliquer la classe dark sur le document root
   useEffect(() => {
@@ -281,7 +290,7 @@ function App() {
           {/* Left Sidebar (PageRail) */}
           {!presentationMode && !directoryOpen && (
             <aside
-              className={`shrink-0 border-r transition-all duration-300 ease-in-out h-full overflow-hidden ${
+              className={`${compactWorkspace ? "absolute inset-y-0 left-0 z-30 shadow-2xl" : "shrink-0"} border-r transition-all duration-300 ease-in-out h-full overflow-hidden ${
                 pageRailOpen ? "w-64 opacity-100" : "w-0 opacity-0 border-r-transparent"
               } ${
                 themeMode === "dark"
@@ -411,7 +420,7 @@ function App() {
           {/* Inspector Panel */}
           {!presentationMode && (
             <aside
-              className={`shrink-0 border-l transition-all duration-300 ease-in-out h-full overflow-hidden ${
+              className={`${compactWorkspace ? "absolute inset-y-0 right-0 z-30 shadow-2xl" : "shrink-0"} border-l transition-all duration-300 ease-in-out h-full overflow-hidden ${
                 inspectorOpen ? "w-80 opacity-100" : "w-0 opacity-0 border-l-transparent"
               } ${
                 themeMode === "dark"
@@ -419,6 +428,15 @@ function App() {
                   : "border-border-light bg-panel-bg-light"
               }`}
             >
+              {compactWorkspace && inspectorOpen && (
+                <button
+                  onClick={() => setInspectorOpen(false)}
+                  aria-label="Fermer le panneau de propriétés"
+                  className="absolute right-2 top-2 z-40 flex h-8 w-8 items-center justify-center rounded-lg text-lg text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+                >
+                  ×
+                </button>
+              )}
               <div className="w-80 h-full">
                 <Inspector themeMode={themeMode} />
               </div>
