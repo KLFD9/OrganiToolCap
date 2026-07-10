@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildChildrenMap, computeDescendants, computeDescendantCounts, computeHiddenNodeIds } from "./hierarchy";
+import { buildChildrenMap, computeDescendants, computeDescendantCounts, computeHiddenNodeIds, revealNodeInCollapsedBranches } from "./hierarchy";
 import type { OrgEdge } from "../types/orgchart";
 
 // Arbre : a → (b, c) ; b → (d, e) ; d → f
@@ -46,6 +46,16 @@ describe("computeHiddenNodeIds", () => {
 
   it("le nœud replié reste visible (seule sa descendance est masquée)", () => {
     expect(computeHiddenNodeIds(["a"], edges).has("a")).toBe(false);
+  });
+});
+
+describe("revealNodeInCollapsedBranches", () => {
+  it("ouvre tous les ancêtres repliés qui masquent le membre ciblé", () => {
+    expect(revealNodeInCollapsedBranches(["a", "b", "c"], edges, "f")).toEqual(["c"]);
+  });
+
+  it("conserve les branches repliées sans rapport avec le membre", () => {
+    expect(revealNodeInCollapsedBranches(["b", "c"], edges, "c")).toEqual(["b", "c"]);
   });
 });
 

@@ -15,7 +15,7 @@ import {
 import { createEmptyChart } from "../templates/blank";
 import { layoutWithElk } from "../lib/elkLayout";
 import { CARD_HEIGHT, CARD_WIDTH, layoutCompact } from "../lib/compactLayout";
-import { computeDescendants, computeHiddenNodeIds, wouldCreateHierarchyCycle } from "../lib/hierarchy";
+import { computeDescendants, computeHiddenNodeIds, revealNodeInCollapsedBranches, wouldCreateHierarchyCycle } from "../lib/hierarchy";
 import {
   availableAreaForSetup,
   chromeOffsetsForSetup,
@@ -447,6 +447,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
         ...history,
         nodes: [...s.nodes, newNode],
         edges: newEdges,
+        collapsedNodeIds: revealNodeInCollapsedBranches(s.collapsedNodeIds, newEdges, id),
         selectedNodeIds: [id],
         isDirty: true,
         meta: { ...s.meta, updatedAt: new Date().toISOString() },
@@ -468,6 +469,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
         ...pushHistory(s),
         nodes: [...s.nodes, newNode],
         edges: newEdges,
+        collapsedNodeIds: revealNodeInCollapsedBranches(s.collapsedNodeIds, newEdges, id),
         selectedNodeIds: [id],
         isDirty: true,
         meta: { ...s.meta, updatedAt: new Date().toISOString() },
@@ -498,6 +500,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
         ...pushHistory(s),
         nodes: [...s.nodes, clone],
         edges: newEdges,
+        collapsedNodeIds: revealNodeInCollapsedBranches(s.collapsedNodeIds, newEdges, newId),
         selectedNodeIds: [newId],
         isDirty: true,
         meta: { ...s.meta, updatedAt: new Date().toISOString() },
@@ -541,9 +544,12 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       if (wouldCreateHierarchyCycle(s.edges, source, target)) return s;
       // Un seul responsable hiérarchique par personne — les liens pointillés restent
       const filtered = s.edges.filter((e) => e.target !== target || !isHierarchyEdge(e));
+      const newEdge = { id: generateId("edge"), source, target };
+      const edges = [...filtered, newEdge];
       return {
         ...pushHistory(s),
-        edges: [...filtered, { id: generateId("edge"), source, target }],
+        edges,
+        collapsedNodeIds: revealNodeInCollapsedBranches(s.collapsedNodeIds, edges, target),
         isDirty: true,
       };
     }),
@@ -572,12 +578,14 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
           (e) => e.id !== id && !(isHierarchyEdge(e) && e.target === edge.target)
         );
         if (wouldCreateHierarchyCycle(others, edge.source, edge.target)) return s;
+        const edges = [
+          ...others,
+          { id: edge.id, source: edge.source, target: edge.target },
+        ];
         return {
           ...pushHistory(s),
-          edges: [
-            ...others,
-            { id: edge.id, source: edge.source, target: edge.target },
-          ],
+          edges,
+          collapsedNodeIds: revealNodeInCollapsedBranches(s.collapsedNodeIds, edges, edge.target),
           isDirty: true,
         };
       }
@@ -608,11 +616,13 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       if (managerId && wouldCreateHierarchyCycle(s.edges, managerId, childId)) return s;
 
       const withoutParent = s.edges.filter((e) => !(isHierarchyEdge(e) && e.target === childId));
+      const edges = managerId
+        ? [...withoutParent, { id: generateId("edge"), source: managerId, target: childId }]
+        : withoutParent;
       return {
         ...pushHistory(s),
-        edges: managerId
-          ? [...withoutParent, { id: generateId("edge"), source: managerId, target: childId }]
-          : withoutParent,
+        edges,
+        collapsedNodeIds: revealNodeInCollapsedBranches(s.collapsedNodeIds, edges, childId),
         isDirty: true,
         meta: { ...s.meta, updatedAt: new Date().toISOString() },
       };
@@ -715,7 +725,14 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       };
     }),
 
-  selectNode: (id) => set({ selectedNodeIds: id ? [id] : [], selectedFrameId: null }),
+  selectNode: (id) =>
+    set((s) => ({
+      selectedNodeIds: id ? [id] : [],
+      selectedFrameId: null,
+      collapsedNodeIds: id
+        ? revealNodeInCollapsedBranches(s.collapsedNodeIds, s.edges, id)
+        : s.collapsedNodeIds,
+    })),
   // React Flow ré-émet onSelectionChange([]) à chaque recalcul de la liste de
   // nœuds (ex. maj des pages), pas seulement au clic utilisateur — ne pas
   // effacer une sélection de page sur une émission vide non déclenchée par

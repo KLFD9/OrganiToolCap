@@ -77,6 +77,21 @@ export function computeHiddenNodeIds(collapsedIds: Iterable<string>, edges: OrgE
 }
 
 /**
+ * Ouvre uniquement les branches nécessaires pour rendre un membre visible.
+ * Utile pour les accès programmatiques (recherche, annuaire, ajout) : une
+ * sélection ne doit jamais pointer vers une carte encore masquée.
+ */
+export function revealNodeInCollapsedBranches(
+  collapsedIds: Iterable<string>,
+  edges: OrgEdge[],
+  nodeId: string
+): string[] {
+  return [...collapsedIds].filter(
+    (collapsedId) => !computeHiddenNodeIds([collapsedId], edges).has(nodeId)
+  );
+}
+
+/**
  * Nombre de descendants (équipe totale) de chaque nœud, en un seul parcours.
  * Les nœuds sans équipe ne figurent pas dans la map (compte implicite : 0).
  */

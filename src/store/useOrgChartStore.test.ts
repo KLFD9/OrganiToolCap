@@ -299,6 +299,35 @@ describe("useOrgChartStore", () => {
 
     expect(useOrgChartStore.getState().selectedNodeIds).toBe(selected);
   });
+
+  it("selectNode révèle un membre masqué par une branche repliée", () => {
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+    useOrgChartStore.getState().addNode(rootId);
+    const childId = useOrgChartStore.getState().nodes[1].id;
+    useOrgChartStore.getState().addNode(childId);
+    const grandchildId = useOrgChartStore.getState().nodes[2].id;
+
+    useOrgChartStore.getState().toggleCollapsed(rootId);
+    expect(useOrgChartStore.getState().collapsedNodeIds).toContain(rootId);
+
+    useOrgChartStore.getState().selectNode(grandchildId);
+
+    expect(useOrgChartStore.getState().selectedNodeIds).toEqual([grandchildId]);
+    expect(useOrgChartStore.getState().collapsedNodeIds).not.toContain(rootId);
+  });
+
+  it("ajouter sous un responsable replié révèle immédiatement la nouvelle carte", () => {
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+    useOrgChartStore.getState().addNode(rootId);
+    useOrgChartStore.getState().toggleCollapsed(rootId);
+
+    useOrgChartStore.getState().addNode(rootId);
+
+    expect(useOrgChartStore.getState().collapsedNodeIds).not.toContain(rootId);
+    expect(useOrgChartStore.getState().selectedNodeIds).toEqual([
+      useOrgChartStore.getState().nodes.at(-1)!.id,
+    ]);
+  });
 });
 
 describe("useOrgChartStore — frames multi-pages", () => {
