@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeLevels, computeNodeHeight, computeNodeStyle } from "./nodeStyle";
+import { computeInheritedAccentColors, computeLevels, computeNodeHeight, computeNodeStyle } from "./nodeStyle";
 import type { OrgEdge, OrgNode, OrgTheme } from "../types/orgchart";
 
 function makeNode(id: string): OrgNode {
@@ -91,5 +91,42 @@ describe("computeNodeHeight", () => {
     expect(
       computeNodeHeight(node, { ...display, showDepartments: false, showEmails: false, showPhones: false })
     ).toBe(110);
+  });
+});
+
+describe("computeInheritedAccentColors", () => {
+  it("propage la couleur du responsable dans sa branche", () => {
+    const nodes = [
+      { ...makeNode("root"), styleOverride: { accentColor: "#729A37" } },
+      makeNode("child"),
+      makeNode("grandchild"),
+    ];
+    const edges: OrgEdge[] = [
+      { id: "e1", source: "root", target: "child" },
+      { id: "e2", source: "child", target: "grandchild" },
+    ];
+
+    const colors = computeInheritedAccentColors(nodes, edges);
+
+    expect(colors.get("root")).toBe("#729A37");
+    expect(colors.get("child")).toBe("#729A37");
+    expect(colors.get("grandchild")).toBe("#729A37");
+  });
+
+  it("priorise la couleur de l'enfant et ignore les liens fonctionnels", () => {
+    const nodes = [
+      { ...makeNode("root"), styleOverride: { accentColor: "#729A37" } },
+      { ...makeNode("child"), styleOverride: { accentColor: "#3E92D0" } },
+      makeNode("functional"),
+    ];
+    const edges: OrgEdge[] = [
+      { id: "e1", source: "root", target: "child" },
+      { id: "e2", source: "root", target: "functional", kind: "dotted" },
+    ];
+
+    const colors = computeInheritedAccentColors(nodes, edges);
+
+    expect(colors.get("child")).toBe("#3E92D0");
+    expect(colors.has("functional")).toBe(false);
   });
 });

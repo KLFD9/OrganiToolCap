@@ -18,7 +18,7 @@ import {
 } from "@xyflow/react";
 import { Eye, EyeOff } from "lucide-react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
-import { computeLevels, computeNodeHeight, computeNodeWidth } from "../lib/nodeStyle";
+import { computeInheritedAccentColors, computeLevels, computeNodeHeight, computeNodeWidth } from "../lib/nodeStyle";
 import { computeDepartmentGroups, buildGroupTheme } from "../lib/groups";
 import { computeGeometricStackIds, CARD_WIDTH, CARD_HEIGHT } from "../lib/compactLayout";
 import { buildChildrenMap, computeDescendantCounts, computeHiddenNodeIds, wouldCreateHierarchyCycle } from "../lib/hierarchy";
@@ -203,6 +203,10 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   }, [showMiniMap]);
 
   const levels = useMemo(() => computeLevels(storeNodes, storeEdges), [storeNodes, storeEdges]);
+  const inheritedAccentColors = useMemo(
+    () => computeInheritedAccentColors(storeNodes, storeEdges),
+    [storeNodes, storeEdges]
+  );
 
   // Repli de branches : nœuds masqués et effectifs par responsable
   const hiddenIds = useMemo(
@@ -559,6 +563,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
           // Estompage lié au cadre de page : la vue « propre » (cadre masqué,
           // utilisée aussi par les captures d'export) n'estompe rien.
           outOfPage: pageGuideEnabled && hasFrames && membership.orphanIds.has(n.id),
+          inheritedAccentColor: inheritedAccentColors.get(n.id),
         },
       })),
     [
@@ -574,6 +579,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
       hasFrames,
       membership,
       pageGuideEnabled,
+      inheritedAccentColors,
     ]
   );
 

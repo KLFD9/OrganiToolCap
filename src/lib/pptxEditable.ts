@@ -1,5 +1,5 @@
 import { resolveDisplay, type OrgEdge, type OrgNode, type OrgTheme } from "../types/orgchart";
-import { computeLevels, computeNodeHeight, computeNodeStyle, getContrastColor, computeNodeWidth, formatPhoneNumber } from "./nodeStyle";
+import { computeInheritedAccentColors, computeLevels, computeNodeHeight, computeNodeStyle, getContrastColor, computeNodeWidth, formatPhoneNumber } from "./nodeStyle";
 import { computeGeometricStackIds } from "./compactLayout";
 import {
   computeElbowRoute,
@@ -107,13 +107,18 @@ export function buildEditableSpec(
   const posY = (px: number) => offsetY + (px - minY) * scale;
 
   const levels = computeLevels(nodes, edges);
+  const inheritedAccentColors = computeInheritedAccentColors(nodes, edges);
   const stackedIds = computeGeometricStackIds(nodes, edges);
   const byId = new Map(nodes.map((n) => [n.id, n]));
 
   const namePt = clamp(12 * scale * PT_PER_IN * (96 / 72), MIN_FONT_PT, MAX_NAME_PT);
 
   const cards: CardSpec[] = nodes.map((n) => {
-    const style = computeNodeStyle(theme, levels.get(n.id) ?? 0, n.styleOverride);
+    const inheritedAccent = inheritedAccentColors.get(n.id);
+    const style = computeNodeStyle(theme, levels.get(n.id) ?? 0, {
+      ...n.styleOverride,
+      ...(inheritedAccent ? { accentColor: inheritedAccent } : {}),
+    });
     const accent = pptxColor(style.accentColor, "472F74");
     // Fond de carte selon le style : plein pour flat/gradient (accent) et
     // neon (sombre), blanc pour les styles clairs (glass, card, outline,

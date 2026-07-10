@@ -23,6 +23,8 @@ export interface NodeCardData extends Record<string, unknown> {
    * « hors page » — rien n'est oublié à l'export par accident.
    */
   outOfPage?: boolean;
+  /** Couleur propre héritée du responsable le plus proche. */
+  inheritedAccentColor?: string;
 }
 
 const ATTACH_SIDES = ["top", "bottom", "left", "right"] as const;
@@ -63,9 +65,13 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
     hiddenCount = 0,
     collapsed = false,
     outOfPage = false,
+    inheritedAccentColor,
   } = data;
   const toggleCollapsed = useOrgChartStore((s) => s.toggleCollapsed);
-  const style = computeNodeStyle(theme, level, orgNode.styleOverride);
+  const style = computeNodeStyle(theme, level, {
+    ...orgNode.styleOverride,
+    ...(inheritedAccentColor ? { accentColor: inheritedAccentColor } : {}),
+  });
   const display = resolveDisplay(theme);
   const { name, role, department, email, phone, avatarUrl } = orgNode.data;
 

@@ -936,8 +936,11 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
 
         <div className="flex flex-col gap-1.5">
           <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-            Couleur d'accent propre à ce nœud
+            Couleur de cette branche
           </span>
+          <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+            Les collaborateurs héritent de cette couleur, sauf s’ils possèdent leur propre couleur.
+          </p>
           <div className="flex items-center gap-2">
             <div className="flex-1">
               <ColorInput

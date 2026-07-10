@@ -47,6 +47,35 @@ export function computeLevels(nodes: OrgNode[], edges: OrgEdge[]): Map<string, n
   return levels;
 }
 
+/**
+ * Couleur explicite effective par branche : la surcharge du responsable se
+ * transmet à ses descendants hiérarchiques, sauf surcharge plus proche.
+ * Les liens fonctionnels sont volontairement ignorés.
+ */
+export function computeInheritedAccentColors(nodes: OrgNode[], edges: OrgEdge[]): Map<string, string> {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const parentOf = new Map(
+    edges.filter(isHierarchyEdge).map((edge) => [edge.target, edge.source])
+  );
+  const colors = new Map<string, string>();
+
+  for (const node of nodes) {
+    let current: OrgNode | undefined = node;
+    const visited = new Set<string>();
+    while (current && !visited.has(current.id)) {
+      visited.add(current.id);
+      const accent = current.styleOverride?.accentColor;
+      if (accent) {
+        colors.set(node.id, accent);
+        break;
+      }
+      const parentId = parentOf.get(current.id);
+      current = parentId ? byId.get(parentId) : undefined;
+    }
+  }
+  return colors;
+}
+
 const VARIANT_TEXT: Record<OrgTheme["nodeStyle"], string> = {
   glass: "#1a1a1e",
   flat: "#ffffff",
