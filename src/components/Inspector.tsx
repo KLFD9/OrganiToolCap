@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import { isHierarchyEdge, NodeStyleVariantSchema, resolveDisplay, type OrgDisplayOptions } from "../types/orgchart";
 import { computeOrgStats, computeTeamSize } from "../lib/stats";
@@ -190,6 +190,7 @@ interface InspectorProps {
 }
 
 export function Inspector({ themeMode = "light" }: InspectorProps) {
+  const [inspectorTab, setInspectorTab] = useState<"content" | "style" | "document">("content");
   const nodes = useOrgChartStore((s) => s.nodes);
   const edges = useOrgChartStore((s) => s.edges);
   const theme = useOrgChartStore((s) => s.theme);
@@ -298,7 +299,7 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
     }`;
 
     return (
-      <div className="flex h-full flex-col gap-6 overflow-y-auto p-5 custom-scrollbar">
+      <div className="flex h-full flex-col gap-4 overflow-y-auto p-4 custom-scrollbar">
         <div>
           <div className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary-500" />
@@ -504,11 +505,36 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
             </h2>
           </div>
           <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1.5 leading-normal">
-            Configurez la structure visuelle, les logos et l'identité graphique de l'organigramme.
+            Réglez l’apparence et les informations du document.
           </p>
         </div>
 
+        <div className={`grid grid-cols-3 rounded-xl p-1 ${themeMode === "dark" ? "bg-zinc-900" : "bg-zinc-100"}`} role="tablist" aria-label="Catégories de propriétés">
+          {([
+            { id: "content", label: "Cartes" },
+            { id: "style", label: "Style" },
+            { id: "document", label: "Document" },
+          ] as const).map((tab) => (
+            <button
+              key={tab.id}
+              role="tab"
+              aria-selected={inspectorTab === tab.id}
+              onClick={() => setInspectorTab(tab.id)}
+              className={`rounded-lg px-2 py-2 text-[11px] font-semibold transition-colors ${
+                inspectorTab === tab.id
+                  ? themeMode === "dark"
+                    ? "bg-zinc-800 text-white shadow-sm"
+                    : "bg-white text-zinc-900 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
         {/* Groupe 1 : Identité & En-tête */}
+        {inspectorTab === "document" && (
         <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>
           <div className={headerBorder}>
             <Briefcase className="h-4 w-4 text-primary-500" />
@@ -570,8 +596,10 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
             )}
           </div>
         </div>
+        )}
 
         {/* Groupe 2 : Design du Graphique */}
+        {inspectorTab === "style" && (
         <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>
           <div className={headerBorder}>
             <Palette className="h-4 w-4 text-primary-500" />
@@ -681,8 +709,11 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
             </div>
           </div>
         </div>
+        )}
 
         {/* Groupe 3 : Options d'affichage */}
+        {inspectorTab === "content" && (
+        <>
         <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>
           <div className={headerBorder}>
             <Layout className="h-4 w-4 text-primary-500" />
@@ -764,6 +795,8 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
             </div>
           )}
         </div>
+        </>
+        )}
 
         {/* Ajouter un nœud racine */}
         <div className="mt-auto pt-4 border-t border-zinc-100 dark:border-zinc-900/50">
