@@ -4,11 +4,9 @@ import { useOrgChartStore } from "../store/useOrgChartStore";
 import { isHierarchyEdge } from "../types/orgchart";
 import { computeLevels, computeNodeStyle } from "../lib/nodeStyle";
 import { buildChildrenMap, computeDescendantCounts, computeDescendants } from "../lib/hierarchy";
-import { downloadPeopleCsv } from "../lib/csvExport";
 import {
   Search,
   Plus,
-  FileSpreadsheet,
   LayoutGrid,
   UserPlus,
   Eye,
@@ -22,7 +20,7 @@ import {
  * C'est un vrai poste de travail : double-clic sur une cellule pour la
  * modifier (y compris le responsable, via un sélecteur avec garde anti-cycle),
  * ajout de membres et de subordonnés, suppression — le tout synchronisé avec
- * le canvas et l'inspecteur. L'export CSV fait le round-trip avec l'import.
+ * le canvas et l'inspecteur.
  */
 
 type SortKey = "name" | "role" | "department" | "email" | "manager" | "team";
@@ -141,7 +139,6 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
   const nodes = useOrgChartStore((s) => s.nodes);
   const edges = useOrgChartStore((s) => s.edges);
   const theme = useOrgChartStore((s) => s.theme);
-  const title = useOrgChartStore((s) => s.meta.title);
   const selectedNodeIds = useOrgChartStore((s) => s.selectedNodeIds);
   const selectNode = useOrgChartStore((s) => s.selectNode);
   const updateNodeData = useOrgChartStore((s) => s.updateNodeData);
@@ -230,7 +227,7 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
         dark ? "bg-editor-bg-dark text-text-dark" : "bg-editor-bg-light text-text-light"
       }`}
     >
-      {/* En-tête : titre, filtre, ajout, export CSV, retour */}
+      {/* En-tête : titre, filtre, ajout et retour */}
       <div className="flex flex-wrap items-center gap-3 px-6 pt-5 pb-4">
         <div>
           <h2 className="text-sm font-bold tracking-tight">Annuaire</h2>
@@ -265,18 +262,6 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
         >
           <Plus className="h-3.5 w-3.5" />
           <span>Ajouter un membre</span>
-        </button>
-
-        <button
-          onClick={() => downloadPeopleCsv(nodes, edges, title)}
-          className={`flex h-8 items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-all cursor-pointer ${
-            dark
-              ? "border-border-dark bg-zinc-900/40 text-zinc-300 hover:bg-zinc-800"
-              : "border-border-light bg-white text-zinc-600 hover:bg-zinc-55"
-          }`}
-        >
-          <FileSpreadsheet className="h-3.5 w-3.5" />
-          <span>Exporter en CSV</span>
         </button>
 
         <button

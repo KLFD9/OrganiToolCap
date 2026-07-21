@@ -7,7 +7,7 @@ import { TEMPLATES_BY_ID, glassCapTheme } from "./themes";
 export function createBlankChart(templateId: string): OrgChartFile {
   const now = new Date().toISOString();
   const theme = TEMPLATES_BY_ID[templateId]?.theme ?? glassCapTheme;
-  const page = DEFAULT_PAGE;
+  const page = { ...DEFAULT_PAGE, placement: "exact" as const };
   const pageSize = frameSizePx(page);
 
   return {
@@ -56,7 +56,7 @@ const LEGACY_DEMO_SUBTITLE = "Organigramme de démonstration, à remplacer par l
  * Aucun changement de version : `frames` et le chrome restent additifs.
  */
 export function prepareDraftForResume(file: OrgChartFile): OrgChartFile {
-  const page = file.layout.page ?? DEFAULT_PAGE;
+  const page = file.layout.page ?? { ...DEFAULT_PAGE, placement: "fit" as const };
   const legacyDemoChrome =
     file.meta.title === LEGACY_DEMO_TITLE && file.meta.subtitle === LEGACY_DEMO_SUBTITLE;
 

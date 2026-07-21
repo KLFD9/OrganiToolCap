@@ -1,4 +1,5 @@
 import type { OrgEdge, OrgNode } from "../types/orgchart";
+import { wouldCreateHierarchyCycle } from "./hierarchy";
 
 /**
  * Import d'une liste de personnes depuis un CSV (export Excel / Google Sheets).
@@ -188,6 +189,12 @@ export function importPeopleCsv(text: string): CsvImportResult {
     }
     if (sourceId === targetId) {
       warnings.push(`Ligne ${lineIndex + 2} : une personne ne peut pas être son propre responsable.`);
+      return;
+    }
+    if (wouldCreateHierarchyCycle(edges, sourceId, targetId)) {
+      warnings.push(
+        `Ligne ${lineIndex + 2} : le rattachement à « ${manager} » créerait une boucle hiérarchique et a été ignoré.`
+      );
       return;
     }
     edges.push({ id: `csv-edge-${lineIndex + 1}`, source: sourceId, target: targetId });

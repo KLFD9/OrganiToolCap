@@ -1,34 +1,38 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { CARD_HEIGHT, CARD_WIDTH } from "../lib/compactLayout";
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import {
   computeChromeOffsets,
+  buildFlowPdfImage,
+  buildFramesPdfImage,
+  captureFlow,
   copyFlowToClipboard,
-  exportFlowToPdf,
   exportFlowToPng,
   exportFlowToSvg,
-  exportFramesToPdfImage,
+  safeFileName,
   type FrameImagePage,
   type PdfFormat,
   type PdfOrientation,
 } from "../lib/pdfExport";
-import { exportFlowToPptx } from "../lib/pptxExport";
-import { availableAreaForSetup, estimateReadability, pageAvailableArea } from "../lib/readability";
+import { availableAreaForSetup, COMFORT_MM_PER_PX, estimateReadability, pageAvailableArea, READABLE_PT_GOOD } from "../lib/readability";
 import { computeHiddenNodeIds } from "../lib/hierarchy";
-import { buildFramePages, type FramePageContent } from "../lib/frames";
-import { optimizeLayoutForPage, rankCandidates } from "../lib/exportLayout";
+import { buildFramePages, frameNodeId, frameRectPx, type FramePageContent } from "../lib/frames";
+import { analyzeExportPreflight, type ExportPreflightIssue } from "../lib/exportPreflight";
+import { PageFormatSelect } from "./PageFormatSelect";
 import {
   Info,
   ChevronDown,
-  Sparkles,
   Loader2,
   FileText,
-  Presentation,
+  Globe2,
   Image,
   FileCode,
   Copy,
   Check,
+  Archive,
+  Download,
+  Eye,
   X
 } from "lucide-react";
 
@@ -46,12 +50,10 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   const selectNodes = useOrgChartStore((s) => s.selectNodes);
   const pageGuideVisible = useOrgChartStore((s) => s.pageGuide);
   const togglePageGuide = useOrgChartStore((s) => s.togglePageGuide);
-  const layoutState = useOrgChartStore((s) => s.layout);
-  const applyLayoutCandidate = useOrgChartStore((s) => s.applyLayoutCandidate);
   const storeNodes = useOrgChartStore((s) => s.nodes);
   const storeEdges = useOrgChartStore((s) => s.edges);
   const collapsedNodeIds = useOrgChartStore((s) => s.collapsedNodeIds);
-  const toFile = useOrgChartStore((s) => s.toFile);
+  const expandAll = useOrgChartStore((s) => s.expandAll);
   const pageSetup = useOrgChartStore((s) => s.layout.page);
   const setPageSetup = useOrgChartStore((s) => s.setPageSetup);
   const frames = useOrgChartStore((s) => s.frames);
@@ -81,12 +83,12 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   const hasFrames = frames.length > 0;
   // Un frame supprimé pendant que le dialogue est fermé : repli sur « toutes »
   if (scope !== "all" && !frames.some((f) => f.id === scope)) setScope("all");
-  const [pptxEditable, setPptxEditable] = useState(true);
   const [pdfVector, setPdfVector] = useState(true);
   const [transparentBg, setTransparentBg] = useState(false);
+  const [webResolution, setWebResolution] = useState<"standard" | "high">("high");
   
   // Onglet d'export sélectionné
-  const [activeTab, setActiveTab] = useState<"pdf" | "pptx" | "image">("pdf");
+  const [activeTab, setActiveTab] = useState<"pdf" | "web">("pdf");
 
   // L'export est WYSIWYG : les branches repliées n'y figurent pas.
   const hiddenIds = useMemo(
@@ -106,10 +108,22 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   );
   const [busy, setBusy] = useState<string | null>(null);
   const [exportProgress, setExportProgress] = useState<{ current: number; total: number } | null>(null);
-  const [lastPdfDuration, setLastPdfDuration] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [optimizeNotice, setOptimizeNotice] = useState<string | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<{ url: string; filename: string } | null>(null);
+  const [webPreviewUrl, setWebPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (pdfPreview) URL.revokeObjectURL(pdfPreview.url);
+    };
+  }, [pdfPreview]);
+
+  const handleClose = () => {
+    setPdfPreview(null);
+    setWebPreviewUrl(null);
+    onClose();
+  };
 
   // Pages exportables (mode multi-pages) : contenu + chrome par frame, dans
   // l'ordre du document, restreintes au périmètre choisi.
@@ -130,7 +144,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   // Jauge multi-pages : la page la moins lisible du périmètre
   const frameReadability = useMemo(() => {
     if (!open || framePages.length === 0) return null;
-    let worst: { name: string; fontPt: number; rating: "good" | "warn" | "bad"; cardWidthMm: number } | null = null;
+    let worst: { id: string; name: string; fontPt: number; rating: "good" | "warn" | "bad"; cardWidthMm: number } | null = null;
     for (const p of framePages) {
       if (p.nodes.length === 0) continue;
       const xs = p.nodes.map((n) => n.position.x);
@@ -141,13 +155,19 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
         logoUrl: includeLogos ? theme.logoUrl : undefined,
         secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
       });
-      const est = estimateReadability(
-        (Math.max(...xs) - Math.min(...xs) + CARD_WIDTH) * 1.12,
-        (Math.max(...ys) - Math.min(...ys) + CARD_HEIGHT) * 1.12,
-        avail.width,
-        avail.height
-      );
-      if (!worst || est.fontPt < worst.fontPt) worst = { name: p.frame.name, ...est };
+      const est = p.frame.page.placement === "exact"
+        ? {
+            fontPt: READABLE_PT_GOOD,
+            rating: "good" as const,
+            cardWidthMm: Math.round(CARD_WIDTH * COMFORT_MM_PER_PX),
+          }
+        : estimateReadability(
+            (Math.max(...xs) - Math.min(...xs) + CARD_WIDTH) * 1.12,
+            (Math.max(...ys) - Math.min(...ys) + CARD_HEIGHT) * 1.12,
+            avail.width,
+            avail.height
+          );
+      if (!worst || est.fontPt < worst.fontPt) worst = { id: p.frame.id, name: p.frame.name, ...est };
     }
     return worst;
   }, [open, framePages, includeFooter, includeLogos, meta.footer, theme.logoUrl, theme.secondaryLogoUrl]);
@@ -195,72 +215,67 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
     theme.secondaryLogoUrl,
   ]);
 
+  const preflight = useMemo(() => {
+    const scopedFrameIds = hasFrames && scope !== "all" ? new Set([scope]) : undefined;
+    const readabilityCheck = frameReadability
+      ? {
+          rating: frameReadability.rating,
+          fontPt: frameReadability.fontPt,
+          pageId: frameReadability.id,
+          pageName: frameReadability.name,
+        }
+      : readability
+      ? { rating: readability.rating, fontPt: readability.fontPt }
+      : null;
+    return analyzeExportPreflight({
+      nodes: visibleNodes,
+      edges: visibleEdges,
+      frames,
+      theme,
+      scopeFrameIds: scopedFrameIds,
+      includeTitle,
+      title: meta.title,
+      hiddenNodeCount: hiddenIds.size,
+      readability: readabilityCheck,
+      destination: activeTab,
+    });
+  }, [
+    hasFrames,
+    scope,
+    frameReadability,
+    readability,
+    visibleNodes,
+    visibleEdges,
+    frames,
+    theme,
+    includeTitle,
+    meta.title,
+    hiddenIds.size,
+    activeTab,
+  ]);
+
   if (!open) return null;
 
-  /** Zone utile de la page (mm) pour l'orientation donnée, en-tête/pied déduits. */
-  const availFor = (o: PdfOrientation) => {
-    const chrome = computeChromeOffsets(
-      {
-        format,
-        orientation: o,
-        margin,
-        title: includeTitle ? meta.title : undefined,
-        footer: includeFooter ? meta.footer : undefined,
-        logoUrl: includeLogos ? theme.logoUrl : undefined,
-        secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
-      },
-      margin
+  const focusPreflightIssue = (issue: ExportPreflightIssue) => {
+    const allFlowNodes = getNodes();
+    const issueNodeIds = new Set(issue.nodeIds ?? []);
+    const pageId = issue.pageId;
+    const targets = issueNodeIds.size > 0
+      ? allFlowNodes.filter((node) => issueNodeIds.has(node.id))
+      : pageId
+      ? allFlowNodes.filter((node) => node.id === frameNodeId(pageId))
+      : [];
+    if (targets.length === 0) return;
+
+    if (issueNodeIds.size > 0) selectNodes([...issueNodeIds]);
+    handleClose();
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    requestAnimationFrame(() =>
+      fitView({ nodes: targets, duration: reduceMotion ? 0 : 300, padding: pageId ? 0.12 : 0.3 })
     );
-    return pageAvailableArea(format, o, margin, chrome.topOffset, chrome.bottomOffset);
   };
 
-  /**
-   * Essaie plusieurs dispositions (actuelle, arbre vertical/horizontal,
-   * compacte), applique celle qui donne le plus grand texte imprimé sur ce
-   * format, et suggère l'autre orientation si elle ferait nettement mieux.
-   */
-  const handleOptimize = async () => {
-    setError(null);
-    setOptimizeNotice(null);
-    setBusy("optimize");
-    try {
-      const ranked = await optimizeLayoutForPage(visibleNodes, visibleEdges, layoutState, availFor(orientation));
-      const best = ranked[0];
-      const current = ranked.find((c) => c.id === "current") ?? best;
-
-      const other: PdfOrientation = orientation === "landscape" ? "portrait" : "landscape";
-      const otherArea = availFor(other);
-      const bestOther = rankCandidates(ranked, otherArea.width, otherArea.height)[0];
-      const orientationHint =
-        bestOther.estimate.fontPt > best.estimate.fontPt + 1
-          ? ` Astuce : en ${other === "portrait" ? "portrait" : "paysage"}, « ${bestOther.label} » atteindrait ${bestOther.estimate.fontPt} pt.`
-          : "";
-      const escalationHint =
-        best.estimate.rating === "good"
-          ? ""
-          : " Pour aller plus loin : format A3 ou A2, marges réduites ou multi-pages.";
-
-      if (best.id === "current") {
-        setOptimizeNotice(
-          `La disposition actuelle est déjà la meilleure pour ce format (texte ≈ ${best.estimate.fontPt} pt).${escalationHint}${orientationHint}`
-        );
-      } else {
-        applyLayoutCandidate(best.nodes, best.layout);
-        const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-        requestAnimationFrame(() => fitView({ duration: reduceMotion ? 0 : 300, padding: 0.2 }));
-        setOptimizeNotice(
-          `« ${best.label} » appliquée : texte ${current.estimate.fontPt} pt → ${best.estimate.fontPt} pt. Ctrl+Z pour revenir en arrière.${escalationHint}${orientationHint}`
-        );
-      }
-    } catch (err) {
-      console.error(err);
-      setError("L'optimisation de la disposition a échoué.");
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const run = async (kind: "pdf" | "pptx" | "png" | "svg" | "clipboard" | "pack") => {
+  const run = async (kind: "pdf" | "preview" | "png" | "svg" | "clipboard" | "web-preview" | "web-zip") => {
     const el = getViewportElement();
     if (!el) {
       setError("Le canevas n'est pas prêt.");
@@ -274,12 +289,22 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
     let nodes = getNodes().filter((n) => n.type !== "pageGuide" && n.type !== "chromeElement");
     // Périmètre « cette page » : seuls les membres de la page sont capturés
     // (exports image ; les moteurs par page utilisent framePages directement).
-    if (hasFrames && scope !== "all") {
+    if (hasFrames && scope !== "all" && kind !== "web-zip") {
       const inScope = new Set(framePages.flatMap((p) => p.nodes.map((n) => n.id)));
       nodes = nodes.filter((n) => inScope.has(n.id));
     }
-    if (hasFrames && framePages.reduce((total, p) => total + p.nodes.length, 0) === 0) {
-      setError(scope === "all" ? "Toutes les pages sont vides." : "Cette page est vide.");
+    const allWebFramePages = kind === "web-zip"
+      ? buildFramePages(frames, visibleNodes, visibleEdges, {
+          title: meta.title,
+          subtitle: meta.subtitle,
+          chromeLayout: meta.chromeLayout,
+        })
+      : null;
+    const frameNodeCount = allWebFramePages
+      ? allWebFramePages.reduce((total, page) => total + page.nodes.length, 0)
+      : framePages.reduce((total, page) => total + page.nodes.length, 0);
+    if (hasFrames && frameNodeCount === 0) {
+      setError(kind === "web-zip" || scope === "all" ? "Toutes les pages sont vides." : "Cette page est vide.");
       return;
     }
     if (!hasFrames && nodes.length === 0) {
@@ -289,21 +314,19 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
     setError(null);
     setBusy(kind);
     setExportProgress(null);
-    if (kind === "pdf") setLastPdfDuration(null);
-    const startedAt = performance.now();
 
     // Désélectionne temporairement les nœuds pour ne pas capturer le surlignage de sélection,
     // et masque le cadre de page (feuille, bandes d'en-tête/pied, jauge de lisibilité) : un
     // repère d'édition, jamais destiné à apparaître dans les exports rasterisés (PNG/SVG/PDF image).
-    // Les exports « natifs » (PDF vectoriel, PPTX éditable) ne capturent pas le DOM : inutile
+    // Le PDF vectoriel ne capture pas le DOM : inutile
     // de faire clignoter le canvas pour eux.
     const capturesDom =
       kind === "png" ||
       kind === "svg" ||
       kind === "clipboard" ||
-      kind === "pack" || // les PNG par page du pack capturent le DOM
-      (kind === "pdf" && !(pdfVector && (hasFrames || !multiPage))) ||
-      (kind === "pptx" && !pptxEditable);
+      kind === "web-preview" ||
+      kind === "web-zip" ||
+      ((kind === "pdf" || kind === "preview") && !(pdfVector && (hasFrames || !multiPage)));
     const hadSelection = capturesDom && selectedNodeIds.length > 0;
     const hadPageGuide = capturesDom && pageGuideVisible;
     if (hadSelection || hadPageGuide) {
@@ -313,7 +336,9 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
     }
 
     try {
-      if (kind === "pdf") {
+      if (kind === "pdf" || kind === "preview") {
+        let pdfDocument: { output: (type: "blob") => Blob; save: (filename: string) => void } | null = null;
+        let filename = safeFileName(meta.title);
         if (hasFrames) {
           // Mode multi-pages : une page PDF par frame du périmètre, chrome et
           // format papier propres à chaque page.
@@ -325,10 +350,11 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
             secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
           };
           if (pdfVector) {
-            const { exportFramesToPdfVector } = await import("../lib/pdfVector");
-            await exportFramesToPdfVector(framePages, theme, common, (current, total) =>
+            const { buildFramesPdfVector } = await import("../lib/pdfVector");
+            pdfDocument = await buildFramesPdfVector(framePages, theme, common, (current, total) =>
               setExportProgress({ current, total })
             );
+            filename = safeFileName(meta.title, framePages.length > 1 ? "-pages" : "-vectoriel");
           } else {
             const rfById = new Map(nodes.map((n) => [n.id, n]));
             const pages: FrameImagePage[] = framePages.map((p) => ({
@@ -339,13 +365,16 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
               title: p.title,
               subtitle: p.subtitle,
               chromeLayout: p.chromeLayout,
+              placement: p.frame.page.placement,
+              frameRect: frameRectPx(p.frame),
               rfNodes: p.nodes
                 .map((n) => rfById.get(n.id))
                 .filter((n): n is NonNullable<typeof n> => Boolean(n)),
             }));
-            await exportFramesToPdfImage(el, pages, common, (current, total) =>
+            pdfDocument = await buildFramesPdfImage(el, pages, common, (current, total) =>
               setExportProgress({ current, total })
             );
+            filename = safeFileName(meta.title, pages.length > 1 ? "-pages" : "");
           }
         } else {
           const pdfOptions = {
@@ -363,62 +392,51 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
           // Vectoriel natif : cartes dessinées dans le PDF (texte net, fichier
           // léger). Le multi-pages reste en capture image haute résolution.
           if (pdfVector && !multiPage) {
-            const { exportFlowToPdfVector } = await import("../lib/pdfVector");
-            await exportFlowToPdfVector(visibleNodes, visibleEdges, theme, pdfOptions);
+            const { buildFlowPdfVector } = await import("../lib/pdfVector");
+            pdfDocument = await buildFlowPdfVector(visibleNodes, visibleEdges, theme, pdfOptions);
+            filename = safeFileName(meta.title, "-vectoriel");
           } else {
-            await exportFlowToPdf(el, nodes, pdfOptions);
+            pdfDocument = await buildFlowPdfImage(el, nodes, pdfOptions);
+            filename = safeFileName(meta.title, multiPage ? "-multipages" : "");
           }
         }
-      } else if (kind === "pptx") {
-        const pptxOptions = {
-          title: includeTitle ? meta.title : undefined,
-          subtitle: includeTitle ? meta.subtitle : undefined,
-          footer: includeFooter ? meta.footer : undefined,
-          logoUrl: includeLogos ? theme.logoUrl : undefined,
-          secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
-          accent: theme.accent,
-        };
-        // Le .orgchart.json est embarqué dans le .pptx (round-trip)
-        const chartJson = JSON.stringify(toFile(), null, 2);
-        if (pptxEditable && hasFrames) {
-          // Une diapositive par page du périmètre
-          const { exportFramesToPptxEditable } = await import("../lib/pptxEditable");
-          await exportFramesToPptxEditable(framePages, theme, pptxOptions, chartJson);
-        } else if (pptxEditable) {
-          const { exportFlowToPptxEditable } = await import("../lib/pptxEditable");
-          await exportFlowToPptxEditable(visibleNodes, visibleEdges, theme, pptxOptions, chartJson);
+        if (!pdfDocument) throw new Error("Le PDF n'a pas pu être construit.");
+        if (kind === "preview") {
+          const url = URL.createObjectURL(pdfDocument.output("blob"));
+          setPdfPreview({ url, filename });
         } else {
-          await exportFlowToPptx(el, nodes, pptxOptions, chartJson);
+          pdfDocument.save(filename);
         }
-      } else if (kind === "pack") {
-        // Pack de diffusion : PDF multi-pages + un PNG par page + annuaire CSV
-        const { exportDiffusionPack } = await import("../lib/diffusionPack");
-        const rfById = new Map(nodes.map((n) => [n.id, n]));
-        await exportDiffusionPack(el, {
-          pages: framePages,
-          rfNodesPerPage: framePages.map((p) =>
-            p.nodes.map((n) => rfById.get(n.id)).filter((n): n is NonNullable<typeof n> => Boolean(n))
-          ),
-          theme,
-          common: {
-            docTitle: meta.title,
-            docSubtitle: includeTitle ? meta.subtitle : undefined,
-            footer: includeFooter ? meta.footer : undefined,
-            logoUrl: includeLogos ? theme.logoUrl : undefined,
-            secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
-          },
-          directory: { nodes: visibleNodes, edges: visibleEdges },
-        });
       } else if (kind === "clipboard") {
         await copyFlowToClipboard(el, nodes);
         setCopied(true);
         setTimeout(() => setCopied(false), 2500);
+      } else if (kind === "web-zip") {
+        const rfById = new Map(nodes.map((node) => [node.id, node]));
+        const pages = (allWebFramePages ?? []).map((page) => ({
+          name: page.frame.name,
+          nodes: page.nodes
+            .map((node) => rfById.get(node.id))
+            .filter((node): node is NonNullable<typeof node> => Boolean(node)),
+        }));
+        const { exportWebPagesZip } = await import("../lib/webPagesExport");
+        await exportWebPagesZip(el, pages, {
+          title: meta.title,
+          transparent: transparentBg,
+          scale: webResolution === "high" ? 2.5 : 1.5,
+          onProgress: (current, total) => setExportProgress({ current, total }),
+        });
       } else if (kind === "png") {
-        await exportFlowToPng(el, nodes, `${meta.title || "organigramme"}.png`, { transparent: transparentBg });
-      } else {
+        await exportFlowToPng(el, nodes, `${meta.title || "organigramme"}.png`, {
+          transparent: transparentBg,
+          scale: webResolution === "high" ? 2.5 : 1.5,
+        });
+      } else if (kind === "svg") {
         await exportFlowToSvg(el, nodes, `${meta.title || "organigramme"}.svg`, { transparent: transparentBg });
+      } else {
+        const capture = await captureFlow(el, nodes, "png", 1, { transparent: transparentBg });
+        setWebPreviewUrl(capture.dataUrl);
       }
-      if (kind === "pdf") setLastPdfDuration(performance.now() - startedAt);
     } catch (err) {
       console.error(err);
       setError(
@@ -447,50 +465,79 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   }`;
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
       <div
-        className={`w-full max-w-3xl overflow-hidden rounded-3xl border shadow-2xl transition-all max-h-[92vh] flex flex-col ${
+        className={`flex max-h-[92vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border shadow-2xl transition-all ${
           themeMode === "dark"
             ? "border-border-dark bg-panel-bg-dark text-text-dark"
             : "border-border-light bg-panel-bg-light text-text-light"
         }`}
       >
         {/* En-tête fixe */}
-        <div className="px-6 py-4 border-b border-zinc-200/60 dark:border-zinc-800 flex justify-between items-center">
+        <div className="flex items-center justify-between border-b border-zinc-200/60 px-5 py-4 dark:border-zinc-800">
           <div>
             <h2 className="text-base font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
-              Exporter l'organigramme
+              Exporter
             </h2>
-            <p className="mt-1 text-xs text-zinc-450 dark:text-zinc-500 leading-normal">
-              Ajustez le format, configurez la page et téléchargez votre fichier.
+            <p className="mt-0.5 text-[11px] text-zinc-450 dark:text-zinc-500">
+              {preflight.exportedPageCount} page{preflight.exportedPageCount > 1 ? "s" : ""} · {preflight.exportedNodeCount} membre{preflight.exportedNodeCount > 1 ? "s" : ""}
             </p>
           </div>
           <button
-            onClick={onClose}
+            onClick={handleClose}
+            aria-label="Fermer la fenêtre d’export"
             className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-650 dark:hover:bg-zinc-800 dark:hover:text-zinc-200 transition-all cursor-pointer"
           >
             <X className="h-4.5 w-4.5" />
           </button>
         </div>
 
-        {/* Corps défilable : Double Colonne */}
-        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <div className="flex-1 overflow-y-auto p-5 custom-scrollbar">
+          <div className="mb-5 flex rounded-xl border border-zinc-200/60 bg-zinc-100 p-1 shadow-inner dark:border-zinc-800 dark:bg-zinc-900/60" role="tablist" aria-label="Destination de l’export">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "pdf"}
+              onClick={() => setActiveTab("pdf")}
+              className={`flex-1 rounded-lg py-2 text-xs font-semibold transition-all ${activeTab === "pdf" ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-white" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"}`}
+            >
+              <span className="inline-flex items-center gap-1.5"><FileText className="h-3.5 w-3.5" /> PDF</span>
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "web"}
+              onClick={() => {
+                setActiveTab("web");
+                if (hasFrames && scope === "all" && frames[0]) setScope(frames[0].id);
+              }}
+              className={`flex-1 rounded-lg py-2 text-xs font-semibold transition-all ${activeTab === "web" ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-white" : "text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"}`}
+            >
+              <span className="inline-flex items-center gap-1.5"><Globe2 className="h-3.5 w-3.5" /> Web & écran</span>
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-5">
             {/* Colonne Gauche : Configuration de la page */}
-            <div className="flex flex-col gap-5">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 border-b border-zinc-100 dark:border-zinc-900 pb-2">
-                1. Mise en page & Contenu
-              </h3>
+            <div className="flex flex-col gap-4">
 
               {/* Périmètre (mode multi-pages) */}
-              {hasFrames && (
+              {hasFrames && frames.length > 1 && (
                 <label className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-455 dark:text-zinc-500">
-                    Pages à exporter
+                    {activeTab === "pdf" ? "Pages à exporter" : "Page à publier"}
                   </span>
                   <div className="relative">
-                    <select value={scope} onChange={(e) => setScope(e.target.value)} className={selectClass}>
-                      <option value="all">Toutes les pages ({frames.length})</option>
+                    <select
+                      value={scope}
+                      onChange={(e) => {
+                        setScope(e.target.value);
+                        setWebPreviewUrl(null);
+                      }}
+                      className={selectClass}
+                    >
+                      {activeTab === "pdf" && <option value="all">Toutes les pages ({frames.length})</option>}
                       {frames.map((f) => (
                         <option key={f.id} value={f.id}>
                           {f.name}
@@ -499,35 +546,26 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                     </select>
                     <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
                   </div>
-                  <span className="text-[10px] leading-normal text-zinc-400 dark:text-zinc-500">
-                    Le format papier de chaque page (A4/A3/A2, orientation, marges) est celui de sa feuille sur le
-                    canevas.
-                  </span>
                 </label>
               )}
 
               {/* Format de page & Orientation */}
-              {!hasFrames && (
+              {!hasFrames && activeTab === "pdf" && (
               <div className="grid grid-cols-2 gap-3">
                 <label className="flex flex-col gap-1.5">
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-455 dark:text-zinc-500">
-                    Format de page
+                    Surface de sortie
                   </span>
                   <div className="relative">
-                    <select
+                    <PageFormatSelect
                       value={format}
-                      onChange={(e) => {
-                        const value = e.target.value as PdfFormat;
+                      onChange={(value) => {
                         setFormat(value);
-                        setPageSetup({ format: value, orientation, margin });
+                        setPageSetup({ format: value, orientation, margin, placement: pageSetup?.placement });
                       }}
-                      className={selectClass}
-                    >
-                      <option value="a4">A4</option>
-                      <option value="a3">A3</option>
-                      <option value="a2">A2</option>
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400 dark:text-zinc-500" />
+                      themeMode={themeMode}
+                      ariaLabel="Surface de sortie PDF"
+                    />
                   </div>
                 </label>
                 <label className="flex flex-col gap-1.5">
@@ -540,7 +578,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                       onChange={(e) => {
                         const value = e.target.value as PdfOrientation;
                         setOrientation(value);
-                        setPageSetup({ format, orientation: value, margin });
+                        setPageSetup({ format, orientation: value, margin, placement: pageSetup?.placement });
                       }}
                       className={selectClass}
                     >
@@ -554,7 +592,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
               )}
 
               {/* Marge */}
-              {!hasFrames && (
+              {!hasFrames && activeTab === "pdf" && (
               <div className="flex flex-col gap-1.5">
                 <span className="flex justify-between text-[10px] font-semibold uppercase tracking-wider text-zinc-455 dark:text-zinc-500">
                   <span>Marges du document</span>
@@ -568,7 +606,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                   onChange={(e) => {
                     const value = Number(e.target.value);
                     setMargin(value);
-                    setPageSetup({ format, orientation, margin: value });
+                    setPageSetup({ format, orientation, margin: value, placement: pageSetup?.placement });
                   }}
                   className="w-full accent-primary-600 dark:accent-primary-400 cursor-pointer bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none h-1"
                 />
@@ -576,384 +614,333 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
               )}
 
               {/* Options de contenu */}
-              <div className="flex flex-col gap-3 rounded-xl border border-zinc-150/80 dark:border-zinc-800/80 bg-zinc-50/30 dark:bg-zinc-900/10 p-3.5">
-                <label className="flex items-center gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
+              {activeTab === "pdf" && (
+              <div className="flex flex-col gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-455 dark:text-zinc-500">Contenu</span>
+                <div className="flex flex-wrap gap-2">
+                <label className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${includeTitle ? "border-primary-300 bg-primary-50 text-primary-800 dark:border-primary-700 dark:bg-primary-950/30 dark:text-primary-200" : "border-zinc-200 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400"}`}>
                   <input
                     type="checkbox"
                     checked={includeTitle}
                     onChange={(e) => setIncludeTitle(e.target.checked)}
                     className={checkboxClass}
                   />
-                  <span className="font-medium">Inclure le titre et en-tête</span>
+                  <span>Titre</span>
                 </label>
-                <label className="flex items-center gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
+                {(theme.logoUrl || theme.secondaryLogoUrl) && <label className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${includeLogos ? "border-primary-300 bg-primary-50 text-primary-800 dark:border-primary-700 dark:bg-primary-950/30 dark:text-primary-200" : "border-zinc-200 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400"}`}>
                   <input
                     type="checkbox"
                     checked={includeLogos}
                     onChange={(e) => setIncludeLogos(e.target.checked)}
                     className={checkboxClass}
                   />
-                  <span className="font-medium">Inclure les logos</span>
-                </label>
-                <label className="flex items-center gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
+                  <span>Logos</span>
+                </label>}
+                {meta.footer && <label className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${includeFooter ? "border-primary-300 bg-primary-50 text-primary-800 dark:border-primary-700 dark:bg-primary-950/30 dark:text-primary-200" : "border-zinc-200 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400"}`}>
                   <input
                     type="checkbox"
                     checked={includeFooter}
                     onChange={(e) => setIncludeFooter(e.target.checked)}
                     className={checkboxClass}
                   />
-                  <span className="font-medium">Inclure le pied de page</span>
-                </label>
+                  <span>Pied de page</span>
+                </label>}
+                </div>
                 {!hasFrames && (
-                <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer border-t border-zinc-150/50 dark:border-zinc-800 pt-2.5 mt-0.5">
+                <label className="mt-1 flex cursor-pointer items-center gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
                   <input
                     type="checkbox"
                     checked={multiPage}
                     onChange={(e) => setMultiPage(e.target.checked)}
-                    className={`${checkboxClass} mt-0.5`}
+                    className={checkboxClass}
                   />
-                  <span className="font-medium">
-                    Répartir sur plusieurs pages <span className="text-[10px] text-zinc-450 dark:text-zinc-500 font-normal">(Grand Format)</span>
-                    <span className="mt-0.5 block text-[10px] font-normal text-zinc-400 dark:text-zinc-500 leading-normal">
-                      Découpé pour impression sur plusieurs feuilles.
-                    </span>
-                  </span>
+                  <span>Répartir sur plusieurs feuilles</span>
                 </label>
                 )}
               </div>
-
-              {/* Jauge de lisibilité par page (mode multi-pages) */}
-              {frameReadability && (
-                <div
-                  className={`rounded-xl border p-3.5 transition-all ${
-                    frameReadability.rating === "good"
-                      ? "border-emerald-500/20 bg-emerald-500/5"
-                      : frameReadability.rating === "warn"
-                      ? "border-amber-500/20 bg-amber-500/5"
-                      : "border-red-500/20 bg-red-500/5"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`h-2 w-2 shrink-0 rounded-full ${
-                        frameReadability.rating === "good"
-                          ? "bg-emerald-500 animate-pulse"
-                          : frameReadability.rating === "warn"
-                          ? "bg-amber-500"
-                          : "bg-red-500"
-                      }`}
-                    />
-                    <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
-                      {frameReadability.rating === "good"
-                        ? "Toutes les pages sont lisibles"
-                        : `Page la moins lisible : ${frameReadability.name}`}
-                    </span>
-                    <span className="ml-auto font-mono text-[9px] text-zinc-450 dark:text-zinc-500">
-                      texte ≈ {frameReadability.fontPt} pt
-                    </span>
-                  </div>
-                  {frameReadability.rating !== "good" && (
-                    <p className="mt-2 text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                      Réduisez le contenu de cette page (glissez des cartes vers une autre page, ou créez une page
-                      par branche), ou passez sa feuille en A3 ou A2.
-                    </p>
-                  )}
-                </div>
               )}
 
-              {/* Jauge de lisibilité */}
-              {readability && (
-                <div
-                  className={`rounded-xl border p-3.5 transition-all ${
-                    readability.rating === "good"
-                      ? "border-emerald-500/20 bg-emerald-500/5"
-                      : readability.rating === "warn"
-                      ? "border-amber-500/20 bg-amber-500/5"
-                      : "border-red-500/20 bg-red-500/5"
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`h-2 w-2 shrink-0 rounded-full ${
-                        readability.rating === "good"
-                          ? "bg-emerald-500 animate-pulse"
-                          : readability.rating === "warn"
-                          ? "bg-amber-500"
-                          : "bg-red-500"
-                      }`}
-                    />
-                    <span className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
-                      {readability.rating === "good"
-                        ? "Document très lisible"
-                        : readability.rating === "warn"
-                        ? "Lisibilité limite"
-                        : "Document illisible à cette échelle"}
-                    </span>
-                    <span className="ml-auto font-mono text-[9px] text-zinc-450 dark:text-zinc-500">
-                      texte ≈ {readability.fontPt} pt · carte ≈ {readability.cardWidthMm} mm
-                    </span>
-                  </div>
-                  {readability.rating !== "good" && (
-                    <div className="mt-2.5 flex flex-col gap-2">
-                      <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400">
-                        L'organigramme est grand. L'optimiseur recherche les dispositions pour maximiser la taille du texte.
+              {/* Contrôle consolidé avant publication */}
+              <div
+                className={`rounded-xl border p-3 transition-colors ${
+                  preflight.errorCount > 0
+                    ? "border-red-500/25 bg-red-500/5"
+                    : preflight.warningCount > 0
+                    ? "border-amber-500/25 bg-amber-500/5"
+                    : "border-emerald-500/20 bg-emerald-500/5"
+                }`}
+                aria-live="polite"
+              >
+                <div className="flex items-start gap-2.5">
+                  <span
+                    className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${
+                      preflight.errorCount > 0
+                        ? "bg-red-500 text-white"
+                        : preflight.warningCount > 0
+                        ? "bg-amber-500 text-white"
+                        : "bg-emerald-500 text-white"
+                    }`}
+                  >
+                    {preflight.errorCount + preflight.warningCount === 0 ? (
+                      <Check className="h-3 w-3" strokeWidth={3} />
+                    ) : (
+                      <Info className="h-3 w-3" strokeWidth={2.5} />
+                    )}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div>
+                      <p className="text-xs font-bold text-zinc-750 dark:text-zinc-150">
+                          {preflight.errorCount > 0
+                            ? `${preflight.errorCount} problème${preflight.errorCount > 1 ? "s" : ""} à corriger`
+                            : preflight.warningCount > 0
+                            ? `${preflight.warningCount} point${preflight.warningCount > 1 ? "s" : ""} à vérifier`
+                            : "Prêt à exporter"}
                       </p>
-                      <button
-                        onClick={handleOptimize}
-                        disabled={busy !== null}
-                        className={`self-start rounded-lg px-3 py-1.5 text-[11px] font-semibold transition-all hover:scale-102 active:scale-98 cursor-pointer disabled:opacity-50 ${
-                          themeMode === "dark"
-                            ? "bg-primary-600 text-white hover:bg-primary-500"
-                            : "bg-primary-700 text-white hover:bg-primary-600"
-                        }`}
-                      >
-                        {busy === "optimize" ? (
-                          <span className="flex items-center gap-1.5">
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            <span>Optimisation…</span>
-                          </span>
-                        ) : (
-                          <span className="flex items-center gap-1.5">
-                            <Sparkles className="h-3.5 w-3.5" />
-                            <span>Optimiser la disposition</span>
-                          </span>
-                        )}
-                      </button>
                     </div>
-                  )}
-                  {optimizeNotice && (
-                    <p className="mt-2.5 text-[11px] leading-relaxed text-zinc-600 dark:text-zinc-300 border-t border-zinc-200/60 dark:border-zinc-800 pt-2.5">
-                      {optimizeNotice}
-                    </p>
-                  )}
-                </div>
-              )}
 
-              {/* Exclusion par repli */}
-              {hiddenIds.size > 0 && (
-                <div className="flex items-start gap-2.5 rounded-xl border border-primary-600/20 bg-primary-600/5 dark:border-primary-400/20 dark:bg-primary-400/5 p-3">
-                  <Info className="h-4 w-4 shrink-0 mt-0.5 text-primary-750 dark:text-primary-300" />
-                  <p className="text-[11px] leading-relaxed text-primary-800 dark:text-primary-200">
-                    L'export est partiel : {hiddenIds.size} membre{hiddenIds.size > 1 ? "s" : ""} de branches repliées ser{hiddenIds.size > 1 ? "ont" : "a"} exclu{hiddenIds.size > 1 ? "s" : ""}.
-                  </p>
+                    {preflight.issues.length > 0 && (
+                      <ul className="mt-2 flex flex-col gap-2">
+                        {preflight.issues.map((issue, index) => {
+                          const canFocus = Boolean(issue.nodeIds?.length || issue.pageId);
+                          const focusLabel = issue.nodeIds?.length
+                            ? issue.nodeIds.length === 1
+                              ? "Voir la carte"
+                              : "Voir les cartes"
+                            : "Voir la page";
+                          const action = issue.code === "hidden-branches"
+                            ? { label: "Tout déplier", onClick: expandAll }
+                            : canFocus
+                            ? { label: focusLabel, onClick: () => focusPreflightIssue(issue) }
+                            : null;
+
+                          return (
+                            <li key={`${issue.code}-${issue.pageId ?? "document"}-${index}`} className="flex items-start gap-2">
+                              <span
+                                className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
+                                  issue.severity === "error"
+                                    ? "bg-red-500"
+                                    : issue.severity === "warning"
+                                    ? "bg-amber-500"
+                                    : "bg-primary-500"
+                                }`}
+                              />
+                              <div className="flex min-w-0 flex-1 items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-[11px] font-semibold text-zinc-650 dark:text-zinc-250">{issue.title}</p>
+                                  <p className="mt-0.5 text-[10px] leading-snug text-zinc-450 dark:text-zinc-500">{issue.detail}</p>
+                                </div>
+                                {action && (
+                                  <button
+                                    type="button"
+                                    onClick={action.onClick}
+                                    disabled={busy !== null}
+                                    className="shrink-0 rounded-md border border-zinc-200 bg-white/70 px-2 py-1 text-[10px] font-semibold text-zinc-600 transition-colors hover:border-primary-300 hover:text-primary-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-300 dark:hover:border-primary-700 dark:hover:text-primary-300"
+                                  >
+                                    {action.label}
+                                  </button>
+                                )}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
                 </div>
-              )}
+              </div>
             </div>
 
-            {/* Colonne Droite : Formats d'exportation */}
-            <div className="flex flex-col gap-5">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 dark:text-zinc-500 border-b border-zinc-100 dark:border-zinc-900 pb-2">
-                2. Format d'export & Téléchargement
-              </h3>
-
-              {/* Segmented control / Onglets */}
-              <div className="flex rounded-xl bg-zinc-100 p-1 dark:bg-zinc-900/60 border border-zinc-200/50 dark:border-zinc-800/85 shadow-inner">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("pdf")}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    activeTab === "pdf"
-                      ? "bg-white text-zinc-850 shadow-sm dark:bg-zinc-800 dark:text-zinc-100 font-bold"
-                      : "text-zinc-400 hover:text-zinc-650 dark:text-zinc-500 dark:hover:text-zinc-300"
-                  }`}
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                  <span>PDF</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("pptx")}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    activeTab === "pptx"
-                      ? "bg-white text-zinc-850 shadow-sm dark:bg-zinc-800 dark:text-zinc-100 font-bold"
-                      : "text-zinc-400 hover:text-zinc-650 dark:text-zinc-500 dark:hover:text-zinc-300"
-                  }`}
-                >
-                  <Presentation className="h-3.5 w-3.5" />
-                  <span>PowerPoint</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("image")}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
-                    activeTab === "image"
-                      ? "bg-white text-zinc-850 shadow-sm dark:bg-zinc-800 dark:text-zinc-100 font-bold"
-                      : "text-zinc-400 hover:text-zinc-650 dark:text-zinc-500 dark:hover:text-zinc-300"
-                  }`}
-                >
-                  <Image className="h-3.5 w-3.5" />
-                  <span>Image</span>
-                </button>
-              </div>
+            <div className="flex flex-col gap-4">
 
               {/* Contenu de l'onglet actif */}
-              <div className="flex-1 flex flex-col justify-between min-h-[220px]">
+              <div className="flex flex-col">
                 {activeTab === "pdf" && (
                   <div className="flex flex-col gap-4">
-                    <div className="rounded-xl border border-zinc-150 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/10 p-3.5 flex flex-col gap-3">
-                      <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">Options PDF</span>
-                      <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={pdfVector && (hasFrames || !multiPage)}
-                          disabled={!hasFrames && multiPage}
-                          onChange={(e) => setPdfVector(e.target.checked)}
-                          className={`${checkboxClass} mt-0.5`}
-                        />
-                        <span className={!hasFrames && multiPage ? "opacity-50" : ""}>
-                          PDF vectoriel natif (texte net)
-                          <span className="mt-0.5 block text-[10px] leading-normal font-normal text-zinc-400 dark:text-zinc-500">
-                            Texte infiniment net et fichier très léger. Photos non incluses.
-                          </span>
-                        </span>
-                      </label>
+                    <div className="flex flex-col gap-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-455 dark:text-zinc-500">Rendu</span>
+                      <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        aria-pressed={pdfVector && (hasFrames || !multiPage)}
+                        disabled={!hasFrames && multiPage}
+                        onClick={() => setPdfVector(true)}
+                        className={`rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-45 cursor-pointer ${
+                          pdfVector && (hasFrames || !multiPage)
+                            ? "border-primary-500 bg-primary-50 text-primary-900 dark:border-primary-500 dark:bg-primary-950/35 dark:text-primary-100"
+                            : themeMode === "dark"
+                            ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:border-zinc-700"
+                            : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300"
+                        }`}
+                      >
+                        <span className="block text-xs font-bold">Texte net</span>
+                        <span className="mt-1 block text-[10px] opacity-70">Léger · recommandé</span>
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={!pdfVector || (!hasFrames && multiPage)}
+                        onClick={() => setPdfVector(false)}
+                        className={`rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 cursor-pointer ${
+                          !pdfVector || (!hasFrames && multiPage)
+                            ? "border-primary-500 bg-primary-50 text-primary-900 dark:border-primary-500 dark:bg-primary-950/35 dark:text-primary-100"
+                            : themeMode === "dark"
+                            ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:border-zinc-700"
+                            : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300"
+                        }`}
+                      >
+                        <span className="block text-xs font-bold">Avec portraits</span>
+                        <span className="mt-1 block text-[10px] opacity-70">Photos · fichier plus lourd</span>
+                      </button>
+                      </div>
+                      {!hasFrames && multiPage && (
+                        <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                          Le mode plusieurs feuilles conserve les portraits.
+                        </p>
+                      )}
                     </div>
 
                     <button
-                      onClick={() => run("pdf")}
+                      onClick={() => run("preview")}
                       disabled={busy !== null}
-                      className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
+                      className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold shadow-sm transition-colors cursor-pointer ${
                         themeMode === "dark"
                           ? "bg-primary-600 text-white hover:bg-primary-500"
                           : "bg-primary-700 text-white hover:bg-primary-600"
-                      } disabled:opacity-50 mt-2`}
+                      } disabled:opacity-50`}
                     >
-                      {busy === "pdf" ? (
+                      {busy === "preview" ? (
                         <>
                           <Loader2 className="animate-spin h-4 w-4" />
                           <span>
                             {exportProgress
                               ? `Génération de la page ${exportProgress.current} sur ${exportProgress.total}…`
-                              : "Préparation du PDF…"}
+                              : "Préparation de l’aperçu…"}
                           </span>
                         </>
                       ) : (
                         <>
-                          <FileText className="h-4 w-4" />
-                          <span>Télécharger le PDF</span>
+                          <Eye className="h-4 w-4" />
+                          <span>Prévisualiser le PDF</span>
                         </>
                       )}
                     </button>
 
-                    {busy === "pdf" && exportProgress && (
+                    {busy === "preview" && exportProgress && (
                       <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800" role="progressbar" aria-valuemin={0} aria-valuemax={exportProgress.total} aria-valuenow={exportProgress.current}>
                         <div className="h-full rounded-full bg-primary-600 transition-[width] duration-200" style={{ width: `${(exportProgress.current / exportProgress.total) * 100}%` }} />
                       </div>
                     )}
-                    {busy !== "pdf" && lastPdfDuration !== null && (
-                      <p className="text-center text-[10px] font-medium text-emerald-600 dark:text-emerald-400" role="status">
-                        PDF généré en {(lastPdfDuration / 1000).toFixed(1)} s · mesure conservée uniquement à l’écran
-                      </p>
-                    )}
-
-                    {/* Pack de diffusion : un seul geste pour l'envoi mensuel */}
-                    {hasFrames && (
-                      <button
-                        onClick={() => run("pack")}
-                        disabled={busy !== null}
-                        className={`flex w-full items-center justify-center gap-2 rounded-xl border py-2.5 text-xs font-semibold transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer disabled:opacity-50 ${
-                          themeMode === "dark"
-                            ? "border-zinc-850 text-zinc-300 hover:bg-zinc-800"
-                            : "border-zinc-200 text-zinc-650 hover:bg-zinc-50"
-                        }`}
-                        title="PDF multi-pages + un PNG par page + annuaire CSV, dans un zip"
-                      >
-                        {busy === "pack" ? (
-                          <>
-                            <Loader2 className="animate-spin h-3.5 w-3.5" />
-                            <span>Assemblage du pack...</span>
-                          </>
-                        ) : (
-                          <span>
-                            Pack de diffusion (.zip)
-                            <span className="mt-0.5 block text-[10px] font-normal text-zinc-400 dark:text-zinc-500">
-                              PDF multi-pages + PNG par page + annuaire CSV
-                            </span>
-                          </span>
-                        )}
-                      </button>
-                    )}
                   </div>
                 )}
 
-                {activeTab === "pptx" && (
+                {activeTab === "web" && (
                   <div className="flex flex-col gap-4">
-                    <div className="rounded-xl border border-zinc-150 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/10 p-3.5 flex flex-col gap-3">
-                      <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">Options PowerPoint</span>
-                      <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={pptxEditable}
-                          onChange={(e) => setPptxEditable(e.target.checked)}
-                          className={`${checkboxClass} mt-0.5`}
-                        />
-                        <span>
-                          Éléments modifiables dans PowerPoint
-                          <span className="mt-0.5 block text-[10px] leading-normal font-normal text-zinc-400 dark:text-zinc-500">
-                            Les cartes et liens deviennent des formes éditables natives PowerPoint.
-                          </span>
+                    <div className="flex flex-col gap-3">
+                      <div className="flex flex-col gap-1.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500">
+                          Définition
                         </span>
-                      </label>
-                    </div>
-
-                    <button
-                      onClick={() => run("pptx")}
-                      disabled={busy !== null}
-                      className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
-                        themeMode === "dark"
-                          ? "bg-orange-700/80 text-white hover:bg-orange-600/80"
-                          : "bg-[#C43E1C] text-white hover:bg-[#a83419]"
-                      } disabled:opacity-50 mt-2`}
-                    >
-                      {busy === "pptx" ? (
-                        <>
-                          <Loader2 className="animate-spin h-4 w-4" />
-                          <span>Génération PPTX en cours...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Presentation className="h-4 w-4" />
-                          <span>Télécharger le diaporama (.pptx)</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
-                )}
-
-                {activeTab === "image" && (
-                  <div className="flex flex-col gap-4">
-                    <div className="rounded-xl border border-zinc-150 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-900/10 p-3.5 flex flex-col gap-3">
-                      <span className="text-[10px] font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-wide">Options Image</span>
-                      <label className="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300 cursor-pointer">
+                        <div className="grid grid-cols-2 gap-2" role="group" aria-label="Netteté du PNG">
+                          <button
+                            type="button"
+                            aria-pressed={webResolution === "standard"}
+                            onClick={() => setWebResolution("standard")}
+                            className={`rounded-lg border px-2.5 py-2 text-left text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                              webResolution === "standard"
+                                ? "border-primary-500 bg-primary-50 text-primary-800 dark:bg-primary-950/30 dark:text-primary-200"
+                                : "border-zinc-200 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400"
+                            }`}
+                          >
+                            <strong className="block text-[11px]">Standard</strong>
+                            E-mail et messagerie
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={webResolution === "high"}
+                            onClick={() => setWebResolution("high")}
+                            className={`rounded-lg border px-2.5 py-2 text-left text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                              webResolution === "high"
+                                ? "border-primary-500 bg-primary-50 text-primary-800 dark:bg-primary-950/30 dark:text-primary-200"
+                                : "border-zinc-200 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400"
+                            }`}
+                          >
+                            <strong className="block text-[11px]">Haute définition</strong>
+                            Site et grand écran
+                          </button>
+                        </div>
+                      </div>
+                      <label className="flex cursor-pointer items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
                         <input
                           type="checkbox"
                           checked={transparentBg}
-                          onChange={(e) => setTransparentBg(e.target.checked)}
-                          className={`${checkboxClass} mt-0.5`}
+                          onChange={(e) => {
+                            setTransparentBg(e.target.checked);
+                            setWebPreviewUrl(null);
+                          }}
+                          className={checkboxClass}
                         />
-                        <span>
-                          Fond transparent
-                          <span className="mt-0.5 block text-[10px] leading-normal font-normal text-zinc-400 dark:text-zinc-500">
-                            Idéal pour insérer l'image sur une présentation ou un fond coloré externe.
-                          </span>
-                        </span>
+                        <span>Fond transparent</span>
                       </label>
+                      <div className="flex flex-col gap-2">
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => run("web-preview")}
+                            disabled={busy !== null}
+                            className="text-[10px] font-semibold text-primary-700 hover:text-primary-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:opacity-50 dark:text-primary-300"
+                          >
+                            {busy === "web-preview" ? "Génération…" : webPreviewUrl ? "Actualiser l’aperçu" : "Voir l’aperçu"}
+                          </button>
+                        </div>
+                        {webPreviewUrl && <div
+                          className="flex h-28 items-center justify-center overflow-hidden rounded-lg border border-zinc-200 p-2 dark:border-zinc-800"
+                          style={{
+                            backgroundColor: transparentBg ? "#f4f4f5" : "#ffffff",
+                            backgroundImage: transparentBg
+                              ? "linear-gradient(45deg, #d4d4d8 25%, transparent 25%), linear-gradient(-45deg, #d4d4d8 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d4d4d8 75%), linear-gradient(-45deg, transparent 75%, #d4d4d8 75%)"
+                              : undefined,
+                            backgroundPosition: transparentBg ? "0 0, 0 8px, 8px -8px, -8px 0" : undefined,
+                            backgroundSize: transparentBg ? "16px 16px" : undefined,
+                          }}
+                        >
+                          <img src={webPreviewUrl} alt="Aperçu de la publication Web" className="max-h-full max-w-full object-contain" />
+                        </div>}
+                      </div>
                     </div>
 
                     <div className="flex flex-col gap-2.5 mt-2">
-                      <div className="flex gap-2.5">
+                      <button
+                        onClick={() => run("png")}
+                        disabled={busy !== null}
+                        className={`flex w-full items-center justify-center gap-2 rounded-xl py-3 text-xs font-bold shadow-sm transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer disabled:opacity-50 ${
+                          themeMode === "dark"
+                            ? "bg-primary-600 text-white hover:bg-primary-500"
+                            : "bg-primary-700 text-white hover:bg-primary-600"
+                        }`}
+                      >
+                        {busy === "png" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Image className="h-4 w-4" />}
+                        <span>{busy === "png" ? "Génération du PNG…" : "Télécharger le PNG · Recommandé"}</span>
+                      </button>
+
+                      {hasFrames && frames.length > 1 && (
                         <button
-                          onClick={() => run("png")}
+                          onClick={() => run("web-zip")}
                           disabled={busy !== null}
-                          className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border py-2.5 text-xs font-semibold transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
+                          className={`flex w-full items-center justify-center gap-2 rounded-xl border py-2.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 disabled:opacity-50 cursor-pointer ${
                             themeMode === "dark"
-                              ? "border-zinc-850 text-zinc-300 hover:bg-zinc-800"
+                              ? "border-zinc-800 text-zinc-300 hover:bg-zinc-800"
                               : "border-zinc-200 text-zinc-650 hover:bg-zinc-50"
-                          } disabled:opacity-50`}
+                          }`}
                         >
-                          <Image className="h-3.5 w-3.5" />
-                          <span>{busy === "png" ? "Génération..." : "Télécharger PNG"}</span>
+                          {busy === "web-zip" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />}
+                          <span>
+                            {busy === "web-zip" && exportProgress
+                              ? `Préparation de la page ${exportProgress.current}/${exportProgress.total}…`
+                              : `Télécharger les ${frames.length} pages en PNG`}
+                          </span>
                         </button>
+                      )}
+
+                      <div className="flex gap-2.5">
                         <button
                           onClick={() => run("svg")}
                           disabled={busy !== null}
@@ -964,39 +951,30 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                           } disabled:opacity-50`}
                         >
                           <FileCode className="h-3.5 w-3.5" />
-                          <span>{busy === "svg" ? "Génération..." : "Télécharger SVG"}</span>
+                          <span>{busy === "svg" ? "Génération…" : "SVG redimensionnable"}</span>
                         </button>
-                      </div>
-
-                      <button
-                        onClick={() => run("clipboard")}
-                        disabled={busy !== null}
-                        className={`flex w-full items-center justify-center gap-1.5 rounded-xl border py-2.5 text-xs font-semibold transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
-                          copied
-                            ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5"
-                            : themeMode === "dark"
-                            ? "border-zinc-850 text-zinc-300 hover:bg-zinc-800"
-                            : "border-zinc-200 text-zinc-650 hover:bg-zinc-50"
-                        } disabled:opacity-50`}
-                      >
-                        {busy === "clipboard" ? (
-                          <>
+                        <button
+                          onClick={() => run("clipboard")}
+                          disabled={busy !== null}
+                          className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl border py-2.5 text-xs font-semibold transition-all hover:scale-[1.01] active:scale-[0.99] cursor-pointer ${
+                            copied
+                              ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5"
+                              : themeMode === "dark"
+                              ? "border-zinc-850 text-zinc-300 hover:bg-zinc-800"
+                              : "border-zinc-200 text-zinc-650 hover:bg-zinc-50"
+                          } disabled:opacity-50`}
+                        >
+                          {busy === "clipboard" ? (
                             <Loader2 className="animate-spin h-3.5 w-3.5" />
-                            <span>Copie...</span>
-                          </>
-                        ) : copied ? (
-                          <>
+                          ) : copied ? (
                             <Check className="h-3.5 w-3.5 text-emerald-500" />
-                            <span>Copié dans le presse-papiers !</span>
-                          </>
-                        ) : (
-                          <>
+                          ) : (
                             <Copy className="h-3.5 w-3.5" />
-                            <span>Copier l'image</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
+                          )}
+                          <span>{busy === "clipboard" ? "Copie…" : copied ? "Image copiée" : "Copier l’image"}</span>
+                        </button>
+                        </div>
+                      </div>
                   </div>
                 )}
               </div>
@@ -1006,20 +984,41 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
           </div>
         </div>
 
-        {/* Pied de page fixe */}
-        <div className="px-6 py-3.5 border-t border-zinc-200/60 dark:border-zinc-800 flex justify-end bg-zinc-50/50 dark:bg-zinc-950/20">
-          <button
-            onClick={onClose}
-            className={`rounded-lg px-4 py-2 text-xs font-semibold shadow-sm transition-all border cursor-pointer hover:bg-zinc-50 dark:hover:bg-zinc-800 ${
-              themeMode === "dark"
-                ? "border-zinc-800 bg-zinc-900 text-zinc-300"
-                : "border-zinc-200 bg-white text-zinc-650"
-            }`}
-          >
-            Fermer la fenêtre
-          </button>
-        </div>
       </div>
     </div>
+    {pdfPreview && (
+      <div className="fixed inset-0 z-[60] flex flex-col bg-zinc-950/95 p-4 sm:p-6" role="dialog" aria-modal="true" aria-label="Aperçu du PDF">
+        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 pb-4 text-white">
+          <div>
+            <h3 className="text-sm font-bold">Aperçu exact du PDF</h3>
+            <p className="mt-0.5 text-[11px] text-zinc-400">Ce document est celui qui sera téléchargé.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href={pdfPreview.url}
+              download={pdfPreview.filename}
+              className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-primary-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+            >
+              <Download className="h-4 w-4" />
+              Télécharger ce PDF
+            </a>
+            <button
+              type="button"
+              onClick={() => setPdfPreview(null)}
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-700 px-3.5 py-2 text-xs font-semibold text-zinc-200 hover:bg-zinc-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
+            >
+              <X className="h-4 w-4" />
+              Revenir aux réglages
+            </button>
+          </div>
+        </div>
+        <iframe
+          src={pdfPreview.url}
+          title="Aperçu du PDF généré"
+          className="mx-auto min-h-0 w-full max-w-6xl flex-1 rounded-xl bg-white shadow-2xl"
+        />
+      </div>
+    )}
+    </>
   );
 }

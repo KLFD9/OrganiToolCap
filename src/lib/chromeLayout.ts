@@ -33,6 +33,40 @@ export const CHROME_DEFAULT_SIZE: Record<ChromeKey, number> = {
 
 export const CHROME_TEXT_KEYS: ChromeKey[] = ["title", "subtitle", "footer"];
 
+export interface ResolvedChromeTextStyle {
+  bold: boolean;
+  italic: boolean;
+  color: string;
+}
+
+/**
+ * Style effectif d'un texte de page. Le titre conserve une hiérarchie forte
+ * par défaut ; les textes secondaires restent plus discrets. Une couleur
+ * personnalisée fait foi sur le canvas comme dans les exports.
+ */
+export function resolveChromeTextStyle(
+  key: ChromeKey,
+  element: ChromeElement | undefined,
+  dark = false
+): ResolvedChromeTextStyle {
+  const isTitle = key === "title";
+  return {
+    bold: element?.bold ?? isTitle,
+    italic: element?.italic ?? false,
+    color:
+      element?.color ??
+      (dark ? (isTitle ? "#f4f4f5" : "#a1a1aa") : isTitle ? "#27272a" : "#71717a"),
+  };
+}
+
+/** Variante de police commune aux moteurs canvas/PDF. */
+export function chromeFontStyle(style: Pick<ResolvedChromeTextStyle, "bold" | "italic">) {
+  if (style.bold && style.italic) return "bolditalic" as const;
+  if (style.bold) return "bold" as const;
+  if (style.italic) return "italic" as const;
+  return "normal" as const;
+}
+
 export function isChromeTextKey(key: ChromeKey): boolean {
   return key === "title" || key === "subtitle" || key === "footer";
 }

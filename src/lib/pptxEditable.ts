@@ -68,6 +68,14 @@ export interface EditableSlideSpec {
   connectors: ConnectorSpec[];
 }
 
+/** Projection fixe du canvas vers une surface finie, sans recadrage du contenu. */
+export interface EditableProjection {
+  originX: number;
+  originY: number;
+  /** Échelle physique en pouces par pixel du canvas. */
+  inchesPerPx: number;
+}
+
 const PT_PER_IN = 72;
 const MIN_FONT_PT = 6;
 const MAX_NAME_PT = 16;
@@ -84,7 +92,8 @@ export function buildEditableSpec(
   nodes: OrgNode[],
   edges: OrgEdge[],
   theme: OrgTheme,
-  area: { x: number; y: number; width: number; height: number }
+  area: { x: number; y: number; width: number; height: number },
+  projection?: EditableProjection
 ): EditableSlideSpec {
   if (nodes.length === 0) return { cards: [], connectors: [] };
 
@@ -98,13 +107,17 @@ export function buildEditableSpec(
   const maxBottom = Math.max(...nodes.map((n) => n.position.y + computeNodeHeight(n, display)));
   const boundsH = maxBottom - minY;
 
-  const scale = Math.min(area.width / boundsW, area.height / boundsH); // pouces par px
-  const offsetX = area.x + (area.width - boundsW * scale) / 2;
-  const offsetY = area.y + (area.height - boundsH * scale) / 2;
+  const scale = projection?.inchesPerPx ?? Math.min(area.width / boundsW, area.height / boundsH); // pouces par px
+  const offsetX = projection ? 0 : area.x + (area.width - boundsW * scale) / 2;
+  const offsetY = projection ? 0 : area.y + (area.height - boundsH * scale) / 2;
 
   const toIn = (px: number) => px * scale;
-  const posX = (px: number) => offsetX + (px - minX) * scale;
-  const posY = (px: number) => offsetY + (px - minY) * scale;
+  const posX = (px: number) => projection
+    ? (px - projection.originX) * scale
+    : offsetX + (px - minX) * scale;
+  const posY = (px: number) => projection
+    ? (px - projection.originY) * scale
+    : offsetY + (px - minY) * scale;
 
   const levels = computeLevels(nodes, edges);
   const inheritedAccentColors = computeInheritedAccentColors(nodes, edges);
@@ -419,7 +432,12 @@ export async function exportFramesToPptxEditable(
 
   for (const page of pages) {
     const slide = pptx.addSlide();
-    const slideOptions: PptxExportOptions = { ...options, title: page.title, subtitle: page.subtitle };
+    const slideOptions: PptxExportOptions = {
+      ...options,
+      title: page.title,
+      subtitle: page.subtitle,
+      chromeLayout: page.chromeLayout,
+    };
     const hasHeader = Boolean(slideOptions.title || options.logoUrl || options.secondaryLogoUrl);
     const hasFooter = Boolean(options.footer);
     await addSlideChrome(slide, slideOptions);

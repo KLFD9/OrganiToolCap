@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { useOrgChartStore } from "./useOrgChartStore";
 import { createBlankChart, createEmptyChart } from "../templates/blank";
 import { frameRectPx } from "../lib/frames";
+import { CARD_HEIGHT, CARD_WIDTH } from "../lib/compactLayout";
 
 describe("useOrgChartStore", () => {
   beforeEach(() => {
@@ -53,8 +54,8 @@ describe("useOrgChartStore", () => {
     const frame = state.frames[0];
     const node = state.nodes[0];
     const rect = frameRectPx(frame);
-    expect(node.position.x + 120).toBeCloseTo(rect.x + rect.width / 2);
-    expect(node.position.y + 55).toBeCloseTo(rect.y + rect.height / 2);
+    expect(node.position.x + CARD_WIDTH / 2).toBeCloseTo(rect.x + rect.width / 2);
+    expect(node.position.y + CARD_HEIGHT / 2).toBeCloseTo(rect.y + rect.height / 2);
   });
 
   it("addEdge refuses to create a cycle", () => {
@@ -251,6 +252,27 @@ describe("useOrgChartStore", () => {
     expect(useOrgChartStore.getState().nodes).toBe(before);
   });
 
+  it("un import ouvre un nouveau document annulable et sans réutiliser le fichier courant", () => {
+    const original = useOrgChartStore.getState().toFile();
+    const handle = {} as FileSystemFileHandle;
+    useOrgChartStore.getState().loadFile(original, handle);
+    const imported = createEmptyChart();
+    imported.meta.title = "Import équipe";
+
+    useOrgChartStore.getState().loadImportedFile(imported);
+
+    let state = useOrgChartStore.getState();
+    expect(state.meta.title).toBe("Import équipe");
+    expect(state.fileHandle).toBeUndefined();
+    expect(state.isDirty).toBe(true);
+    expect(state.past).toHaveLength(1);
+
+    state.undo();
+    state = useOrgChartStore.getState();
+    expect(state.meta.title).toBe(original.meta.title);
+    expect(state.nodes).toEqual(original.nodes);
+  });
+
   it("deleteNode also removes its connected edges", () => {
     const { addNode, deleteNode } = useOrgChartStore.getState();
     const rootId = useOrgChartStore.getState().nodes[0].id;
@@ -343,6 +365,7 @@ describe("useOrgChartStore — frames multi-pages", () => {
     expect(state.frames).toHaveLength(1);
     expect(state.frames[0].id).toBe(id);
     expect(state.frames[0].name).toBe("Page 1");
+    expect(state.frames[0].page.placement).toBe("exact");
     expect(state.toFile().frames).toHaveLength(1);
 
     state.undo();
@@ -431,12 +454,26 @@ describe("useOrgChartStore — frames multi-pages", () => {
     expect(frame.page.format).toBe("a3");
   });
 
-  it("setFrameChromeElement stocke une disposition d'en-tête propre à la page", () => {
+  it("setFrameChromeElement stocke une mise en forme propre à la page et l'annule", () => {
     const id = useOrgChartStore.getState().addFrame();
 
-    useOrgChartStore.getState().setFrameChromeElement(id, "title", { x: 5, y: 5, size: 18 });
+    useOrgChartStore.getState().setFrameChromeElement(id, "title", {
+      x: 5,
+      y: 5,
+      size: 18,
+      bold: false,
+      italic: true,
+      color: "#2457A6",
+    });
 
-    expect(useOrgChartStore.getState().frames[0].chromeLayout?.title).toEqual({ x: 5, y: 5, size: 18 });
+    expect(useOrgChartStore.getState().frames[0].chromeLayout?.title).toMatchObject({
+      bold: false,
+      italic: true,
+      color: "#2457A6",
+    });
+
+    useOrgChartStore.getState().undo();
+    expect(useOrgChartStore.getState().frames[0].chromeLayout?.title).toBeUndefined();
   });
 
   it("addFrameForBranch copie le sous-arbre dans une nouvelle page rangée", async () => {

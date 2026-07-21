@@ -7,6 +7,7 @@ import {
   type LayoutCandidate,
 } from "./exportLayout";
 import type { OrgEdge, OrgNode } from "../types/orgchart";
+import { CARD_HEIGHT, CARD_WIDTH } from "./compactLayout";
 
 function nodesAt(positions: Array<[number, number]>): OrgNode[] {
   return positions.map(([x, y], i) => ({
@@ -31,8 +32,8 @@ const A4_LANDSCAPE = { width: 277, height: 147 };
 describe("contentBounds", () => {
   it("inclut la taille des cartes et la marge de capture", () => {
     const bounds = contentBounds(nodesAt([[0, 0]]));
-    expect(bounds.width).toBeCloseTo(240 * 1.12, 5);
-    expect(bounds.height).toBeCloseTo(110 * 1.12, 5);
+    expect(bounds.width).toBeCloseTo(CARD_WIDTH * 1.12, 5);
+    expect(bounds.height).toBeCloseTo(CARD_HEIGHT * 1.12, 5);
   });
 
   it("gère un organigramme vide sans division par zéro", () => {

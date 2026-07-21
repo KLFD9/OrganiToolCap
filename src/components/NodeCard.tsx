@@ -133,16 +133,27 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
 
   const cardWidth = computeNodeWidth(orgNode, display.showPhotos);
   const cardHeight = computeNodeHeight(orgNode, display);
+  const hasDepartment = Boolean(department && display.showDepartments);
+  const hasContacts = Boolean((email && display.showEmails) || (phone && display.showPhones));
+  const isCompactIdentity = !hasDepartment && !hasContacts;
 
   return (
     <div
-      className="relative px-5 py-4 border transition-[box-shadow,transform,border-color] duration-200 ease-out group hover:-translate-y-0.5 cursor-pointer"
+      className={`relative px-5 border transition-[box-shadow,transform,border-color] duration-200 ease-out group hover:-translate-y-0.5 cursor-pointer ${
+        isCompactIdentity ? "flex flex-col justify-center py-3" : "py-4"
+      }`}
       style={{
         width: cardWidth,
         height: cardHeight,
         background: style.background,
         color: style.textColor,
-        borderColor: style.borderColor,
+        ...(isMinimal
+          ? {
+              borderTopColor: style.borderColor,
+              borderRightColor: style.borderColor,
+              borderBottomColor: style.borderColor,
+            }
+          : { borderColor: style.borderColor }),
         borderLeftWidth: isMinimal ? "4px" : undefined,
         borderLeftColor: isMinimal ? style.accentColor : undefined,
         borderRadius: theme.cornerRadius,

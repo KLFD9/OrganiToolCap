@@ -3,11 +3,10 @@ import type { NodeProps } from "@xyflow/react";
 import type { ReadabilityRating } from "../lib/readability";
 
 /**
- * Cadre de page : feuille A4/A3 dessinée derrière l'organigramme, à l'échelle
- * « confort » — si le contenu tient dans la zone utile (pointillés), le texte
- * imprimé fera au moins 6,5 pt une fois le document ajusté à la page. Marges
- * et bande d'en-tête/pied sont figurées comme à l'export ; le badge annonce
- * la taille de texte réelle en continu.
+ * Cadre de page : feuille A4 ou grand format dessinée derrière l'organigramme, à l'échelle
+ * « confort ». En placement fidèle, un pixel canvas conserve cette échelle
+ * sur le papier ; en ajustement automatique, la jauge estime l'échelle finale.
+ * Marges et bande d'en-tête/pied sont figurées comme à l'export.
  */
 
 export interface PageGuideData extends Record<string, unknown> {

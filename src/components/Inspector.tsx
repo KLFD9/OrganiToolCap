@@ -3,6 +3,7 @@ import { useOrgChartStore } from "../store/useOrgChartStore";
 import { isHierarchyEdge, NodeStyleVariantSchema, resolveDisplay, type OrgDisplayOptions } from "../types/orgchart";
 import { computeOrgStats, computeTeamSize } from "../lib/stats";
 import type { PageSetup } from "../lib/readability";
+import { PageFormatSelect } from "./PageFormatSelect";
 import {
   Plus,
   Trash2,
@@ -328,24 +329,22 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
         <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>
           <div className={headerBorder}>
             <Layout className="h-4 w-4 text-primary-500" />
-            <h3 className={headerTitle}>Format du canevas</h3>
+            <h3 className={headerTitle}>Surface de sortie</h3>
           </div>
 
           <div className="flex flex-col gap-1.5">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
-              Taille papier
+              Document PDF
             </span>
-            <div className={segmentGroup} role="group" aria-label="Format papier">
-              <button className={segment(frame.page.format === "a4")} onClick={() => setPageOption({ format: "a4" })}>
-                A4
-              </button>
-              <button className={segment(frame.page.format === "a3")} onClick={() => setPageOption({ format: "a3" })}>
-                A3
-              </button>
-              <button className={segment(frame.page.format === "a2")} onClick={() => setPageOption({ format: "a2" })}>
-                A2
-              </button>
-            </div>
+            <PageFormatSelect
+              value={frame.page.format}
+              onChange={(format) => setPageOption({ format })}
+              themeMode={themeMode}
+              ariaLabel="Surface de sortie de la page"
+            />
+            <span className="text-[10px] leading-normal text-zinc-400 dark:text-zinc-500">
+              A4 est le format standard. A3 et A2 sont réservés à une impression grand format.
+            </span>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -381,6 +380,49 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
               onChange={(e) => setPageOption({ margin: Number(e.target.value) })}
               className="w-full accent-primary-600 dark:accent-primary-400 cursor-pointer bg-zinc-200 dark:bg-zinc-800 rounded-lg appearance-none h-1"
             />
+          </div>
+
+          <div className="flex flex-col gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-900/60">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              Placement dans le PDF
+            </span>
+            <button
+              type="button"
+              aria-pressed={frame.page.placement === "exact"}
+              onClick={() => setPageOption({ placement: "exact" })}
+              className={`rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 cursor-pointer ${
+                frame.page.placement === "exact"
+                  ? "border-primary-500 bg-primary-50 text-primary-900 dark:border-primary-500 dark:bg-primary-950/35 dark:text-primary-100"
+                  : themeMode === "dark"
+                  ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:border-zinc-700"
+                  : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300"
+              }`}
+            >
+              <span className="block text-xs font-bold">Préserver mes placements</span>
+              <span className="mt-1 block text-[10px] leading-relaxed opacity-70">
+                Les cartes gardent leur position exacte dans la feuille.
+              </span>
+            </button>
+            <button
+              type="button"
+              aria-pressed={frame.page.placement !== "exact"}
+              onClick={() => setPageOption({ placement: "fit" })}
+              className={`rounded-xl border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 cursor-pointer ${
+                frame.page.placement !== "exact"
+                  ? "border-primary-500 bg-primary-50 text-primary-900 dark:border-primary-500 dark:bg-primary-950/35 dark:text-primary-100"
+                  : themeMode === "dark"
+                  ? "border-zinc-800 bg-zinc-900/40 text-zinc-300 hover:border-zinc-700"
+                  : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-300"
+              }`}
+            >
+              <span className="block text-xs font-bold">Ajuster automatiquement</span>
+              <span className="mt-1 block text-[10px] leading-relaxed opacity-70">
+                Le contenu est agrandi et recentré pour remplir la page.
+              </span>
+            </button>
+            <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+              Les anciens documents conservent l’ajustement automatique tant que vous ne changez pas ce réglage.
+            </p>
           </div>
         </div>
 

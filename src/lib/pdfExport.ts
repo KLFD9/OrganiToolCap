@@ -1,6 +1,6 @@
 import type { jsPDF } from "jspdf";
 import { getNodesBounds, getViewportForBounds, type Node } from "@xyflow/react";
-import { resolveChromeElement, textHeightMm } from "./chromeLayout";
+import { chromeFontStyle, resolveChromeElement, resolveChromeTextStyle, textHeightMm } from "./chromeLayout";
 import type { ChromeElement, ChromeLayout } from "../types/orgchart";
 import type { PageSetup } from "./readability";
 
@@ -263,6 +263,63 @@ export async function captureFlow(
 }
 
 /**
+ * Capture une région fixe du canvas à l'échelle 1. Contrairement à
+ * `captureFlow`, aucun recadrage sur le contenu n'est appliqué : les espaces
+ * blancs et décalages à l'intérieur d'une frame restent donc visibles.
+ */
+export async function captureFlowRegion(
+  viewportEl: HTMLElement,
+  region: { x: number; y: number; width: number; height: number },
+  desiredRatio: number
+): Promise<CaptureResult> {
+  const width = Math.max(1, Math.ceil(region.width));
+  const height = Math.max(1, Math.ceil(region.height));
+  const pixelRatio = safePixelRatio(width, height, desiredRatio);
+
+  if (typeof document !== "undefined" && document.fonts?.ready) {
+    try {
+      await document.fonts.ready;
+    } catch {
+      // ignore : on capture quand même
+    }
+  }
+
+  const prevTransform = viewportEl.style.transform;
+  const prevWidth = viewportEl.style.width;
+  const prevHeight = viewportEl.style.height;
+
+  viewportEl.style.width = `${width}px`;
+  viewportEl.style.height = `${height}px`;
+  viewportEl.style.transform = `translate(${-region.x}px, ${-region.y}px) scale(1)`;
+
+  await nextFrame();
+
+  try {
+    const fontEmbedCSS = await getCachedFontEmbedCss(viewportEl);
+    const { toPng } = await loadHtmlToImage();
+    const dataUrl = await toPng(viewportEl, {
+      backgroundColor: undefined,
+      pixelRatio,
+      width,
+      height,
+      cacheBust: false,
+      fontEmbedCSS,
+    });
+    return {
+      dataUrl,
+      width,
+      height,
+      pixelWidth: Math.round(width * pixelRatio),
+      pixelHeight: Math.round(height * pixelRatio),
+    };
+  } finally {
+    viewportEl.style.transform = prevTransform;
+    viewportEl.style.width = prevWidth;
+    viewportEl.style.height = prevHeight;
+  }
+}
+
+/**
  * Prépare un logo pour insertion dans un document Office (PDF / PPTX).
  * jsPDF et PowerPoint ne savent pas insérer de SVG et jsPDF convertit les PNG
  * en une chaîne binaire en mémoire. Tous les logos sont donc normalisés vers
@@ -358,6 +415,11 @@ export async function drawPageChrome(
   // `size` est la taille de police (pt) ; la ligne de base jsPDF se place au
   // bas de la boîte de texte mesurée en mm (cohérent avec le rendu canvas).
   const baselineY = (el: ChromeElement) => el.y + textHeightMm(el.size);
+  const applyTextStyle = (key: "title" | "subtitle" | "footer", el: ChromeElement) => {
+    const style = resolveChromeTextStyle(key, el);
+    pdf.setFont("helvetica", chromeFontStyle(style));
+    pdf.setTextColor(style.color);
+  };
 
   if (options.logoUrl || options.secondaryLogoUrl || options.title) {
     // Les deux logos sont indépendants : les préparer en parallèle évite de
@@ -392,7 +454,7 @@ export async function drawPageChrome(
     if (options.title) {
       const el = resolveChromeElement(options.chromeLayout, "title", page, { measureTextMm, text: options.title });
       pdf.setFontSize(el.size);
-      pdf.setTextColor(0);
+      applyTextStyle("title", el);
       pdf.text(options.title, el.x, baselineY(el));
     }
     if (options.subtitle) {
@@ -401,9 +463,8 @@ export async function drawPageChrome(
         text: options.subtitle,
       });
       pdf.setFontSize(el.size);
-      pdf.setTextColor(120);
+      applyTextStyle("subtitle", el);
       pdf.text(options.subtitle, el.x, baselineY(el));
-      pdf.setTextColor(0);
     }
   }
 
@@ -414,7 +475,7 @@ export async function drawPageChrome(
         text: options.footer,
       });
       pdf.setFontSize(el.size);
-      pdf.setTextColor(120);
+      applyTextStyle("footer", el);
       pdf.text(options.footer, el.x, baselineY(el));
     }
     if (pageLabel) {
@@ -422,6 +483,7 @@ export async function drawPageChrome(
       pdf.setTextColor(120);
       pdf.text(pageLabel, pageWidth - margin, pageHeight - margin / 2, { align: "right" });
     }
+    pdf.setFont("helvetica", "normal");
     pdf.setTextColor(0);
   }
 
@@ -446,8 +508,8 @@ export function applyPdfMetadata(pdf: jsPDF, options: Pick<PdfExportOptions, "ti
   pdf.setLanguage("fr-FR");
 }
 
-/** Exporte les nœuds React Flow (recadrés sur l'ensemble de l'organigramme) en PDF haute résolution. */
-export async function exportFlowToPdf(viewportEl: HTMLElement, nodes: Node[], options: PdfExportOptions): Promise<void> {
+/** Construit le PDF image sans déclencher de téléchargement (aperçu et export partagent ce moteur). */
+export async function buildFlowPdfImage(viewportEl: HTMLElement, nodes: Node[], options: PdfExportOptions): Promise<jsPDF> {
   const capture = await captureFlow(viewportEl, nodes, "jpeg", PDF_DPI_SCALE);
 
   const { jsPDF } = await loadJsPdf();
@@ -474,8 +536,7 @@ export async function exportFlowToPdf(viewportEl: HTMLElement, nodes: Node[], op
     // Une seule page suffit : on bascule sur l'ajustement dynamique (pas de découpage inutile).
     if (grid.cols === 1 && grid.rows === 1) {
       await drawSinglePage(pdf, options, capture.dataUrl, capture.pixelWidth, capture.pixelHeight, pageWidth, pageHeight, margin);
-      pdf.save(safeFileName(options.title));
-      return;
+      return pdf;
     }
 
     const tiles = computePdfTiles(capture.pixelWidth, capture.pixelHeight, grid.cols, grid.rows);
@@ -495,12 +556,17 @@ export async function exportFlowToPdf(viewportEl: HTMLElement, nodes: Node[], op
       pdf.addImage(tileDataUrl, "JPEG", placement.x, placement.y, placement.width, placement.height);
     }
 
-    pdf.save(safeFileName(options.title, "-multipages"));
-    return;
+    return pdf;
   }
 
   await drawSinglePage(pdf, options, capture.dataUrl, capture.pixelWidth, capture.pixelHeight, pageWidth, pageHeight, margin);
-  pdf.save(safeFileName(options.title));
+  return pdf;
+}
+
+/** Exporte les nœuds React Flow (recadrés sur l'ensemble de l'organigramme) en PDF haute résolution. */
+export async function exportFlowToPdf(viewportEl: HTMLElement, nodes: Node[], options: PdfExportOptions): Promise<void> {
+  const pdf = await buildFlowPdfImage(viewportEl, nodes, options);
+  pdf.save(safeFileName(options.title, options.multiPage ? "-multipages" : ""));
 }
 
 /** Dessine l'organigramme entier, ajusté dynamiquement, sur une page unique. */
@@ -530,6 +596,10 @@ export interface FrameImagePage {
   title?: string;
   subtitle?: string;
   chromeLayout?: ChromeLayout;
+  /** Absence = cadrage historique ajusté/centré. */
+  placement?: PageSetup["placement"];
+  /** Rectangle de la feuille dans le canvas, requis pour le placement exact. */
+  frameRect?: { x: number; y: number; width: number; height: number };
   /** Nœuds React Flow (cartes membres de la page) à capturer. */
   rfNodes: Node[];
 }
@@ -538,15 +608,16 @@ export type ExportProgressCallback = (currentPage: number, totalPages: number) =
 
 /**
  * Export PDF image multi-pages : une page par frame, chacune capturée en haute
- * résolution et ajustée dans la zone utile de son format papier.
+ * résolution. Les pages `exact` capturent la feuille entière à l'échelle du
+ * canvas ; les pages historiques restent ajustées dans leur zone utile.
  */
-export async function exportFramesToPdfImage(
+export async function buildFramesPdfImage(
   viewportEl: HTMLElement,
   pages: FrameImagePage[],
   common: { docTitle?: string; docSubtitle?: string; footer?: string; logoUrl?: string; secondaryLogoUrl?: string },
   onProgress?: ExportProgressCallback
-): Promise<void> {
-  if (pages.length === 0) return;
+): Promise<jsPDF | null> {
+  if (pages.length === 0) return null;
   const { jsPDF } = await loadJsPdf();
   const pdf = new jsPDF({ orientation: pages[0].orientation, unit: "mm", format: pages[0].format });
   applyPdfMetadata(pdf, { title: common.docTitle, subtitle: common.docSubtitle });
@@ -574,6 +645,12 @@ export async function exportFramesToPdfImage(
 
     if (page.rfNodes.length === 0) continue; // page vide : chrome seul
 
+    if (page.placement === "exact" && page.frameRect) {
+      const capture = await captureFlowRegion(viewportEl, page.frameRect, PDF_DPI_SCALE);
+      pdf.addImage(capture.dataUrl, "PNG", 0, 0, pageWidth, pageHeight);
+      continue;
+    }
+
     const capture = await captureFlow(viewportEl, page.rfNodes, "jpeg", PDF_DPI_SCALE);
     const availableWidth = pageWidth - page.margin * 2;
     const availableHeight = pageHeight - topOffset - bottomOffset;
@@ -588,6 +665,18 @@ export async function exportFramesToPdfImage(
     pdf.addImage(capture.dataUrl, "JPEG", placement.x, placement.y, placement.width, placement.height);
   }
 
+  return pdf;
+}
+
+/** Télécharge le PDF image multi-pages construit avec le même moteur que l'aperçu. */
+export async function exportFramesToPdfImage(
+  viewportEl: HTMLElement,
+  pages: FrameImagePage[],
+  common: { docTitle?: string; docSubtitle?: string; footer?: string; logoUrl?: string; secondaryLogoUrl?: string },
+  onProgress?: ExportProgressCallback
+): Promise<void> {
+  const pdf = await buildFramesPdfImage(viewportEl, pages, common, onProgress);
+  if (!pdf) return;
   pdf.save(safeFileName(common.docTitle, pages.length > 1 ? "-pages" : ""));
 }
 
@@ -596,9 +685,9 @@ export async function exportFlowToPng(
   viewportEl: HTMLElement,
   nodes: Node[],
   filename = "organigramme.png",
-  options?: { transparent?: boolean }
+  options?: { transparent?: boolean; scale?: number }
 ): Promise<void> {
-  const { dataUrl } = await captureFlow(viewportEl, nodes, "png", PNG_DPI_SCALE, options);
+  const { dataUrl } = await captureFlow(viewportEl, nodes, "png", options?.scale ?? PNG_DPI_SCALE, options);
   const a = document.createElement("a");
   a.href = dataUrl;
   a.download = filename;

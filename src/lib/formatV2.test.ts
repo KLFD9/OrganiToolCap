@@ -90,18 +90,35 @@ describe("migration v1 → v2", () => {
           id: "frame-1",
           name: "Direction",
           position: { x: 0, y: 0 },
-          page: { format: "a4", orientation: "landscape", margin: 10 },
+          page: { format: "a4", orientation: "landscape", margin: 10, placement: "exact" },
           meta: { title: "Comité de direction" },
-          chromeLayout: { title: { x: 12, y: 8, size: 16 } },
+          chromeLayout: {
+            title: { x: 12, y: 8, size: 16, bold: false, italic: true, color: "#2457A6" },
+          },
         },
       ],
     };
     const parsed = parseOrgChartFile(JSON.stringify(withFrames));
     expect(parsed.frames).toHaveLength(1);
     expect(parsed.frames?.[0].meta?.title).toBe("Comité de direction");
+    expect(parsed.frames?.[0].page.placement).toBe("exact");
+    expect(parsed.frames?.[0].chromeLayout?.title).toMatchObject({
+      bold: false,
+      italic: true,
+      color: "#2457A6",
+    });
     expect(parseOrgChartFile(JSON.stringify(parsed))).toEqual(parsed);
     // Un fichier sans frames reste valide (page implicite)
     expect(parseOrgChartFile(JSON.stringify(v2File())).frames).toBeUndefined();
+  });
+
+  it("placement absent conserve le cadrage historique", () => {
+    const parsed = parseOrgChartFile(JSON.stringify({
+      ...v2File(),
+      layout: { direction: "TB", auto: true, page: { format: "a4", orientation: "landscape", margin: 10 } },
+    }));
+
+    expect(parsed.layout.page?.placement).toBeUndefined();
   });
 
   it("format A2 : valeur additive du format de page, round-trip sans perte", () => {

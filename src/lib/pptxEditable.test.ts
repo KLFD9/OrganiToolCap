@@ -95,6 +95,21 @@ describe("buildEditableSpec", () => {
     expect(spec.connectors).toHaveLength(0);
   });
 
+  it("préserve le placement absolu avec une projection fixe", () => {
+    const nodes: OrgNode[] = [
+      { id: "a", position: { x: 300, y: 450 }, data: { name: "Claire" } },
+    ];
+    const spec = buildEditableSpec(nodes, [], glassCapTheme, AREA, {
+      originX: 100,
+      originY: 150,
+      inchesPerPx: 0.01,
+    });
+
+    expect(spec.cards[0].x).toBeCloseTo(2, 6);
+    expect(spec.cards[0].y).toBeCloseTo(3, 6);
+    expect(spec.cards[0].w).toBeCloseTo(2.4, 6);
+  });
+
   it("expose l'e-mail (si affiché) et l'accent du niveau", () => {
     const nodes: OrgNode[] = [
       { id: "a", position: { x: 0, y: 0 }, data: { name: "Claire", email: "claire@corp.fr" } },

@@ -97,6 +97,14 @@ describe("importPeopleCsv", () => {
     expect(warnings[0]).toContain("propre responsable");
   });
 
+  it("ignore un rattachement qui fermerait une boucle hiérarchique", () => {
+    const input = "Nom;Responsable\nAlice;Bruno\nBruno;Alice";
+    const { edges, warnings } = importPeopleCsv(input);
+
+    expect(edges).toHaveLength(1);
+    expect(warnings.some((warning) => warning.includes("boucle hiérarchique"))).toBe(true);
+  });
+
   it("rejette un fichier sans colonne nom", () => {
     expect(() => importPeopleCsv("Poste;Email\nDir;a@b.fr")).toThrow(CsvFormatError);
   });

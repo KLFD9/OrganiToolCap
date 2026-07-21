@@ -7,7 +7,7 @@ import { computeChromeOffsets, type PdfFormat, type PdfOrientation } from "./pdf
  * tout est mis à l'échelle — y compris le texte. On calcule ici la taille
  * réelle (en points typographiques) qu'aura le nom des cartes une fois
  * imprimé, pour avertir l'utilisateur et lui proposer des solutions
- * (disposition compacte, A3/A2, multi-pages) plutôt que de le laisser
+ * (disposition compacte, orientation, multi-pages) plutôt que de le laisser
  * découvrir un PDF illisible.
  */
 
@@ -73,6 +73,8 @@ export interface PageSetup {
   format: PdfFormat;
   orientation: PdfOrientation;
   margin: number;
+  /** Absence = comportement historique ajusté et centré. */
+  placement?: "fit" | "exact";
 }
 
 export const DEFAULT_PAGE: PageSetup = { format: "a4", orientation: "landscape", margin: 10 };

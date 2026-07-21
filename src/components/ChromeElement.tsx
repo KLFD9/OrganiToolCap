@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { NodeResizer, type NodeProps } from "@xyflow/react";
-import type { ChromeKey } from "../types/orgchart";
+import { NodeResizer, NodeToolbar, Position, type NodeProps } from "@xyflow/react";
+import { Bold, Italic, RotateCcw } from "lucide-react";
+import type { ChromeElement, ChromeKey } from "../types/orgchart";
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import { CHROME_TEXT_FONT_FAMILY, CHROME_TEXT_LINE_HEIGHT } from "../lib/chromeLayout";
 
@@ -22,6 +23,10 @@ export interface ChromeElementData extends Record<string, unknown> {
   /** Hauteur en px canvas (variant logo). */
   heightPx?: number;
   bold?: boolean;
+  italic?: boolean;
+  color?: string;
+  /** Géométrie et style persistés/résolus de l'élément courant. */
+  element: ChromeElement;
   dark: boolean;
   /**
    * Page (frame) portant l'élément en mode multi-pages : le double-clic sur
@@ -31,6 +36,8 @@ export interface ChromeElementData extends Record<string, unknown> {
   frameId?: string;
   /** Conversion et persistance faites par le Canvas (qui connaît l'échelle). */
   onResizeEnd: (key: ChromeKey, params: { x: number; y: number; width: number; height: number }) => void;
+  /** Met à jour la mise en forme sans perdre position ni taille. */
+  onStyleChange: (key: ChromeKey, element: ChromeElement) => void;
 }
 
 const TEXT_COMMIT: Partial<Record<ChromeKey, "setTitle" | "setSubtitle" | "setFooter">> = {
@@ -48,7 +55,21 @@ const LABELS: Record<ChromeKey, string> = {
 };
 
 function ChromeElementImpl({ data, selected }: NodeProps & { data: ChromeElementData }) {
-  const { chromeKey, variant, value, fontPx = 16, heightPx = 40, bold = false, dark, frameId, onResizeEnd } = data;
+  const {
+    chromeKey,
+    variant,
+    value,
+    fontPx = 16,
+    heightPx = 40,
+    bold = false,
+    italic = false,
+    color,
+    element,
+    dark,
+    frameId,
+    onResizeEnd,
+    onStyleChange,
+  } = data;
   const setTitle = useOrgChartStore((s) => s.setTitle);
   const setSubtitle = useOrgChartStore((s) => s.setSubtitle);
   const setFooter = useOrgChartStore((s) => s.setFooter);
@@ -77,11 +98,104 @@ function ChromeElementImpl({ data, selected }: NodeProps & { data: ChromeElement
   const effectiveFontPx = liveHeightPx != null ? liveHeightPx / CHROME_TEXT_LINE_HEIGHT : fontPx;
   const effectiveHeightPx = liveHeightPx ?? heightPx;
 
+  const updateStyle = (patch: Partial<Pick<ChromeElement, "bold" | "italic" | "color">>) => {
+    onStyleChange(chromeKey, { ...element, ...patch });
+  };
+
+  const resetStyle = () => {
+    onStyleChange(chromeKey, { x: element.x, y: element.y, size: element.size });
+  };
+
   return (
     <div
       className="group/chrome relative"
       title={`${LABELS[chromeKey]} — glisser pour déplacer, poignées pour redimensionner${variant === "text" ? ", double-clic pour modifier" : ""}`}
     >
+      {variant === "text" && (
+        <NodeToolbar
+          isVisible={Boolean(selected) && !editing}
+          position={Position.Top}
+          offset={14}
+          className="nodrag nopan nowheel"
+        >
+          <div
+            className={`flex items-center gap-1 rounded-full border p-1.5 shadow-xl backdrop-blur-xl ${
+              dark
+                ? "border-white/10 bg-zinc-900/95 text-zinc-200 shadow-black/40"
+                : "border-zinc-200/90 bg-white/95 text-zinc-700 shadow-zinc-900/15"
+            }`}
+            role="toolbar"
+            aria-label={`Mise en forme — ${LABELS[chromeKey]}`}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <span className="px-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
+              Texte
+            </span>
+            <span className={`h-5 w-px ${dark ? "bg-zinc-700" : "bg-zinc-200"}`} />
+            <button
+              type="button"
+              aria-label="Gras"
+              aria-pressed={bold}
+              title="Gras"
+              onClick={() => updateStyle({ bold: !bold })}
+              className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                bold
+                  ? "bg-primary-600 text-white"
+                  : dark
+                    ? "hover:bg-zinc-800"
+                    : "hover:bg-zinc-100"
+              }`}
+            >
+              <Bold className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              aria-label="Italique"
+              aria-pressed={italic}
+              title="Italique"
+              onClick={() => updateStyle({ italic: !italic })}
+              className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                italic
+                  ? "bg-primary-600 text-white"
+                  : dark
+                    ? "hover:bg-zinc-800"
+                    : "hover:bg-zinc-100"
+              }`}
+            >
+              <Italic className="h-3.5 w-3.5" />
+            </button>
+            <label
+              className={`relative flex h-7 w-7 cursor-pointer items-center justify-center rounded-full ring-1 ring-inset transition-transform hover:scale-105 focus-within:ring-2 focus-within:ring-primary-500 ${
+                dark ? "ring-white/15" : "ring-black/10"
+              }`}
+              title="Couleur du texte"
+              style={{ backgroundColor: color }}
+            >
+              <span className="sr-only">Couleur du texte</span>
+              <input
+                type="color"
+                aria-label="Couleur du texte"
+                value={color ?? (dark ? "#f4f4f5" : "#27272a")}
+                onChange={(event) => updateStyle({ color: event.target.value.toUpperCase() })}
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </label>
+            <span className={`h-5 w-px ${dark ? "bg-zinc-700" : "bg-zinc-200"}`} />
+            <button
+              type="button"
+              aria-label="Réinitialiser la mise en forme"
+              title="Style par défaut"
+              onClick={resetStyle}
+              className={`flex h-7 w-7 items-center justify-center rounded-full transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                dark ? "text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
+              }`}
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </NodeToolbar>
+      )}
+
       <NodeResizer
         isVisible={Boolean(selected)}
         keepAspectRatio={variant === "logo"}
@@ -142,7 +256,8 @@ function ChromeElementImpl({ data, selected }: NodeProps & { data: ChromeElement
             lineHeight: CHROME_TEXT_LINE_HEIGHT,
             fontFamily: CHROME_TEXT_FONT_FAMILY,
             fontWeight: bold ? 700 : 400,
-            color: dark ? "#e4e4e7" : "#27272a",
+            fontStyle: italic ? "italic" : "normal",
+            color,
             width: Math.max(120, draft.length * effectiveFontPx * 0.62),
             borderBottom: "1.5px solid rgba(109, 74, 174, 0.6)",
           }}
@@ -160,7 +275,8 @@ function ChromeElementImpl({ data, selected }: NodeProps & { data: ChromeElement
             lineHeight: CHROME_TEXT_LINE_HEIGHT,
             fontFamily: CHROME_TEXT_FONT_FAMILY,
             fontWeight: bold ? 700 : 400,
-            color: dark ? "#e4e4e7" : "#27272a",
+            fontStyle: italic ? "italic" : "normal",
+            color,
           }}
         >
           {value}

@@ -4,6 +4,7 @@ import { computeNodeWidth } from "./nodeStyle";
 import { nameInitials } from "./nameInitials";
 import { blendHex } from "./colorBlend";
 import type { FramePageContent } from "./frames";
+import { COMFORT_MM_PER_PX } from "./readability";
 import {
   applyPdfMetadata,
   drawPageChrome,
@@ -15,8 +16,8 @@ import {
 /**
  * Export PDF « vectoriel natif » : réplique proportionnelle des cartes du
  * canvas — chaque dimension est exprimée en px de la carte à l'écran (240 px
- * de large) puis convertie à l'échelle de la page. Le document imprimé est
- * la copie exacte de ce que montre le canvas et le cadre de page : badge de
+ * de large) puis convertie à l'échelle de la page. Pour une page explicite en
+ * mode `exact`, les coordonnées sont projetées depuis l'origine de la frame : badge de
  * pôle en pilule, pastille d'initiales, nom 12 px, poste 10 px, contact 10 px.
  * Texte net à toutes les échelles, fichier de quelques dizaines de Ko.
  * Limites assumées : police standardisée (Helvetica) et photos remplacées
@@ -62,6 +63,38 @@ function truncateSpacedTextToWidth(
 
 /** jsPDF sans dépendance de type statique (module chargé à la demande). */
 type JsPdfLike = Awaited<ReturnType<typeof loadPdf>>["pdf"];
+
+type RoundedFillPdf = Pick<JsPdfLike, "rect" | "circle">;
+
+/**
+ * Remplit un rectangle arrondi sans le remplissage natif de `roundedRect`.
+ * Certains moteurs PDF matérialisent la fermeture de ce tracé par un cheveu
+ * vertical à `x + radius`, visible sous l'avatar jusque dans les coordonnées.
+ */
+export function drawSeamlessRoundedFill(
+  pdf: RoundedFillPdf,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number
+): void {
+  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+  if (r === 0) {
+    pdf.rect(x, y, width, height, "F");
+    return;
+  }
+
+  // Le très léger chevauchement évite aussi les coutures d'anticrénelage
+  // entre les rectangles centraux et les quatre coins circulaires.
+  const overlap = Math.min(r, 0.02);
+  pdf.rect(x + r - overlap, y, width - r * 2 + overlap * 2, height, "F");
+  pdf.rect(x, y + r - overlap, width, height - r * 2 + overlap * 2, "F");
+  pdf.circle(x + r, y + r, r, "F");
+  pdf.circle(x + width - r, y + r, r, "F");
+  pdf.circle(x + r, y + height - r, r, "F");
+  pdf.circle(x + width - r, y + height - r, r, "F");
+}
 
 async function loadPdf(orientation: PdfExportOptions["orientation"], format: PdfExportOptions["format"]) {
   const { jsPDF } = await import("jspdf");
@@ -122,7 +155,8 @@ async function drawVectorPage(
   edges: OrgEdge[],
   theme: OrgTheme,
   options: PdfExportOptions,
-  pageLabel?: string
+  pageLabel?: string,
+  exactOrigin?: { x: number; y: number }
 ): Promise<void> {
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
@@ -136,7 +170,19 @@ async function drawVectorPage(
     width: Math.max(0.1, (pageWidth - margin * 2) / MM_PER_IN),
     height: Math.max(0.1, (pageHeight - topOffset - bottomOffset) / MM_PER_IN),
   };
-  const spec = buildEditableSpec(nodes, edges, theme, areaIn);
+  const spec = buildEditableSpec(
+    nodes,
+    edges,
+    theme,
+    areaIn,
+    exactOrigin
+      ? {
+          originX: exactOrigin.x,
+          originY: exactOrigin.y,
+          inchesPerPx: COMFORT_MM_PER_PX / MM_PER_IN,
+        }
+      : undefined
+  );
   if (spec.cards.length > 0) drawEditableSpec(pdf, spec, theme);
 }
 
@@ -201,30 +247,18 @@ function drawEditableSpec(pdf: JsPdfLike, spec: EditableSlideSpec, theme: OrgThe
       : blendHex(card.accentColor, card.fillColor, theme.nodeStyle === "glass" ? 0.25 : 0.15);
 
     pdf.setFillColor(`#${card.fillColor}`);
+    drawSeamlessRoundedFill(pdf, x, y, w, h, radius);
     pdf.setDrawColor(`#${borderColor}`);
     pdf.setLineWidth(px(isOutline || isNeon ? 1.5 : 1));
-    pdf.roundedRect(x, y, w, h, radius, radius, "FD");
+    pdf.roundedRect(x, y, w, h, radius, radius, "D");
 
-    // Style minimal : barre d'accent sur le bord gauche (4 px)
+    // Style minimal : un trait unique évite tout raccord entre deux aplats.
     if (isMinimal) {
-      if (radius > px(4)) {
-        // 1. Dessiner un rectangle arrondi de largeur 2 * radius (pour garantir un rayon parfait sur le bord gauche)
-        pdf.setFillColor(`#${card.accentColor}`);
-        pdf.roundedRect(x, y, 2 * radius, h, radius, radius, "F");
-        
-        // 2. Couvrir la partie droite avec le fond du nœud pour ne laisser que px(4) visible à gauche
-        pdf.setFillColor(`#${card.fillColor}`);
-        pdf.rect(x + px(4), y, 2 * radius - px(4), h, "F");
-      } else {
-        // Pour les coins carrés ou très peu arrondis, un rectangle simple de 4px suffit
-        pdf.setFillColor(`#${card.accentColor}`);
-        pdf.rect(x, y, px(4), h, "F");
-      }
-      
-      // 3. Redessiner le contour du nœud par-dessus
-      pdf.setDrawColor(`#${borderColor}`);
-      pdf.setLineWidth(px(1));
-      pdf.roundedRect(x, y, w, h, radius, radius, "D");
+      pdf.setDrawColor(`#${card.accentColor}`);
+      pdf.setLineWidth(px(4));
+      pdf.setLineCap("round");
+      const inset = Math.max(px(2), radius * 0.45);
+      pdf.line(x + px(2), y + inset, x + px(2), y + h - inset);
     }
 
     // Réplique de NodeCard : padding 20 px / 16 px
@@ -261,7 +295,9 @@ function drawEditableSpec(pdf: JsPdfLike, spec: EditableSlideSpec, theme: OrgThe
     // Rangée avatar (40 px) + nom (12 px) / poste (10 px)
     const avatarD = display.showPhotos ? px(40) : 0;
     const rowH = Math.max(avatarD, px(30));
-    const rowCenterY = cursorY + rowH / 2;
+    const rowCenterY = !card.department && !card.email && !card.phone
+      ? y + h / 2
+      : cursorY + rowH / 2;
 
     if (display.showPhotos) {
       const avatarBg = solidBg || isNeon
@@ -328,15 +364,25 @@ function drawEditableSpec(pdf: JsPdfLike, spec: EditableSlideSpec, theme: OrgThe
   }
 }
 
+export async function buildFlowPdfVector(
+  nodes: OrgNode[],
+  edges: OrgEdge[],
+  theme: OrgTheme,
+  options: PdfExportOptions
+): Promise<JsPdfLike> {
+  const { pdf } = await loadPdf(options.orientation, options.format);
+  applyPdfMetadata(pdf, options);
+  await drawVectorPage(pdf, nodes, edges, theme, options);
+  return pdf;
+}
+
 export async function exportFlowToPdfVector(
   nodes: OrgNode[],
   edges: OrgEdge[],
   theme: OrgTheme,
   options: PdfExportOptions
 ): Promise<void> {
-  const { pdf } = await loadPdf(options.orientation, options.format);
-  applyPdfMetadata(pdf, options);
-  await drawVectorPage(pdf, nodes, edges, theme, options);
+  const pdf = await buildFlowPdfVector(nodes, edges, theme, options);
   pdf.save(safeFileName(options.title, "-vectoriel"));
 }
 
@@ -380,7 +426,15 @@ export async function buildFramesPdfVector(
       chromeLayout: page.chromeLayout,
     };
     const label = pages.length > 1 ? `${page.frame.name} · ${i + 1}/${pages.length}` : undefined;
-    await drawVectorPage(pdf, page.nodes, page.edges, theme, options, label);
+    await drawVectorPage(
+      pdf,
+      page.nodes,
+      page.edges,
+      theme,
+      options,
+      label,
+      page.frame.page.placement === "exact" ? page.frame.position : undefined
+    );
   }
 
   return pdf;

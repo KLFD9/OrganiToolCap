@@ -26,9 +26,11 @@ import {
 } from "lucide-react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import { openOrgChartFile, saveOrgChartFile, FileFormatError } from "../lib/fileIO";
-import { importPeopleCsv, CsvFormatError } from "../lib/csvImport";
+import { importPeopleCsv, CsvFormatError, type CsvImportResult } from "../lib/csvImport";
+import { availableAreaForSetup, DEFAULT_PAGE } from "../lib/readability";
 import { demoCompany } from "../templates/demoCompany";
 import { clearDraft } from "../lib/db";
+import { CsvImportDialog } from "./CsvImportDialog";
 
 interface ToolbarProps {
   onExportClick: () => void;
@@ -66,6 +68,7 @@ export function Toolbar({
   const layout = useOrgChartStore((s) => s.layout);
   const setTitle = useOrgChartStore((s) => s.setTitle);
   const loadFile = useOrgChartStore((s) => s.loadFile);
+  const loadImportedFile = useOrgChartStore((s) => s.loadImportedFile);
   const toFile = useOrgChartStore((s) => s.toFile);
   const markSaved = useOrgChartStore((s) => s.markSaved);
   const setLayoutDirection = useOrgChartStore((s) => s.setLayoutDirection);
@@ -88,6 +91,8 @@ export function Toolbar({
   const [busy, setBusy] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [pendingCsv, setPendingCsv] = useState<{ fileName: string; result: CsvImportResult } | null>(null);
+  const [csvBusy, setCsvBusy] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
 
@@ -217,29 +222,68 @@ export function Toolbar({
     setNotice(null);
     try {
       const text = await f.text();
-      const { nodes: importedNodes, edges, warnings } = importPeopleCsv(text);
-      const current = toFile();
-      loadFile({
-        ...current,
-        meta: {
-          ...current.meta,
-          title: f.name.replace(/\.[^.]+$/, "") || current.meta.title,
-          updatedAt: new Date().toISOString(),
-        },
-        nodes: importedNodes,
-        edges,
-      });
-      await applyAutoLayout();
-      requestAnimationFrame(() => fitView({ duration: motionDuration(300), padding: 0.2 }));
-      if (warnings.length > 0) {
-        const shown = warnings.slice(0, 3).join(" · ");
-        setNotice(
-          warnings.length > 3 ? `${shown} (+${warnings.length - 3} autres avertissements)` : shown
-        );
-      }
+      setPendingCsv({ fileName: f.name, result: importPeopleCsv(text) });
     } catch (err) {
       setError(err instanceof CsvFormatError ? err.message : "Impossible d'importer ce fichier CSV.");
       console.error(err);
+    }
+  };
+
+  const confirmCsvImport = async (organize: boolean) => {
+    if (!pendingCsv) return;
+    setCsvBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const current = toFile();
+      const now = new Date().toISOString();
+      const importedTitle = pendingCsv.fileName.replace(/\.[^.]+$/, "") || current.meta.title;
+      let importedNodes = pendingCsv.result.nodes;
+      let importedLayout = current.layout;
+
+      if (organize) {
+        const page = current.layout.page ?? DEFAULT_PAGE;
+        const area = availableAreaForSetup(page, {
+          title: importedTitle,
+          footer: current.meta.footer,
+          logoUrl: current.theme.logoUrl,
+          secondaryLogoUrl: current.theme.secondaryLogoUrl,
+        });
+        const { optimizeLayoutForPage } = await import("../lib/exportLayout");
+        const [best] = await optimizeLayoutForPage(
+          pendingCsv.result.nodes,
+          pendingCsv.result.edges,
+          current.layout,
+          area
+        );
+        importedNodes = best.nodes;
+        importedLayout = { ...current.layout, ...best.layout };
+      }
+
+      loadImportedFile({
+        ...current,
+        meta: { ...current.meta, title: importedTitle, createdAt: now, updatedAt: now },
+        nodes: importedNodes,
+        edges: pendingCsv.result.edges,
+        layout: importedLayout,
+        // Un import ouvre un nouveau document ; les anciennes pages ne doivent
+        // jamais absorber les nouvelles cartes par leur géométrie.
+        frames: undefined,
+      });
+
+      const warningCount = pendingCsv.result.warnings.length;
+      setPendingCsv(null);
+      requestAnimationFrame(() => fitView({ duration: motionDuration(300), padding: 0.2 }));
+      setNotice(
+        warningCount > 0
+          ? `Import terminé · ${warningCount} point${warningCount > 1 ? "s" : ""} à vérifier dans le fichier source.`
+          : `Import terminé · ${importedNodes.length} personne${importedNodes.length > 1 ? "s" : ""}.`
+      );
+    } catch (err) {
+      console.error(err);
+      setError("Impossible de préparer la mise en page du fichier CSV.");
+    } finally {
+      setCsvBusy(false);
     }
   };
 
@@ -319,7 +363,7 @@ export function Toolbar({
           <summary className={menuTrigger}><span>Fichier</span><ChevronDown className="h-3 w-3" /></summary>
           <div className={`${menuPanel} left-0`}>
             <button className={menuItem} onClick={() => { closeMenus(); onNewClick(); }}><FilePlus2 className="h-4 w-4 text-zinc-400" /><span><b className="block font-semibold">Nouveau</b><small className="text-zinc-400">Créer un autre organigramme</small></span></button>
-            <button data-action="open" className={menuItem} onClick={() => { closeMenus(); void handleOpen(); }}><FolderOpen className="h-4 w-4 text-zinc-400" /><span><b className="block font-semibold">Ouvrir</b><small className="text-zinc-400">Fichier OrganiTool ou PowerPoint</small></span></button>
+            <button data-action="open" className={menuItem} onClick={() => { closeMenus(); void handleOpen(); }}><FolderOpen className="h-4 w-4 text-zinc-400" /><span><b className="block font-semibold">Ouvrir</b><small className="text-zinc-400">Fichier OrganiTool</small></span></button>
             <button data-action="import-csv" className={menuItem} onClick={() => { closeMenus(); csvInputRef.current?.click(); }}><FileSpreadsheet className="h-4 w-4 text-zinc-400" /><span><b className="block font-semibold">Importer Excel / CSV</b><small className="text-zinc-400">Créer depuis une liste</small></span></button>
             <button className={menuItem} onClick={() => { closeMenus(); loadFile(demoCompany); }}><Sparkles className="h-4 w-4 text-zinc-400" /><span><b className="block font-semibold">Voir l’exemple</b><small className="text-zinc-400">Société Horizon</small></span></button>
             <div className="my-1 h-px bg-zinc-100 dark:bg-zinc-800" />
@@ -389,6 +433,18 @@ export function Toolbar({
       </div>
 
       {(error || notice) && <div role="status" className={`absolute left-1/2 top-[calc(100%+8px)] z-50 -translate-x-1/2 rounded-lg border px-4 py-2 text-xs shadow-lg ${error ? "border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300" : "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"}`}>{error ?? notice}</div>}
+      {pendingCsv && (
+        <CsvImportDialog
+          fileName={pendingCsv.fileName}
+          result={pendingCsv.result}
+          currentNodeCount={nodes.length}
+          currentDocumentDirty={isDirty}
+          busy={csvBusy}
+          themeMode={themeMode}
+          onCancel={() => setPendingCsv(null)}
+          onConfirm={(organize) => void confirmCsvImport(organize)}
+        />
+      )}
     </div>
   );
 }

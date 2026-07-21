@@ -71,15 +71,15 @@ describe("computeNodeHeight", () => {
     showPhones: true,
   };
 
-  it("réserve la place des informations visibles sans modifier les cartes simples", () => {
+  it("compacte les cartes simples et réserve la place des informations visibles", () => {
     const simple = makeNode("simple");
     const detailed: OrgNode = {
       ...makeNode("detailed"),
       data: { name: "Détaillé", department: "Finance", email: "a@b.fr", phone: "0102030405" },
     };
 
-    expect(computeNodeHeight(simple, display)).toBe(110);
-    expect(computeNodeHeight(detailed, display)).toBe(184);
+    expect(computeNodeHeight(simple, display)).toBe(84);
+    expect(computeNodeHeight(detailed, display)).toBe(166);
   });
 
   it("ignore les champs masqués par le thème", () => {
@@ -90,7 +90,7 @@ describe("computeNodeHeight", () => {
 
     expect(
       computeNodeHeight(node, { ...display, showDepartments: false, showEmails: false, showPhones: false })
-    ).toBe(110);
+    ).toBe(84);
   });
 });
 

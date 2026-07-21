@@ -46,6 +46,7 @@ import {
   resolveChromeElement,
   isChromeTextKey,
   textHeightMm,
+  resolveChromeTextStyle,
   CHROME_TEXT_LINE_HEIGHT,
   CHROME_TEXT_FONT_FAMILY,
 } from "../lib/chromeLayout";
@@ -56,6 +57,7 @@ import {
   pageSizeMm,
   COMFORT_MM_PER_PX,
   PT_PER_MM,
+  READABLE_PT_GOOD,
   DEFAULT_PAGE,
 } from "../lib/readability";
 import { NodeCard, type NodeCardData } from "./NodeCard";
@@ -64,6 +66,7 @@ import { OrgEdge } from "./OrgEdge";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 import { PageGuide, type PageGuideData } from "./PageGuide";
 import { ChromeElementNode, type ChromeElementData } from "./ChromeElement";
+import { PageFormatSelect } from "./PageFormatSelect";
 
 interface MenuState {
   x: number;
@@ -118,12 +121,12 @@ const parseChromeNodeId = (id: string): { key: ChromeKey; frameId?: string } | u
 // même pile de polices que le rendu à l'écran (ChromeElement) et que le PDF
 // (Helvetica), à 96 CSS px/pouce, pour un centrage cohérent des trois rendus.
 let measureCtx: CanvasRenderingContext2D | null | undefined;
-function measureChromeTextMm(text: string, pt: number): number {
+function measureChromeTextMm(text: string, pt: number, bold = false, italic = false): number {
   if (measureCtx === undefined) {
     measureCtx = typeof document === "undefined" ? null : document.createElement("canvas").getContext("2d");
   }
   if (!measureCtx) return 0;
-  measureCtx.font = `${pt}pt ${CHROME_TEXT_FONT_FAMILY}`;
+  measureCtx.font = `${italic ? "italic " : ""}${bold ? "700 " : ""}${pt}pt ${CHROME_TEXT_FONT_FAMILY}`;
   return (measureCtx.measureText(text).width * 25.4) / 96;
 }
 
@@ -237,7 +240,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     [storeNodes, storeEdges]
   );
 
-  // Cadre de page : feuille A4/A3 à l'échelle « confort », centrée sur le
+  // Cadre de page : surface A4 ou grand format à l'échelle « confort », centrée sur le
   // contenu comme le fera l'export (fit-contain centré).
   const pageGuideEnabled = useOrgChartStore((s) => s.pageGuide);
   const page = useOrgChartStore((s) => s.layout.page) ?? DEFAULT_PAGE;
@@ -308,7 +311,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         },
       },
     ];
-  }, [pageGuideEnabled, hasFrames, visibleNodes, page, meta, theme.logoUrl, theme.secondaryLogoUrl, themeMode]);
+  }, [pageGuideEnabled, hasFrames, visibleNodes, page, meta, theme, themeMode]);
 
   // Pages explicites : une feuille par frame, déplaçable par son étiquette
   // (classe frame-drag-handle) — le déplacement emporte les cartes membres.
@@ -340,7 +343,9 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
       const minLeft = members.length > 0 ? Math.min(...xs) : 0;
       const boundsW = members.length > 0 ? (maxRight - minLeft) * CAPTURE_MARGIN : 1;
       const boundsH = members.length > 0 ? (Math.max(...ys) - Math.min(...ys) + CARD_HEIGHT) * CAPTURE_MARGIN : 1;
-      const estimate = estimateReadability(boundsW, boundsH, avail.width, avail.height);
+      const estimate = frame.page.placement === "exact"
+        ? { fontPt: READABLE_PT_GOOD, rating: "good" as const, cardWidthMm: Math.round(CARD_WIDTH * COMFORT_MM_PER_PX) }
+        : estimateReadability(boundsW, boundsH, avail.width, avail.height);
 
       return {
         id: frameNodeId(frame.id),
@@ -369,7 +374,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
           insetBottom: mmToPx(offsets.bottomOffset),
           hasHeader: offsets.topOffset > frame.page.margin,
           hasFooter: offsets.bottomOffset > frame.page.margin,
-          label: `${FORMAT_LABEL[frame.page.format]} ${ORIENTATION_LABEL[frame.page.orientation]}`,
+          label: `${FORMAT_LABEL[frame.page.format]} ${ORIENTATION_LABEL[frame.page.orientation]} · ${frame.page.placement === "exact" ? "placements préservés" : "ajusté"}`,
           fontPt: estimate.fontPt,
           rating: estimate.rating,
           dark: themeMode === "dark",
@@ -389,8 +394,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     membership,
     visibleNodes,
     meta,
-    theme.logoUrl,
-    theme.secondaryLogoUrl,
+    theme,
     themeMode,
   ]);
 
@@ -401,7 +405,12 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const secondaryLogoAspect = useImageAspect(theme.secondaryLogoUrl);
 
   const handleChromeResizeEnd = useCallback(
-    (frameId: string | undefined, key: ChromeKey, params: { x: number; y: number; width: number; height: number }) => {
+    (
+      frameId: string | undefined,
+      key: ChromeKey,
+      params: { x: number; y: number; width: number; height: number },
+      current: ChromeElement
+    ) => {
       const isText = isChromeTextKey(key);
       // La boîte d'un élément de texte fait `fontPx * CHROME_TEXT_LINE_HEIGHT`
       // (voir le calcul de `boxHeight` ci-dessous) : il faut retirer cet
@@ -409,6 +418,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
       // sinon la police gonfle un peu plus à chaque redimensionnement.
       const sizeMm = pxToMm(isText ? params.height / CHROME_TEXT_LINE_HEIGHT : params.height);
       const element = {
+        ...current,
         x: pxToMm(params.x),
         y: pxToMm(params.y),
         size: isText ? sizeMm * PT_PER_MM : sizeMm,
@@ -466,10 +476,13 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         // Boîte de sélection collée au rendu : largeur mesurée du libellé (même
         // police que l'affichage), pas une approximation par nombre de caractères.
         const boxWidth = isText
-          ? Math.max(24, mmToPx(measureChromeTextMm(value, element.size)))
+          ? Math.max(24, mmToPx(measureChromeTextMm(value, element.size, element.bold, element.italic)))
           : (heightPx ?? 24) * (logoAspect ?? 1);
         const boxHeight = isText ? (fontPx ?? 12) * CHROME_TEXT_LINE_HEIGHT : heightPx ?? 24;
 
+        const textStyle = isText
+          ? resolveChromeTextStyle(key, element, themeMode === "dark")
+          : undefined;
         nodes.push({
           id,
           type: "chromeElement",
@@ -486,10 +499,18 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
             value,
             fontPx,
             heightPx,
+            bold: textStyle?.bold,
+            italic: textStyle?.italic,
+            color: textStyle?.color,
+            element,
             dark: themeMode === "dark",
             frameId,
             onResizeEnd: (k: ChromeKey, params: { x: number; y: number; width: number; height: number }) =>
-              handleChromeResizeEnd(frameId, k, params),
+              handleChromeResizeEnd(frameId, k, params, element),
+            onStyleChange: (k: ChromeKey, styled: ChromeElement) => {
+              if (frameId) setFrameChromeElement(frameId, k, styled);
+              else setChromeElement(k, styled);
+            },
           },
         });
       }
@@ -526,6 +547,8 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     secondaryLogoAspect,
     themeMode,
     handleChromeResizeEnd,
+    setChromeElement,
+    setFrameChromeElement,
   ]);
 
   // Zones de regroupement visuel par pôle / département (nœuds visibles uniquement)
@@ -1334,7 +1357,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
           }}
         />
 
-        {/* Format de page rapide : change layout.page (ou celle de la frame
+        {/* Surface de sortie rapide : change layout.page (ou celle de la frame
             sélectionnée) sans passer par la boîte d'export — même source de
             vérité (invariant n° 9), donc le cadre de page et « Centrer sur la
             page » suivent immédiatement. */}
@@ -1345,26 +1368,18 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
                 themeMode === "dark" ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
               }`}
             >
-              {(["a4", "a3", "a2"] as const).map((fmt) => (
-                <button
-                  key={fmt}
-                  onClick={() => {
-                    const target = selectedFrameId ? frames.find((f) => f.id === selectedFrameId) : undefined;
-                    if (target) updateFrame(target.id, { page: { ...target.page, format: fmt } });
-                    else setPageSetup({ ...page, format: fmt });
-                  }}
-                  className={`cursor-pointer rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-                    (selectedFrameId ? frames.find((f) => f.id === selectedFrameId)?.page.format : page.format) === fmt
-                      ? "bg-primary-600 text-white"
-                      : themeMode === "dark"
-                        ? "text-zinc-400 hover:bg-zinc-800"
-                        : "text-zinc-600 hover:bg-zinc-100"
-                  }`}
-                  title={`Format ${FORMAT_LABEL[fmt]}`}
-                >
-                  {FORMAT_LABEL[fmt]}
-                </button>
-              ))}
+              <PageFormatSelect
+                value={(selectedFrameId ? frames.find((f) => f.id === selectedFrameId)?.page.format : undefined) ?? page.format}
+                onChange={(format) => {
+                  const target = selectedFrameId ? frames.find((f) => f.id === selectedFrameId) : undefined;
+                  if (target) updateFrame(target.id, { page: { ...target.page, format } });
+                  else setPageSetup({ ...page, format });
+                }}
+                themeMode={themeMode}
+                compact
+                ariaLabel="Surface de sortie rapide"
+                className="w-44"
+              />
               <span className={`mx-0.5 h-4 w-px ${themeMode === "dark" ? "bg-zinc-800" : "bg-zinc-200"}`} />
               <button
                 onClick={() => {

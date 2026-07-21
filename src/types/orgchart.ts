@@ -118,6 +118,11 @@ export const ChromeElementSchema = z.object({
   x: z.number(),
   y: z.number(),
   size: z.number(),
+  // Mise en forme des textes de page. Champs optionnels additifs v2 :
+  // absence = style typographique par défaut de l'élément.
+  bold: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  color: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
 });
 export type ChromeElement = z.infer<typeof ChromeElementSchema>;
 
@@ -136,6 +141,9 @@ export const PageSetupSchema = z.object({
   format: z.enum(["a4", "a3", "a2"]),
   orientation: z.enum(["portrait", "landscape"]),
   margin: z.number(),
+  // Placement des cartes à l'export. Champ additif v2 : absence = cadrage
+  // historique ajusté/centré ; "exact" conserve les coordonnées de la frame.
+  placement: z.enum(["fit", "exact"]).optional(),
 });
 
 /**

@@ -1,5 +1,5 @@
 import { isHierarchyEdge, type OrgEdge, type OrgNode } from "../types/orgchart";
-import { computeNodeWidth } from "./nodeStyle";
+import { BASE_NODE_HEIGHT, computeNodeWidth } from "./nodeStyle";
 
 /**
  * Disposition « compacte » : les équipes terrain (groupes de feuilles) sont
@@ -13,7 +13,7 @@ import { computeNodeWidth } from "./nodeStyle";
  */
 
 export const CARD_WIDTH = 240;
-export const CARD_HEIGHT = 110;
+export const CARD_HEIGHT = BASE_NODE_HEIGHT;
 const SIBLING_GAP_X = 48;
 const LEVEL_GAP_Y = 64;
 const STACK_INDENT = 48;

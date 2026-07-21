@@ -1,5 +1,7 @@
 import type { Node } from "@xyflow/react";
 import { captureFlow, fitContain, loadLogoForExport } from "./pdfExport";
+import { resolveChromeTextStyle } from "./chromeLayout";
+import type { ChromeLayout } from "../types/orgchart";
 
 /**
  * Export PowerPoint (.pptx) : une diapositive 16:9 contenant l'organigramme
@@ -15,6 +17,8 @@ export interface PptxExportOptions {
   secondaryLogoUrl?: string;
   /** Couleur d'accent du thème, utilisée pour le titre (hex avec ou sans #). */
   accent?: string;
+  /** Mise en forme des textes de page ; les positions papier ne sont pas transposées au format 16:9. */
+  chromeLayout?: ChromeLayout;
 }
 
 // Dimensions d'une diapositive 16:9 en pouces (layout pptxgenjs LAYOUT_WIDE)
@@ -86,6 +90,7 @@ export async function addSlideChrome(slide: Slide, options: PptxExportOptions): 
   }
 
   if (options.title) {
+    const style = resolveChromeTextStyle("title", options.chromeLayout?.title);
     slide.addText(options.title, {
       x: SLIDE_WIDTH_IN / 4,
       y: MARGIN_IN,
@@ -94,11 +99,15 @@ export async function addSlideChrome(slide: Slide, options: PptxExportOptions): 
       align: "center",
       valign: "middle",
       fontSize: 20,
-      bold: true,
-      color: pptxColor(options.accent, "1F1F1F"),
+      bold: style.bold,
+      italic: style.italic,
+      color: options.chromeLayout?.title?.color
+        ? pptxColor(style.color, "1F1F1F")
+        : pptxColor(options.accent, "1F1F1F"),
     });
   }
   if (options.subtitle) {
+    const style = resolveChromeTextStyle("subtitle", options.chromeLayout?.subtitle);
     slide.addText(options.subtitle, {
       x: SLIDE_WIDTH_IN / 4,
       y: MARGIN_IN + HEADER_HEIGHT_IN * 0.55,
@@ -107,11 +116,14 @@ export async function addSlideChrome(slide: Slide, options: PptxExportOptions): 
       align: "center",
       valign: "middle",
       fontSize: 11,
-      color: "777777",
+      bold: style.bold,
+      italic: style.italic,
+      color: pptxColor(style.color, "777777"),
     });
   }
 
   if (options.footer) {
+    const style = resolveChromeTextStyle("footer", options.chromeLayout?.footer);
     slide.addText(options.footer, {
       x: MARGIN_IN,
       y: SLIDE_HEIGHT_IN - MARGIN_IN - FOOTER_HEIGHT_IN,
@@ -120,7 +132,9 @@ export async function addSlideChrome(slide: Slide, options: PptxExportOptions): 
       align: "center",
       valign: "middle",
       fontSize: 9,
-      color: "888888",
+      bold: style.bold,
+      italic: style.italic,
+      color: pptxColor(style.color, "888888"),
     });
   }
 }

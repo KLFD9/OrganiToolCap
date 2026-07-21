@@ -8,8 +8,8 @@ import { resolveDisplay } from "../types/orgchart";
 
 /**
  * Navigateur de pages : panneau ancré à gauche du canevas (style Figma).
- * Miniature de sommaire visuel, renommage au double-clic, réglage du format
- * de page (A4/A3, orientation) et actions de réorganisation/duplication/suppression.
+ * Miniature de sommaire visuel, renommage au double-clic et actions essentielles.
+ * Les réglages détaillés restent regroupés dans le panneau Propriétés.
  */
 
 interface PageRailProps {
@@ -74,9 +74,12 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
           dark ? "border-zinc-800/80 bg-[#111115]" : "border-zinc-200/80 bg-white"
         }`}
       >
-        <span className={`text-xs font-semibold tracking-wide ${dark ? "text-zinc-200" : "text-zinc-800"}`}>
-          Pages ({Math.max(1, frames.length)})
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs font-semibold tracking-wide ${dark ? "text-zinc-200" : "text-zinc-800"}`}>Pages</span>
+          <span className={`rounded-full px-1.5 py-0.5 font-mono text-[9px] ${dark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
+            {Math.max(1, frames.length)}
+          </span>
+        </div>
         <div className="flex items-center gap-1.5">
           <button
             onClick={handleAddFrame}
@@ -104,14 +107,13 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
             onClick={() => fitBounds(nodesBounds(nodes) ?? { x: 0, y: 0, width: 800, height: 560 }, { duration: reduceMotion ? 0 : 300, padding: 0.2 })}
             className={`rounded-xl border p-2.5 text-left transition-colors cursor-pointer ${dark ? "border-primary-400/50 bg-zinc-900/30 hover:bg-zinc-900/50" : "border-primary-600/40 bg-white hover:bg-primary-50/30"}`}
           >
-            <div className={`flex aspect-[1.414/1] items-center justify-center rounded-md border ${dark ? "border-zinc-800 bg-zinc-900" : "border-zinc-200 bg-white"}`}>
+            <div className={`flex h-28 items-center justify-center rounded-md border ${dark ? "border-zinc-800 bg-zinc-900" : "border-zinc-200 bg-white"}`}>
               <Layers className={`h-6 w-6 ${dark ? "text-primary-400" : "text-primary-600"}`} />
             </div>
             <div className="mt-2.5 flex items-center justify-between">
               <span className={`text-xs font-semibold ${dark ? "text-zinc-200" : "text-zinc-800"}`}>Page 1</span>
               <span className={`rounded-full px-1.5 py-0.5 font-mono text-[9px] ${dark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>{nodes.length}</span>
             </div>
-            <p className={`mt-1 text-[9px] ${dark ? "text-zinc-500" : "text-zinc-400"}`}>Page unique d’un fichier historique</p>
           </button>
           <button
             onClick={handleAddFrame}
@@ -122,7 +124,7 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
           </button>
         </div>
       ) : (
-        <div className="custom-scrollbar flex-1 overflow-y-auto p-3 flex flex-col gap-3">
+        <div className="custom-scrollbar flex-1 overflow-y-auto p-2.5 flex flex-col gap-2.5">
           {frames.map((frame, index) => {
             const size = frameSizePx(frame.page);
             const memberIds = membership.byFrame.get(frame.id) ?? [];
@@ -135,7 +137,7 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
               <div
                 key={frame.id}
                 onClick={() => selectFrame(frame.id)}
-                className={`group relative overflow-hidden rounded-2xl border p-2.5 transition-[border-color,background-color,box-shadow] duration-200 cursor-pointer ${
+                className={`group relative overflow-hidden rounded-xl border p-2 transition-[border-color,background-color,box-shadow] duration-200 cursor-pointer ${
                   isSelected
                     ? dark
                       ? "border-primary-500/70 bg-primary-950/20 shadow-[0_12px_30px_-20px_rgba(109,74,174,0.9)] ring-1 ring-primary-400/20"
@@ -154,7 +156,7 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
                 >
                   <svg
                     viewBox={`0 0 ${size.width} ${size.height}`}
-                    className="max-h-44 w-full rounded-xl shadow-sm transition-shadow hover:shadow-md"
+                    className="h-28 w-full rounded-lg shadow-sm transition-shadow hover:shadow-md"
                     style={{
                       background: dark ? "#1c1c1e" : "#ffffff",
                       border: `1px solid ${dark ? "rgba(255,255,255,0.08)" : "rgba(24,24,27,0.08)"}`,
@@ -177,8 +179,73 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
                   </svg>
                 </button>
 
+                {/* Actions regroupées sur la miniature : visibles sur la page
+                    active, au survol ou au focus clavier. */}
+                <div
+                  className={`absolute right-3 top-3 flex items-center gap-0.5 rounded-lg border p-0.5 shadow-sm backdrop-blur transition-opacity focus-within:opacity-100 group-hover:opacity-100 ${
+                    isSelected ? "opacity-100" : "opacity-0"
+                  } ${dark ? "border-zinc-700/80 bg-zinc-900/90" : "border-zinc-200/90 bg-white/90"}`}
+                >
+                  {frames.length > 1 && (
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          reorderFrame(frame.id, -1);
+                        }}
+                        disabled={index === 0}
+                        title="Avancer dans l'ordre des pages"
+                        aria-label="Avancer la page dans l'ordre d'export"
+                        className={`${iconButton} disabled:opacity-25 disabled:cursor-default`}
+                      >
+                        <ChevronUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          reorderFrame(frame.id, 1);
+                        }}
+                        disabled={index === frames.length - 1}
+                        title="Reculer dans l'ordre des pages"
+                        aria-label="Reculer la page dans l'ordre d'export"
+                        className={`${iconButton} disabled:opacity-25 disabled:cursor-default`}
+                      >
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      </button>
+                      <span className={`mx-0.5 h-4 w-px ${dark ? "bg-zinc-700" : "bg-zinc-200"}`} aria-hidden="true" />
+                    </>
+                  )}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const cloneId = duplicateFrame(frame.id);
+                      if (cloneId) requestAnimationFrame(() => jumpTo(cloneId));
+                    }}
+                    title="Dupliquer la page avec son contenu"
+                    aria-label={`Dupliquer la page ${frame.name}`}
+                    className={iconButton}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteFrame(frame.id);
+                    }}
+                    title="Supprimer la page (les cartes restent sur le canevas)"
+                    aria-label={`Supprimer la page ${frame.name}`}
+                    className={`rounded-lg p-1 transition-all cursor-pointer ${
+                      dark
+                        ? "text-zinc-400 hover:text-red-400 hover:bg-red-500/10"
+                        : "text-zinc-500 hover:text-red-600 hover:bg-red-50"
+                    }`}
+                  >
+                    <Trash className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+
                 {/* Nom (double-clic pour renommer) + effectif */}
-                <div className="mt-2.5 flex items-center justify-between gap-1.5">
+                <div className="mt-2 flex items-center justify-between gap-1.5">
                   <div className="flex items-center gap-1.5 min-w-0 flex-1">
                     <span className={`flex h-5 min-w-5 items-center justify-center rounded-md font-mono text-[9px] font-bold ${isSelected ? "bg-primary-600 text-white" : dark ? "bg-zinc-800 text-zinc-400" : "bg-zinc-100 text-zinc-500"}`}>
                       {index + 1}
@@ -215,17 +282,16 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
                       </button>
                     )}
                   </div>
-                  <span className={`shrink-0 px-2 py-1 rounded-full font-mono text-[9px] font-semibold ${
-                    isSelected ? dark ? "bg-primary-500/15 text-primary-300" : "bg-primary-50 text-primary-700" : dark ? "bg-zinc-800/80 text-zinc-400" : "bg-zinc-100 text-zinc-500"
-                  }`}>
-                    {memberIds.length}
+                  <span
+                    aria-label={`${memberIds.length} membre${memberIds.length > 1 ? "s" : ""}`}
+                    className={`shrink-0 font-mono text-[9px] ${dark ? "text-zinc-500" : "text-zinc-400"}`}
+                  >
+                    {memberIds.length} pers.
                   </span>
                 </div>
 
-                {/* Format papier : lecture seule ici — cliquer la page l'ouvre
-                    dans le panneau Propriétés (à droite) pour le modifier. */}
-                <div
-                  className={`mt-2 flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-wide ${
+                {/* Résumé de sortie ; les réglages détaillés sont dans Propriétés. */}
+                <div className={`ml-7 mt-0.5 text-[9px] font-medium ${
                     isSelected
                       ? dark
                         ? "text-primary-300"
@@ -233,71 +299,8 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
                       : dark
                       ? "text-zinc-500"
                       : "text-zinc-400"
-                  }`}
-                >
-                  <span className={`rounded-md px-1.5 py-1 ${dark ? "bg-zinc-800/70" : "bg-zinc-100/80"}`}>
-                    {frame.page.format.toUpperCase()} · {frame.page.orientation === "landscape" ? "Paysage" : "Portrait"}
-                  </span>
-                  {isSelected && <span className="normal-case font-normal opacity-80">— réglable à droite →</span>}
-                </div>
-
-                {/* Actions (toujours visibles mais atténuées, s'activent au survol) */}
-                <div className="mt-2.5 flex items-center justify-between border-t border-zinc-200/60 pt-2 dark:border-zinc-800/70">
-                  <div className="flex items-center gap-0.5">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        reorderFrame(frame.id, -1);
-                      }}
-                      disabled={index === 0}
-                      title="Avancer dans l'ordre des pages"
-                      aria-label="Avancer la page dans l'ordre d'export"
-                      className={`${iconButton} disabled:opacity-30 disabled:cursor-default`}
-                    >
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        reorderFrame(frame.id, 1);
-                      }}
-                      disabled={index === frames.length - 1}
-                      title="Reculer dans l'ordre des pages"
-                      aria-label="Reculer la page dans l'ordre d'export"
-                      className={`${iconButton} disabled:opacity-30 disabled:cursor-default`}
-                    >
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-0.5">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const cloneId = duplicateFrame(frame.id);
-                        if (cloneId) requestAnimationFrame(() => jumpTo(cloneId));
-                      }}
-                      title="Dupliquer la page avec son contenu"
-                      aria-label={`Dupliquer la page ${frame.name}`}
-                      className={iconButton}
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteFrame(frame.id);
-                      }}
-                      title="Supprimer la page (les cartes restent sur le canevas)"
-                      aria-label={`Supprimer la page ${frame.name}`}
-                      className={`rounded-lg p-1 transition-all cursor-pointer ${
-                        dark
-                          ? "text-zinc-400 hover:text-red-400 hover:bg-red-500/10"
-                          : "text-zinc-500 hover:text-red-600 hover:bg-red-50"
-                      }`}
-                    >
-                      <Trash className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                  }`}>
+                  {frame.page.format.toUpperCase()} · {frame.page.orientation === "landscape" ? "Paysage" : "Portrait"}
                 </div>
               </div>
             );
@@ -305,21 +308,6 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
         </div>
       )}
 
-      {frames.length > 0 && (
-        <div className={`p-3 border-t ${dark ? "border-border-dark bg-zinc-950/10" : "border-border-light bg-zinc-50/30"}`}>
-          <button
-            onClick={handleAddFrame}
-            className={`flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed px-3 py-2.5 text-xs font-semibold transition-colors cursor-pointer ${
-              dark
-                ? "border-zinc-800 text-zinc-400 hover:border-primary-400/50 hover:text-primary-300 bg-zinc-900/10 hover:bg-zinc-900/25"
-                : "border-zinc-200 text-zinc-500 hover:border-primary-600/40 hover:text-primary-700 bg-zinc-50/50 hover:bg-primary-50/5"
-            }`}
-          >
-            <FilePlus2 className="h-3.5 w-3.5" />
-            <span>Ajouter une page</span>
-          </button>
-        </div>
-      )}
     </div>
   );
 }

@@ -77,6 +77,12 @@ interface OrgChartState {
 
   // -- chargement / sérialisation --
   loadFile: (file: OrgChartFile, handle?: FileSystemFileHandle) => void;
+  /**
+   * Ouvre un document construit depuis un import local. Contrairement à
+   * `loadFile`, l'opération reste annulable et le résultat est à enregistrer
+   * comme un nouveau fichier.
+   */
+  loadImportedFile: (file: OrgChartFile) => void;
   toFile: () => OrgChartFile;
   markSaved: (handle?: FileSystemFileHandle) => void;
 
@@ -274,6 +280,25 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       past: [],
       future: [],
     }),
+
+  loadImportedFile: (file) =>
+    set((s) => ({
+      ...pushHistory(s),
+      meta: file.meta,
+      templateId: file.templateId,
+      theme: file.theme,
+      nodes: file.nodes,
+      edges: file.edges,
+      layout: file.layout,
+      frames: file.frames ?? [],
+      // Un CSV produit un nouveau document : ne jamais réutiliser
+      // silencieusement le chemin du fichier .orgchart précédent.
+      fileHandle: undefined,
+      isDirty: true,
+      selectedNodeIds: [],
+      selectedFrameId: file.frames?.[0]?.id ?? null,
+      collapsedNodeIds: [],
+    })),
 
   toFile: () => {
     const s = get();
@@ -647,7 +672,8 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
         current &&
         current.format === page.format &&
         current.orientation === page.orientation &&
-        current.margin === page.margin
+        current.margin === page.margin &&
+        current.placement === page.placement
       ) {
         return s;
       }
@@ -770,7 +796,8 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
   addFrame: (page) => {
     const id = generateId("frame");
     set((s) => {
-      const framePage = page ?? s.layout.page ?? DEFAULT_PAGE;
+      const sourcePage = page ?? s.layout.page ?? DEFAULT_PAGE;
+      const framePage: PageSetup = { ...sourcePage, placement: page?.placement ?? "exact" };
       const frame: OrgFrame = {
         id,
         name: defaultFrameName(s.frames),
@@ -952,7 +979,8 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
 
     // L'état a pu changer pendant le calcul elk : on repart du présent
     const current = get();
-    const framePage = current.layout.page ?? DEFAULT_PAGE;
+    const sourcePage = current.layout.page ?? DEFAULT_PAGE;
+    const framePage: PageSetup = { ...sourcePage, placement: "exact" };
     const frameId = generateId("frame");
     // La page de branche est une page SUPPLÉMENTAIRE : toujours posée à côté
     // (jamais sur le contenu existant, contrairement à la première page vide

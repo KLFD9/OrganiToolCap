@@ -5,7 +5,7 @@ import { COMFORT_MM_PER_PX, pageSizeMm, type PageSetup } from "./readability";
 /**
  * Frames multi-pages : géométrie et appartenance.
  *
- * Un frame est une feuille A4/A3 posée sur le canvas, dessinée à l'échelle
+ * Un frame est une feuille A4 ou grand format posée sur le canvas, dessinée à l'échelle
  * « confort » (COMFORT_MM_PER_PX) : une carte qui tient dans sa zone utile
  * imprimera son texte à ≥ 6,5 pt. L'appartenance d'une carte à un frame est
  * purement géométrique — le frame qui contient le centre de la carte — donc
