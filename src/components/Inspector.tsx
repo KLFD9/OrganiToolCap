@@ -4,6 +4,7 @@ import { isHierarchyEdge, NodeStyleVariantSchema, resolveDisplay, type OrgDispla
 import { computeOrgStats, computeTeamSize } from "../lib/stats";
 import type { PageSetup } from "../lib/readability";
 import { PageFormatSelect } from "./PageFormatSelect";
+import { SelectionContextHeader } from "./SelectionContextHeader";
 import {
   Plus,
   Trash2,
@@ -301,17 +302,11 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
 
     return (
       <div className="flex h-full flex-col gap-4 overflow-y-auto p-4 custom-scrollbar">
-        <div>
-          <div className="flex items-center gap-2">
-            <FileText className="h-5 w-5 text-primary-500" />
-            <h2 className="text-sm font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
-              Propriétés de la page
-            </h2>
-          </div>
-          <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1.5 leading-normal">
-            Réglages du canevas pour « {frame.name} » — format, orientation et ordre d'export.
-          </p>
-        </div>
+        <SelectionContextHeader
+          icon={<FileText className="h-4 w-4" />}
+          title={frame.name}
+          description={`Page ${index + 1} sur ${frames.length} · ${frame.page.format.toUpperCase()} ${frame.page.orientation === "landscape" ? "paysage" : "portrait"}`}
+        />
 
         <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>
           <div className={headerBorder}>
@@ -493,17 +488,11 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
   if (selectedNodeIds.length > 1) {
     return (
       <div className="flex h-full flex-col gap-5 overflow-y-auto p-5 custom-scrollbar">
-        <div>
-          <div className="flex items-center gap-2">
-            <Users className="h-5 w-5 text-primary-500" />
-            <h2 className="text-sm font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
-              Sélection multiple
-            </h2>
-          </div>
-          <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1.5 leading-normal">
-            Vous avez sélectionné {selectedNodeIds.length} membres. Les modifications ci-dessous s'appliqueront à tous.
-          </p>
-        </div>
+        <SelectionContextHeader
+          icon={<Users className="h-4 w-4" />}
+          title={`${selectedNodeIds.length} membres`}
+          description="Les modifications communes s'appliquent à toute la sélection."
+        />
 
         <div className={`rounded-xl border p-4 space-y-4 ${
           themeMode === "dark" ? "border-zinc-800/80 bg-zinc-900/10" : "border-zinc-200 bg-zinc-50/20"
@@ -868,23 +857,18 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
 
   return (
     <div className="flex h-full flex-col gap-6 overflow-y-auto p-5 custom-scrollbar">
-      <div>
-        <div className="flex items-center gap-2">
-          <Briefcase className="h-5 w-5 text-primary-500" />
-          <h2 className="text-sm font-bold tracking-tight text-zinc-800 dark:text-zinc-100">
-            Fiche membre
-          </h2>
-        </div>
-        <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1.5 leading-normal">
-          Modifiez les informations personnelles et le style visuel de ce nœud.
-        </p>
+      <SelectionContextHeader
+        icon={<Briefcase className="h-4 w-4" />}
+        title={selected.data.name || "Sans nom"}
+        description={selected.data.role ? `Fiche membre · ${selected.data.role}` : "Fiche membre"}
+      >
         {teamSize && teamSize.total > 0 && (
-          <div className="mt-2.5 inline-flex items-center gap-1.5 rounded-lg bg-primary-600/10 dark:bg-primary-400/10 px-2.5 py-1 text-[10px] font-semibold text-primary-700 dark:text-primary-300">
+          <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-white/70 px-2.5 py-1 text-[10px] font-semibold text-primary-700 dark:bg-primary-950/40 dark:text-primary-300">
             <Users className="h-3.5 w-3.5 mr-0.5" />
             <span>Équipe : {teamSize.direct} direct{teamSize.direct > 1 ? "s" : ""} · {teamSize.total} au total</span>
           </div>
         )}
-      </div>
+      </SelectionContextHeader>
 
       {/* Groupe 1 : Profil & Avatar */}
       <div className={`rounded-xl border p-4 space-y-4 ${cardBg}`}>
@@ -948,6 +932,7 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
             </span>
             <input
               ref={nameInputRef}
+              data-org-node-name-input="true"
               type="text"
               value={selected.data.name}
               onChange={(e) => updateNodeData(selected.id, { name: e.target.value })}

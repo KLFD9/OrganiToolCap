@@ -322,15 +322,16 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
                 <tr
                   key={row.id}
                   onClick={() => selectNode(row.id)}
+                  aria-selected={selected}
                   className={`group cursor-pointer transition-colors ${
                     selected
-                      ? "bg-primary-600/10 dark:bg-primary-400/10"
+                      ? "bg-primary-50/90 text-primary-950 shadow-[inset_3px_0_0_var(--color-primary-600)] dark:bg-primary-950/30 dark:text-primary-100 dark:shadow-[inset_3px_0_0_var(--color-primary-400)]"
                       : dark
                       ? "hover:bg-zinc-900/60"
                       : "hover:bg-white"
                   }`}
                 >
-                  <td className="border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-900">
+                  <td className={`border-b px-3 py-1.5 ${selected ? "border-primary-100 dark:border-primary-900/50" : "border-zinc-100 dark:border-zinc-900"}`}>
                     <span className="flex items-center gap-2.5">
                       <span
                         aria-hidden

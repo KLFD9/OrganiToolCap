@@ -91,7 +91,7 @@ function NodeCardImpl({ data, selected }: NodeProps & { data: NodeCardData }) {
 
   // Ombres portées de style Awwwards
   const shadowStyle = selected
-    ? `0 0 0 2px ${style.accentColor}, 0 20px 40px -10px rgba(0, 0, 0, 0.18)`
+    ? "0 0 0 2px var(--color-primary-500), 0 0 0 5px rgba(109, 74, 174, 0.18), 0 20px 40px -10px rgba(0, 0, 0, 0.18)"
     : outOfPage
     ? "0 0 0 2px rgba(245, 158, 11, 0.75), 0 8px 30px -10px rgba(0, 0, 0, 0.06)"
     : isNeon

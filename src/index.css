@@ -184,6 +184,49 @@
   transition: stroke 0.3s ease, stroke-width 0.2s ease;
 }
 
+/* Bulles du canvas : à faible largeur ou au pointeur tactile, on conserve les
+   actions essentielles, on réduit les couleurs secondaires et on agrandit
+   les cibles. NodeToolbar / EdgeToolbar gardent déjà une taille écran fixe,
+   indépendamment du niveau de zoom du canvas. */
+@media (max-width: 900px), (pointer: coarse) {
+  .selection-toolbar-context,
+  .selection-toolbar-color-secondary,
+  .selection-toolbar-button-label,
+  .edge-toolbar-context {
+    display: none !important;
+  }
+
+  .selection-toolbar-bubble,
+  .edge-toolbar-bubble {
+    max-width: calc(100vw - 24px);
+  }
+
+  .selection-toolbar-action,
+  .edge-toolbar-bubble button {
+    min-width: 40px;
+    min-height: 40px;
+  }
+
+  .selection-toolbar-swatch {
+    width: 28px !important;
+    height: 28px !important;
+  }
+}
+
+@media (pointer: coarse) {
+  .selection-toolbar-action,
+  .edge-toolbar-bubble button,
+  .selection-toolbar-bubble details button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .selection-toolbar-swatch {
+    width: 32px !important;
+    height: 32px !important;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;

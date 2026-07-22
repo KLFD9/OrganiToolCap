@@ -23,7 +23,8 @@ L'app reprend automatiquement le dernier brouillon local disponible. Au premier 
 ## Fonctionnalités
 
 - **Édition** : ajout / duplication / suppression de membres, rattachement par glisser-déposer des liens (anti-cycle, un seul responsable par personne), photos et fiches détaillées (poste, pôle, e-mail), sélection multiple.
-- **Édition rapide au canvas** : **clic droit** sur un membre (subordonné, collègue, dupliquer, replier, détacher, supprimer), sur un lien (convertir hiérarchique ⇄ fonctionnel, supprimer) ou sur le fond (ajouter ici, ranger, recadrer) ; **tirer la poignée d'une carte dans le vide** crée un subordonné à cet endroit ; **Tab** ajoute un subordonné et **Entrée** un collègue au membre sélectionné (façon Miro/FigJam).
+- **Édition rapide au canvas** : sélectionner une carte ou un groupe affiche sa bulle de couleur, duplication, alignement et répartition ; sélectionner un lien affiche directement son type hiérarchique/fonctionnel et le retour au tracé automatique. Le **clic droit** conserve les actions complémentaires ; **tirer la poignée d'une carte dans le vide** crée un subordonné à cet endroit ; **Tab** ajoute un subordonné et **Entrée** un collègue au membre sélectionné (façon Miro/FigJam).
+- **Page de pôle en un geste** : sélectionner un responsable permet de copier sa branche dans une nouvelle page déjà rangée. La page source et ses placements restent intacts ; l'opération complète s'annule en une fois.
 - **Rattachements fonctionnels (liens en pointillés)** : en plus de son responsable hiérarchique, un membre peut être rattaché fonctionnellement à d'autres (n+1 fonctionnel, mission transverse) — trait pointillé sur l'organigramme et dans les exports PDF/PPTX. Gérés depuis la fiche membre ou par clic droit sur un lien ; ils n'affectent ni les layouts, ni le repli, ni les statistiques, ni la colonne Responsable du CSV. *(Format de fichier v2 — les fichiers v1 s'ouvrent et sont migrés automatiquement.)*
 - **Routage intelligent des liens** : les connecteurs orthogonaux choisissent automatiquement leurs côtés d'attache et contournent les cartes intermédiaires. Sélectionner un lien affiche une poignée pour déplacer son corridor ; un clic droit permet de revenir au tracé automatique. Le réglage est conservé dans le fichier et reproduit dans les exports PDF/PPTX.
 - **Replier / déplier les branches** : chaque responsable porte un bouton de repli ; la branche masquée est résumée par un badge d'effectif (`+N`) et un rappel « Tout déplier » reste affiché. L'export suit l'affichage : replier des branches permet d'exporter une vue partielle (par direction, par pôle).
@@ -53,9 +54,10 @@ L'app reprend automatiquement le dernier brouillon local disponible. Au premier 
 | `Ctrl/Cmd + S` | Enregistrer |
 | `Ctrl/Cmd + O` | Ouvrir |
 | `Ctrl/Cmd + Z` / `Ctrl/Cmd + Shift + Z` | Annuler / Rétablir |
+| `Ctrl/Cmd + D` (membre sélectionné) | Dupliquer la carte |
 | `Tab` / `Entrée` (membre sélectionné) | Ajouter un subordonné / un collègue |
 | `Suppr` / `Retour arrière` | Supprimer la sélection |
-| `Flèches` (`Shift` = pas large) | Déplacer la sélection |
+| `Flèches` (`Shift` = pas large) | Déplacer la sélection en une étape annulable |
 | `Échap` | Quitter le mode présentation |
 
 ## Stack

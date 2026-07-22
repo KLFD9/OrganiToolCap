@@ -46,8 +46,9 @@ function App() {
   const deleteNodes = useOrgChartStore((s) => s.deleteNodes);
   const nodes = useOrgChartStore((s) => s.nodes);
   const frames = useOrgChartStore((s) => s.frames);
-  const setNodePosition = useOrgChartStore((s) => s.setNodePosition);
+  const setNodePositions = useOrgChartStore((s) => s.setNodePositions);
   const addNode = useOrgChartStore((s) => s.addNode);
+  const duplicateNode = useOrgChartStore((s) => s.duplicateNode);
   const edges = useOrgChartStore((s) => s.edges);
   const collapsedNodeIds = useOrgChartStore((s) => s.collapsedNodeIds);
   const expandAll = useOrgChartStore((s) => s.expandAll);
@@ -144,6 +145,9 @@ function App() {
       const isEditable =
         target instanceof HTMLElement &&
         (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      const active = document.activeElement as HTMLElement | null;
+      const focusInCanvas =
+        !active || active === document.body || Boolean(active.closest(".react-flow"));
 
       if (e.key === "Escape" && presentationMode) {
         e.preventDefault();
@@ -180,6 +184,21 @@ function App() {
         return;
       }
 
+      // Standard des éditeurs graphiques : dupliquer la carte active. Le
+      // raccourci reste limité au canvas pour ne jamais détourner Ctrl/Cmd+D
+      // depuis un champ, la toolbar ou une autre vue.
+      if (
+        !isEditable &&
+        focusInCanvas &&
+        mod &&
+        e.key.toLowerCase() === "d" &&
+        selectedNodeIds.length === 1
+      ) {
+        e.preventDefault();
+        duplicateNode(selectedNodeIds[0]);
+        return;
+      }
+
       if (!isEditable && (e.key === "Delete" || e.key === "Backspace") && selectedNodeIds.length > 0) {
         e.preventDefault();
         deleteNodes(selectedNodeIds);
@@ -190,9 +209,6 @@ function App() {
       // Uniquement quand le focus est sur le canvas (jamais sur la toolbar ou
       // un champ), pour préserver la navigation clavier standard.
       if (!isEditable && !mod && selectedNodeIds.length === 1 && (e.key === "Tab" || e.key === "Enter")) {
-        const active = document.activeElement;
-        const focusInCanvas =
-          !active || active === document.body || Boolean(active.closest(".react-flow"));
         if (focusInCanvas) {
           e.preventDefault();
           const id = selectedNodeIds[0];
@@ -207,7 +223,7 @@ function App() {
       }
 
       // Déplacement clavier précis
-      if (!isEditable && selectedNodeIds.length > 0) {
+      if (!isEditable && focusInCanvas && selectedNodeIds.length > 0) {
         const step = e.shiftKey ? 20 : 4;
         let dx = 0;
         let dy = 0;
@@ -218,16 +234,20 @@ function App() {
         else return;
 
         e.preventDefault();
-        for (const id of selectedNodeIds) {
-          const node = nodes.find((n) => n.id === id);
-          if (!node) continue;
-          setNodePosition(id, { x: node.position.x + dx, y: node.position.y + dy });
-        }
+        const selected = new Set(selectedNodeIds);
+        setNodePositions(
+          nodes
+            .filter((node) => selected.has(node.id))
+            .map((node) => ({
+              id: node.id,
+              position: { x: node.position.x + dx, y: node.position.y + dy },
+            }))
+        );
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [undo, redo, selectedNodeIds, deleteNodes, nodes, setNodePosition, presentationMode, directoryOpen, addNode, edges]);
+  }, [undo, redo, selectedNodeIds, deleteNodes, nodes, setNodePositions, presentationMode, directoryOpen, addNode, duplicateNode, edges]);
 
   const handleNew = (choice: string) => {
     setTemplatePickerOpen(false);

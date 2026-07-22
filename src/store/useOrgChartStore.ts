@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   ORG_CHART_VERSION,
   isHierarchyEdge,
+  resolveDisplay,
   type ChromeElement,
   type ChromeKey,
   type OrgChartFile,
@@ -13,6 +14,7 @@ import {
   type OrgTheme,
 } from "../types/orgchart";
 import { createEmptyChart } from "../templates/blank";
+import { computeNodeHeight } from "../lib/nodeStyle";
 import { layoutWithElk } from "../lib/elkLayout";
 import { CARD_HEIGHT, CARD_WIDTH, layoutCompact } from "../lib/compactLayout";
 import { computeDescendants, computeHiddenNodeIds, revealNodeInCollapsedBranches, wouldCreateHierarchyCycle } from "../lib/hierarchy";
@@ -98,6 +100,8 @@ interface OrgChartState {
 
   // -- nœuds --
   setNodePosition: (id: string, position: { x: number; y: number }) => void;
+  /** Déplace plusieurs membres en une seule entrée d'historique. */
+  setNodePositions: (positions: Array<{ id: string; position: { x: number; y: number } }>) => void;
   updateNodeData: (id: string, data: Partial<OrgNodeData>) => void;
   updateNodeStyleOverride: (id: string, override: Partial<OrgNodeStyle> | undefined) => void;
   updateNodesStyleOverride: (ids: string[], override: Partial<OrgNodeStyle>) => void;
@@ -237,7 +241,17 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
         past: s.past.slice(0, -1),
         future: [current, ...s.future].slice(0, MAX_HISTORY),
         isDirty: true,
-        selectedNodeIds: [],
+        // Une retouche de position/style garde sa sélection après annulation :
+        // le client peut essayer une autre variante sans refaire son lasso.
+        // Les ids disparus (annulation d'une duplication, par exemple) sont
+        // filtrés pour ne jamais laisser de sélection fantôme.
+        selectedNodeIds: s.selectedNodeIds.filter((id) =>
+          previous.nodes.some((node) => node.id === id)
+        ),
+        selectedFrameId:
+          s.selectedFrameId && previous.frames.some((frame) => frame.id === s.selectedFrameId)
+            ? s.selectedFrameId
+            : null,
       };
     }),
 
@@ -259,7 +273,13 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
         past: [...s.past, current].slice(-MAX_HISTORY),
         future: s.future.slice(1),
         isDirty: true,
-        selectedNodeIds: [],
+        selectedNodeIds: s.selectedNodeIds.filter((id) =>
+          next.nodes.some((node) => node.id === id)
+        ),
+        selectedFrameId:
+          s.selectedFrameId && next.frames.some((frame) => frame.id === s.selectedFrameId)
+            ? s.selectedFrameId
+            : null,
       };
     }),
 
@@ -383,6 +403,25 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       };
     }),
 
+  setNodePositions: (positions) =>
+    set((s) => {
+      const byId = new Map(positions.map((item) => [item.id, item.position]));
+      const changed = s.nodes.some((node) => {
+        const position = byId.get(node.id);
+        return position && (position.x !== node.position.x || position.y !== node.position.y);
+      });
+      if (!changed) return s;
+      return {
+        ...pushHistory(s),
+        nodes: s.nodes.map((node) => {
+          const position = byId.get(node.id);
+          return position ? { ...node, position } : node;
+        }),
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+        isDirty: true,
+      };
+    }),
+
   updateNodeData: (id, data) =>
     set((s) => ({
       ...pushHistory(s),
@@ -434,7 +473,12 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
             .map((e) => byId.get(e.target))
             .filter((n): n is OrgNode => Boolean(n));
           if (siblings.length === 0) {
-            position = { x: parent.position.x, y: parent.position.y + 160 };
+            // Conserve le même espace visuel sous une carte compacte ou
+            // enrichie : e-mail/téléphone augmentent sa hauteur réelle.
+            position = {
+              x: parent.position.x,
+              y: parent.position.y + computeNodeHeight(parent, resolveDisplay(s.theme)) + 76,
+            };
           } else {
             const rightmost = siblings.reduce((a, b) => (b.position.x > a.position.x ? b : a));
             position = {

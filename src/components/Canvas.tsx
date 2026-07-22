@@ -67,6 +67,12 @@ import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 import { PageGuide, type PageGuideData } from "./PageGuide";
 import { ChromeElementNode, type ChromeElementData } from "./ChromeElement";
 import { PageFormatSelect } from "./PageFormatSelect";
+import { SelectionToolbar } from "./SelectionToolbar";
+import {
+  arrangeSelection,
+  distributionGap,
+  type SelectionLayoutAction,
+} from "../lib/selectionLayout";
 
 interface MenuState {
   x: number;
@@ -93,6 +99,10 @@ const FORMAT_LABEL = { a4: "A4", a3: "A3", a2: "A2" } as const;
 const ORIENTATION_LABEL = { landscape: "paysage", portrait: "portrait" } as const;
 /** Marge intérieure de la capture autour du contenu (captureFlow). */
 const CAPTURE_MARGIN = 1.12;
+const motionMs = (ms: number) =>
+  typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    ? 0
+    : ms;
 
 // Conversions mm ↔ px canvas à l'échelle « confort » du cadre de page —
 // mêmes formules que le résolveur, partagées par tous les éléments de chrome.
@@ -165,6 +175,8 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const selectedNodeIds = useOrgChartStore((s) => s.selectedNodeIds);
   const collapsedNodeIds = useOrgChartStore((s) => s.collapsedNodeIds);
   const setNodePosition = useOrgChartStore((s) => s.setNodePosition);
+  const setNodePositions = useOrgChartStore((s) => s.setNodePositions);
+  const updateNodesStyleOverride = useOrgChartStore((s) => s.updateNodesStyleOverride);
   const addEdge = useOrgChartStore((s) => s.addEdge);
   const selectNodes = useOrgChartStore((s) => s.selectNodes);
   const addNode = useOrgChartStore((s) => s.addNode);
@@ -193,6 +205,37 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
 
   const { screenToFlowPosition, fitView, fitBounds, getZoom } = useReactFlow();
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const previousSelectedFrameRef = useRef<string | null>(selectedFrameId);
+
+  // Si la page actuellement cadrée disparaît (suppression ou annulation de sa
+  // création), ne jamais laisser la caméra sur une zone devenue vide. On
+  // recadre uniquement dans ce cas précis ; les autres suppressions ne
+  // perturbent pas le placement de travail du client.
+  useEffect(() => {
+    const previousSelectedFrameId = previousSelectedFrameRef.current;
+    previousSelectedFrameRef.current = selectedFrameId;
+    if (
+      !previousSelectedFrameId ||
+      frames.some((frame) => frame.id === previousSelectedFrameId)
+    ) {
+      return;
+    }
+    requestAnimationFrame(() => {
+      if (frames.length === 0) {
+        void fitView({ duration: motionMs(300), padding: 0.15 });
+        return;
+      }
+      const rects = frames.map(frameRectPx);
+      const left = Math.min(...rects.map((rect) => rect.x));
+      const top = Math.min(...rects.map((rect) => rect.y));
+      const right = Math.max(...rects.map((rect) => rect.x + rect.width));
+      const bottom = Math.max(...rects.map((rect) => rect.y + rect.height));
+      void fitBounds(
+        { x: left, y: top, width: right - left, height: bottom - top },
+        { duration: motionMs(300), padding: 0.1 }
+      );
+    });
+  }, [selectedFrameId, frames, fitBounds, fitView]);
   // Sélection d'arêtes : un lien se sélectionne UNIQUEMENT par clic direct
   // (réglage du corridor). Les arêtes portent `selectable: false` : React
   // Flow n'écrit jamais leur sélection (lasso compris), seul cet état local
@@ -634,6 +677,59 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     return rects;
   }, [visibleNodes, theme]);
 
+  const selectedMemberIds = useMemo(
+    () => selectedNodeIds.filter((id) => nodeRects.has(id)),
+    [selectedNodeIds, nodeRects]
+  );
+  const selectedRects = useMemo(
+    () => selectedMemberIds.map((id) => ({ id, ...nodeRects.get(id)! })),
+    [selectedMemberIds, nodeRects]
+  );
+  const arrangeDisabledReason = useMemo(() => {
+    if (!hasFrames || selectedMemberIds.length < 2) return undefined;
+    const pages = new Set(
+      selectedMemberIds.map((id) => membership.frameOf.get(id) ?? "__outside__")
+    );
+    return pages.size > 1
+      ? "Sélectionnez des cartes d’une même page"
+      : undefined;
+  }, [hasFrames, selectedMemberIds, membership]);
+  const distributionDisabledReasons = useMemo(() => {
+    if (selectedRects.length < 3 || arrangeDisabledReason) return undefined;
+    const horizontal = distributionGap(selectedRects, "x");
+    const vertical = distributionGap(selectedRects, "y");
+    return {
+      ...(horizontal !== undefined && horizontal < 0
+        ? { "distribute-x": "Espace horizontal insuffisant" }
+        : {}),
+      ...(vertical !== undefined && vertical < 0
+        ? { "distribute-y": "Espace vertical insuffisant" }
+        : {}),
+    };
+  }, [selectedRects, arrangeDisabledReason]);
+  const arrangeSelectedNodes = useCallback(
+    (action: SelectionLayoutAction) => {
+      if (arrangeDisabledReason) return;
+      setNodePositions(arrangeSelection(selectedRects, action));
+    },
+    [arrangeDisabledReason, selectedRects, setNodePositions]
+  );
+  const selectedBranchRootId = useMemo(() => {
+    if (selectedMemberIds.length !== 1) return undefined;
+    const id = selectedMemberIds[0];
+    return (descendantCounts.get(id) ?? 0) > 0 ? id : undefined;
+  }, [selectedMemberIds, descendantCounts]);
+  const createBranchPage = useCallback(async () => {
+    if (!selectedBranchRootId) return;
+    const frameId = await addFrameForBranch(selectedBranchRootId);
+    const frame = useOrgChartStore.getState().frames.find((candidate) => candidate.id === frameId);
+    if (!frame) return;
+    selectFrame(frame.id);
+    requestAnimationFrame(() =>
+      fitBounds(frameRectPx(frame), { duration: motionMs(300), padding: 0.1 })
+    );
+  }, [selectedBranchRootId, addFrameForBranch, selectFrame, fitBounds]);
+
   // Adapter les connexions (edges) avec un tracé ultra-propre et une animation subtile
   const initialRfEdges = useMemo<Edge[]>(
     () =>
@@ -643,6 +739,19 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         const touchesSelectedNode = selectedNodeIds.includes(e.source) || selectedNodeIds.includes(e.target);
         const isSelected = selectedEdgeId === e.id;
         const isDotted = e.kind === "dotted";
+        const conversionBase = isSelected && isDotted
+          ? storeEdges.filter(
+              (candidate) => candidate.id !== e.id && !(isHierarchyEdge(candidate) && candidate.target === e.target)
+            )
+          : [];
+        const hierarchyConversionBlocked = isSelected && isDotted
+          ? wouldCreateHierarchyCycle(conversionBase, e.source, e.target)
+          : false;
+        const hierarchyConversionReplacesManager = isSelected && isDotted
+          ? storeEdges.some(
+              (candidate) => candidate.id !== e.id && isHierarchyEdge(candidate) && candidate.target === e.target
+            )
+          : false;
         // Snap intelligent : côté d'attache choisi selon la géométrie relative
         // des deux cartes (subordonné dessous → haut de sa carte ; à côté →
         // latéral). Les subordonnés empilés (disposition compacte) gardent le
@@ -683,7 +792,13 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
             routePoints: smartRoute?.points,
             routeAxis,
             routing: e.routing?.axis === routeAxis ? e.routing : undefined,
+            hasManualRouting: Boolean(e.routing),
             onRoutingChange: (routing: NonNullable<typeof e.routing>) => setEdgeRouting(e.id, routing),
+            hierarchyConversionBlocked,
+            hierarchyConversionReplacesManager,
+            onKindChange: (kind: "hierarchy" | "dotted") => setEdgeKind(e.id, kind),
+            onResetRouting: () => setEdgeRouting(e.id, undefined),
+            dark: themeMode === "dark",
           },
           style: {
             stroke: isSelected || touchesSelectedNode
@@ -697,7 +812,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
           },
         };
       }),
-    [storeEdges, theme.accent, selectedNodeIds, selectedEdgeId, themeMode, stackedIds, hiddenIds, nodeRects, setEdgeRouting]
+    [storeEdges, theme.accent, selectedNodeIds, selectedEdgeId, themeMode, stackedIds, hiddenIds, nodeRects, setEdgeKind, setEdgeRouting]
   );
 
   const [rfNodes, setRfNodes, onNodesChangeBase] = useNodesState(initialRfNodes);
@@ -839,6 +954,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
       }
 
       onNodesChangeBase(changes);
+      const memberPositions: Array<{ id: string; position: { x: number; y: number } }> = [];
       for (const change of changes) {
         if (change.type === "position" && change.position && change.dragging === false) {
           const chromeRef = parseChromeNodeId(change.id);
@@ -859,14 +975,15 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
             // Feuille de page : commit géré par onNodeDragStop (déplacement
             // solidaire avec les cartes membres), rien à faire ici.
           } else {
-            setNodePosition(change.id, change.position);
+            memberPositions.push({ id: change.id, position: change.position });
           }
         }
       }
+      if (memberPositions.length > 0) setNodePositions(memberPositions);
     },
     [
       onNodesChangeBase,
-      setNodePosition,
+      setNodePositions,
       resolvedChrome,
       setChromeElement,
       setFrameChromeElement,
@@ -1046,9 +1163,6 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     [screenToFlowPosition]
   );
 
-  const motionMs = (ms: number) =>
-    typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? 0 : ms;
-
   // Centre une carte sur sa page : la feuille explicite (frame) qui contient
   // son centre, ou la page implicite sinon — même géométrie que le cadre de
   // page affiché (pageGuideNodes / frameGuideNodes), donc le résultat colle
@@ -1165,7 +1279,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
       const items: ContextMenuItem[] = [
         { label: "Ajouter un subordonné", hint: "Tab", onClick: () => addNode(nodeId) },
         { label: "Ajouter un collègue", hint: "Entrée", onClick: () => addNode(parentEdge?.source) },
-        { label: "Dupliquer le membre", onClick: () => duplicateNode(nodeId) },
+        { label: "Dupliquer le membre", hint: "⌘/Ctrl+D", onClick: () => duplicateNode(nodeId) },
       ];
       if (pageGuideEnabled) {
         const nodeFrameId = membership.frameOf.get(nodeId);
@@ -1184,7 +1298,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
           onClick: () => toggleCollapsed(nodeId),
         });
         items.push({
-          label: "Créer une page pour cette branche",
+          label: "Créer une page de pôle",
           hint: `${teamCount + 1} carte${teamCount + 1 > 1 ? "s" : ""} copiée${teamCount + 1 > 1 ? "s" : ""}`,
           onClick: async () => {
             const frameId = await addFrameForBranch(nodeId);
@@ -1345,6 +1459,25 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         className="transition-colors duration-300"
       >
         <Background gap={24} color={gridColor} />
+        <SelectionToolbar
+          nodeIds={selectedMemberIds}
+          theme={theme}
+          themeMode={themeMode}
+          onArrange={arrangeSelectedNodes}
+          arrangeDisabledReason={arrangeDisabledReason}
+          distributionDisabledReasons={distributionDisabledReasons}
+          onColorChange={(color) => updateNodesStyleOverride(selectedMemberIds, { accentColor: color })}
+          onDuplicate={() => {
+            const id = selectedMemberIds[0];
+            if (id) duplicateNode(id);
+          }}
+          onOpenInspector={() => {
+            window.requestAnimationFrame(() => {
+              document.querySelector<HTMLInputElement>("[data-org-node-name-input]")?.focus();
+            });
+          }}
+          onCreateBranchPage={selectedBranchRootId ? createBranchPage : undefined}
+        />
         <Controls showInteractive={false} />
         <MiniMap
           pannable

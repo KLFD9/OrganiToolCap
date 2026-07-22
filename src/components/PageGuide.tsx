@@ -89,22 +89,28 @@ function PageGuideImpl({ data }: NodeProps & { data: PageGuideData }) {
         title={isFrame ? "Glisser pour déplacer la page et son contenu" : undefined}
       >
         {isFrame && (
-          <span
+          <button
+            type="button"
+            aria-pressed={Boolean(isSelected)}
             onClick={(e) => {
               e.stopPropagation();
               onSelect?.();
             }}
-            className="rounded-lg px-2.5 py-1 font-bold transition-shadow hover:shadow-md"
+            className="cursor-pointer rounded-lg px-2.5 py-1 font-bold transition-[background-color,color,border-color,box-shadow] hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2"
             style={{
-              background: dark ? "rgba(24, 24, 27, 0.92)" : "#ffffff",
-              border: `1px solid ${dark ? "rgba(157, 131, 203, 0.4)" : "rgba(109, 74, 174, 0.35)"}`,
-              color: dark ? "#c4b5e0" : "#6D4AAE",
-              boxShadow: dark ? "0 2px 8px rgba(0,0,0,0.4)" : "0 2px 8px rgba(24,24,27,0.08)",
+              background: isSelected ? "#6D4AAE" : dark ? "rgba(24, 24, 27, 0.92)" : "#ffffff",
+              border: `1px solid ${isSelected ? "#6D4AAE" : dark ? "rgba(157, 131, 203, 0.4)" : "rgba(109, 74, 174, 0.35)"}`,
+              color: isSelected ? "#ffffff" : dark ? "#c4b5e0" : "#6D4AAE",
+              boxShadow: isSelected
+                ? "0 0 0 3px rgba(109, 74, 174, 0.16), 0 4px 12px rgba(71,47,116,0.18)"
+                : dark
+                  ? "0 2px 8px rgba(0,0,0,0.4)"
+                  : "0 2px 8px rgba(24,24,27,0.08)",
             }}
           >
             {frameName}
             {memberCount !== undefined && memberCount > 0 ? ` · ${memberCount}` : ""}
-          </span>
+          </button>
         )}
         <span>{label}</span>
         <span
@@ -128,7 +134,11 @@ function PageGuideImpl({ data }: NodeProps & { data: PageGuideData }) {
               : "rgba(24,24,27,0.10)"
           }`,
           borderRadius: 6,
-          boxShadow: dark ? "0 20px 60px -20px rgba(0,0,0,0.5)" : "0 20px 60px -25px rgba(24,24,27,0.15)",
+          boxShadow: isSelected && isFrame
+            ? "0 0 0 3px rgba(109, 74, 174, 0.14), 0 20px 60px -20px rgba(71,47,116,0.24)"
+            : dark
+              ? "0 20px 60px -20px rgba(0,0,0,0.5)"
+              : "0 20px 60px -25px rgba(24,24,27,0.15)",
         }}
       />
 

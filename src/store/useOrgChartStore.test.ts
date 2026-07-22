@@ -3,6 +3,8 @@ import { useOrgChartStore } from "./useOrgChartStore";
 import { createBlankChart, createEmptyChart } from "../templates/blank";
 import { frameRectPx } from "../lib/frames";
 import { CARD_HEIGHT, CARD_WIDTH } from "../lib/compactLayout";
+import { computeNodeHeight } from "../lib/nodeStyle";
+import { resolveDisplay } from "../types/orgchart";
 
 describe("useOrgChartStore", () => {
   beforeEach(() => {
@@ -43,6 +45,22 @@ describe("useOrgChartStore", () => {
       expect(children[i].position.y).toBe(children[0].position.y);
       expect(children[i].position.x).toBeGreaterThanOrEqual(children[i - 1].position.x + 240);
     }
+  });
+
+  it("addNode espace le premier subordonné selon la hauteur réelle du responsable", () => {
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+    useOrgChartStore.getState().updateNodeData(rootId, {
+      department: "Direction",
+      email: "direction@example.test",
+      phone: "01 02 03 04 05",
+    });
+
+    useOrgChartStore.getState().addNode(rootId);
+
+    const state = useOrgChartStore.getState();
+    const [root, child] = state.nodes;
+    const rootHeight = computeNodeHeight(root, resolveDisplay(state.theme));
+    expect(child.position.y).toBe(root.position.y + rootHeight + 76);
   });
 
   it("place la première personne au centre de la page active", () => {
@@ -296,6 +314,47 @@ describe("useOrgChartStore", () => {
     const after = useOrgChartStore.getState();
     expect(after.nodes).toBe(before.nodes);
     expect(after.past).toHaveLength(before.past.length);
+  });
+
+  it("setNodePositions déplace une sélection dans une seule étape annulable", () => {
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+    useOrgChartStore.getState().addNode(rootId);
+    const before = useOrgChartStore.getState();
+    const [root, child] = before.nodes;
+
+    useOrgChartStore.getState().setNodePositions([
+      { id: root.id, position: { x: 100, y: 200 } },
+      { id: child.id, position: { x: 300, y: 400 } },
+      { id: "chrome:title", position: { x: 0, y: 0 } },
+    ]);
+
+    const moved = useOrgChartStore.getState();
+    expect(moved.nodes.map((node) => node.position)).toEqual([
+      { x: 100, y: 200 },
+      { x: 300, y: 400 },
+    ]);
+    expect(moved.past).toHaveLength(before.past.length + 1);
+
+    moved.selectNodes([root.id, child.id]);
+    moved.undo();
+    const restored = useOrgChartStore.getState();
+    expect(restored.nodes).toEqual(before.nodes);
+    expect(restored.selectedNodeIds).toEqual([root.id, child.id]);
+
+    restored.redo();
+    expect(useOrgChartStore.getState().selectedNodeIds).toEqual([root.id, child.id]);
+  });
+
+  it("setNodePositions ignore une mise à jour vide ou inchangée", () => {
+    const before = useOrgChartStore.getState();
+    const node = before.nodes[0];
+
+    useOrgChartStore.getState().setNodePositions([
+      { id: node.id, position: { ...node.position } },
+      { id: "frame:unknown", position: { x: 1, y: 2 } },
+    ]);
+
+    expect(useOrgChartStore.getState()).toBe(before);
   });
 
   it("selectNodes est idempotent quand React Flow réémet la même sélection", () => {

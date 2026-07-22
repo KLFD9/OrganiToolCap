@@ -28,19 +28,40 @@ Cette liste privilégie la fiabilité des livrables, la simplicité pour une éq
 
 ## P2 — Accélérer la mise en forme
 
-- [ ] Étendre la barre contextuelle aux cartes : couleur, duplication et accès rapide à la fiche.
-- [ ] Barre de sélection multiple : aligner, distribuer et espacer régulièrement.
-- [ ] Barre contextuelle des liens : hiérarchique/fonctionnel et retour au tracé automatique.
-- [ ] Harmoniser les états sélectionnés entre canevas, rail de pages et inspecteur.
+- [x] Bulle contextuelle des cartes : couleurs du document, couleur libre, duplication et accès direct à la fiche.
+- [x] Bulle de sélection multiple : aligner sur les six axes et répartir à espace égal horizontalement ou verticalement.
+- [x] Opérations de groupe atomiques : un déplacement, un alignement ou une répartition s'annule en une seule étape.
+- [x] Bulle contextuelle des liens : basculer hiérarchique/fonctionnel, signaler les conversions impossibles et revenir au tracé automatique.
+- [x] Harmoniser l'état sélectionné entre canevas, rail de pages, annuaire et inspecteur, avec une sémantique visuelle et accessible commune.
+- [x] Ajouter les raccourcis documentés des actions fréquentes, sans les activer quand le focus est dans un champ ou hors du canevas.
+- [x] Valider la bulle à faible zoom, sur petit écran et au pointeur tactile ; replier les couleurs et libellés secondaires, avec des cibles de 40 à 44 px.
+
+### Principes d'interaction retenus
+
+- Le placement manuel reste prioritaire : aucune sélection n'est rangée automatiquement. Les commandes ne s'appliquent qu'après une action explicite.
+- La répartition conserve les deux cartes extérieures et égalise les espaces intermédiaires, convention partagée par les éditeurs graphiques.
+- Une répartition est refusée si elle créerait des chevauchements ; l'axe concerné explique le manque d'espace. Les commandes de disposition sont aussi bloquées lorsque la sélection traverse plusieurs pages.
+- Annuler ou rétablir une retouche conserve les cartes encore présentes dans la sélection, afin de comparer plusieurs variantes sans refaire le lasso.
+- Les commandes fréquentes restent près de la sélection ; les réglages détaillés demeurent dans l'inspecteur.
+- Une sélection multiple sert aussi aux changements de style communs, sans masquer la fiche individuelle dès qu'une seule carte reste sélectionnée.
+
+Références de conception consultées : [sélection multiple et propriétés dans Figma](https://help.figma.com/hc/en-us/articles/360040449873-Select-layers-and-objects), [alignement et distribution dans Figma](https://help.figma.com/hc/en-us/articles/360039956914-Adjust-alignment-rotation-and-position), [Smart selection et espacement](https://help.figma.com/hc/en-us/articles/360040450233-Arrange-layers-with-Smart-selection), [alignement et distribution dans Lucidchart](https://help.lucid.co/hc/pt/articles/16390096079764-Adicionar-e-personalizar-formas-no-Lucidchart).
 
 **Preuve client attendue :** réaliser les retouches courantes sans aller-retour dans le panneau latéral.
 
 ## P3 — Démarrer depuis un résultat métier
 
-- [ ] Preset avancé « Affiche A3 ».
-- [ ] Preset « Page de pôle » à partir d'une branche sélectionnée.
+- [ ] Preset avancé « Affiche A3 » — différé à la demande du produit ; ne pas le remettre dans l'interface principale pour le moment.
+- [x] « Page de pôle » à partir d'un responsable sélectionné : action directe dans la bulle et le menu contextuel, copie indépendante de la branche, rangement dans une nouvelle page et annulation complète.
 - [ ] Preset « Une page par direction » avec génération assistée et aperçu avant application.
 - [ ] Preset de diffusion anonymisée masquant e-mails, téléphones et photos sans supprimer les données.
+
+### Principes retenus pour les résultats métier
+
+- Une action produit un nouveau livrable sans réorganiser ni altérer la page source.
+- Les pages dérivées sont des copies indépendantes : elles peuvent être retouchées pour la communication sans ambiguïté de synchronisation.
+- Les opérations de masse à venir devront afficher le nombre de pages et de cartes créées avant application, puis rester annulables en une étape.
+- Le prochain lot prioritaire est « Une page par direction » ; le mode anonymisé suivra comme réglage de diffusion réversible, sans suppression de données.
 
 **Preuve client attendue :** obtenir un document prêt à diffuser en moins de trois choix.
 

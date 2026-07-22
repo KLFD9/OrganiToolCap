@@ -152,6 +152,7 @@ export function PageRail({ themeMode = "light", onClose }: PageRailProps) {
                 <button
                   onClick={() => jumpTo(frame.id)}
                   title={`Aller à « ${frame.name} »`}
+                  aria-current={isSelected ? "page" : undefined}
                   className="block w-full cursor-pointer"
                 >
                   <svg
