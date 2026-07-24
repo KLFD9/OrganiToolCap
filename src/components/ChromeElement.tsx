@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { NodeResizer, NodeToolbar, Position, type NodeProps } from "@xyflow/react";
-import { Bold, Italic, RotateCcw } from "lucide-react";
+import { Bold, Italic, Pencil, RotateCcw } from "lucide-react";
 import type { ChromeElement, ChromeKey } from "../types/orgchart";
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import { CHROME_TEXT_FONT_FAMILY, CHROME_TEXT_LINE_HEIGHT } from "../lib/chromeLayout";
@@ -131,6 +131,22 @@ function ChromeElementImpl({ data, selected }: NodeProps & { data: ChromeElement
             <span className="px-1.5 text-[10px] font-semibold uppercase tracking-wider text-zinc-400">
               Texte
             </span>
+            <span className={`h-5 w-px ${dark ? "bg-zinc-700" : "bg-zinc-200"}`} />
+            <button
+              type="button"
+              aria-label={`Modifier — ${LABELS[chromeKey]}`}
+              title="Modifier le texte"
+              onClick={() => {
+                setDraft(value);
+                setEditing(true);
+              }}
+              className={`flex h-7 items-center justify-center gap-1.5 rounded-full px-2.5 text-[10px] font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 ${
+                dark ? "hover:bg-zinc-800" : "hover:bg-zinc-100"
+              }`}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Modifier
+            </button>
             <span className={`h-5 w-px ${dark ? "bg-zinc-700" : "bg-zinc-200"}`} />
             <button
               type="button"

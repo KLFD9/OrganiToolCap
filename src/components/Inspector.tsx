@@ -284,6 +284,17 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
     const index = frames.findIndex((f) => f.id === frame.id);
 
     const setPageOption = (patch: Partial<PageSetup>) => updateFrame(frame.id, { page: { ...frame.page, ...patch } });
+    const setPageText = (key: "title" | "subtitle", value: string | undefined) => {
+      const nextMeta = { ...frame.meta, [key]: value };
+      updateFrame(frame.id, {
+        meta:
+          nextMeta.title === undefined && nextMeta.subtitle === undefined
+            ? undefined
+            : nextMeta,
+      });
+    };
+    const effectiveTitle = frame.meta?.title ?? meta.title;
+    const effectiveSubtitle = frame.meta?.subtitle ?? meta.subtitle ?? "";
 
     const segment = (active: boolean) =>
       `flex-1 rounded-md py-1.5 text-xs font-medium transition-all duration-150 text-center cursor-pointer ${
@@ -319,6 +330,65 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
             onChange={(e) => updateFrame(frame.id, { name: e.target.value })}
             className={inputClass}
           />
+          <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+            Ce nom sert au navigateur de pages et n’est pas imprimé.
+          </p>
+        </div>
+
+        <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>
+          <div className={headerBorder}>
+            <FileText className="h-4 w-4 text-primary-500" />
+            <h3 className={headerTitle}>Textes affichés sur la page</h3>
+          </div>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              <span>Titre</span>
+              {frame.meta?.title !== undefined && (
+                <button
+                  type="button"
+                  onClick={() => setPageText("title", undefined)}
+                  className="cursor-pointer normal-case tracking-normal text-primary-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-primary-300"
+                >
+                  Reprendre le document
+                </button>
+              )}
+            </span>
+            <input
+              type="text"
+              value={effectiveTitle}
+              placeholder="Titre de cette page"
+              onChange={(event) => setPageText("title", event.target.value)}
+              className={inputClass}
+            />
+          </label>
+
+          <label className="flex flex-col gap-1.5">
+            <span className="flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+              <span>Sous-titre</span>
+              {frame.meta?.subtitle !== undefined && (
+                <button
+                  type="button"
+                  onClick={() => setPageText("subtitle", undefined)}
+                  className="cursor-pointer normal-case tracking-normal text-primary-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-primary-300"
+                >
+                  Reprendre le document
+                </button>
+              )}
+            </span>
+            <input
+              type="text"
+              value={effectiveSubtitle}
+              placeholder="Ajouter un sous-titre à cette page"
+              onChange={(event) => setPageText("subtitle", event.target.value)}
+              className={inputClass}
+            />
+          </label>
+
+          <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+            Ces textes sont propres à cette page. Videz un champ pour le masquer, ou reprenez le texte du document.
+            Sur la feuille, sélectionnez ensuite le texte pour le déplacer, le redimensionner ou le mettre en forme.
+          </p>
         </div>
 
         <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>
