@@ -18,12 +18,12 @@ Tendances 2026 : connexion SIRH et mise à jour automatique deviennent le standa
 
 Notre différenciation est **structurelle**, pas cosmétique :
 
-1. **Souveraineté des données par construction** — aucun backend, aucun appel réseau, aucune télémétrie. Les organigrammes contiennent des données nominatives (noms, postes, e-mails, photos) : chez tous les concurrents SaaS, ces données partent dans le cloud. C'est notre argument n° 1 face aux DPO/DSI.
+1. **Contrôle des données par construction** — mode local sans compte, fichier autonome et aucune télémétrie. La collaboration est temporaire et activée explicitement ; le document n'est pas destiné à être stocké par le relais de connexion.
 2. **Coût zéro et zéro licence** — hébergement statique ou fichier local ; pas d'abonnement par utilisateur (Lucidchart et Organimi facturent au siège).
 3. **Fichier-first** — le `.orgchart.json` versionné et validé (zod) s'archive, se partage par e-mail, se diffe dans Git. Pas de lock-in.
 4. **Qualité de diffusion institutionnelle** — deux parcours visibles et compréhensibles : PDF paginé fidèle, puis Web & écran en PNG/SVG ou presse-papiers.
 
-Notre limite assumée face aux concurrents : pas de collaboration temps réel ni de synchronisation SIRH — incompatibles avec le « 100 % local ». Le partage passe par le fichier.
+Notre limite assumée face aux concurrents : pas encore de comptes, d'espaces d'équipe persistants ni de synchronisation SIRH. Le temps réel couvre d'abord les sessions synchrones par lien ; le fichier reste le support durable.
 
 ## 3. Matrice fonctionnelle
 

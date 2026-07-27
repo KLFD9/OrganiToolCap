@@ -433,9 +433,25 @@ export async function drawPageChrome(
     ]);
     if (logo) {
       const el = resolveChromeElement(options.chromeLayout, "logo", page);
-      const logoW = (logo.width / logo.height) * el.size;
+      const placement = el.width
+        ? fitContain(logo.width, logo.height, el.x, el.y, el.width, el.size)
+        : {
+            x: el.x,
+            y: el.y,
+            width: (logo.width / logo.height) * el.size,
+            height: el.size,
+          };
       try {
-        pdf.addImage(logo.dataUrl, "PNG", el.x, el.y, logoW, el.size, "orgchart-logo-primary", "FAST");
+        pdf.addImage(
+          logo.dataUrl,
+          "PNG",
+          placement.x,
+          placement.y,
+          placement.width,
+          placement.height,
+          undefined,
+          "FAST"
+        );
       } catch {
         // Un logo illisible ne doit jamais faire échouer tout le document.
       }
@@ -444,9 +460,25 @@ export async function drawPageChrome(
       const el = resolveChromeElement(options.chromeLayout, "secondaryLogo", page, {
         logoAspect: secondaryLogo.width / secondaryLogo.height,
       });
-      const logoW = (secondaryLogo.width / secondaryLogo.height) * el.size;
+      const placement = el.width
+        ? fitContain(secondaryLogo.width, secondaryLogo.height, el.x, el.y, el.width, el.size)
+        : {
+            x: el.x,
+            y: el.y,
+            width: (secondaryLogo.width / secondaryLogo.height) * el.size,
+            height: el.size,
+          };
       try {
-        pdf.addImage(secondaryLogo.dataUrl, "PNG", el.x, el.y, logoW, el.size, "orgchart-logo-secondary", "FAST");
+        pdf.addImage(
+          secondaryLogo.dataUrl,
+          "PNG",
+          placement.x,
+          placement.y,
+          placement.width,
+          placement.height,
+          undefined,
+          "FAST"
+        );
       } catch {
         // Même garde-fou pour le logo secondaire.
       }
@@ -595,6 +627,8 @@ export interface FrameImagePage {
   name: string;
   title?: string;
   subtitle?: string;
+  logoUrl?: string;
+  secondaryLogoUrl?: string;
   chromeLayout?: ChromeLayout;
   /** Absence = cadrage historique ajusté/centré. */
   placement?: PageSetup["placement"];
@@ -634,8 +668,8 @@ export async function buildFramesPdfImage(
       title: page.title,
       subtitle: page.subtitle,
       footer: common.footer,
-      logoUrl: common.logoUrl,
-      secondaryLogoUrl: common.secondaryLogoUrl,
+      logoUrl: page.logoUrl ?? common.logoUrl,
+      secondaryLogoUrl: page.secondaryLogoUrl ?? common.secondaryLogoUrl,
       chromeLayout: page.chromeLayout,
     };
     const pageWidth = pdf.internal.pageSize.getWidth();

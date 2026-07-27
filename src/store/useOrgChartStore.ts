@@ -85,6 +85,12 @@ interface OrgChartState {
    * comme un nouveau fichier.
    */
   loadImportedFile: (file: OrgChartFile) => void;
+  /**
+   * Projette un état reçu pendant une session collaborative sans persister les
+   * informations de présence. L'historique local est réinitialisé afin que
+   * Ctrl+Z ne supprime jamais silencieusement le travail d'un autre participant.
+   */
+  applyCollaborativeFile: (file: OrgChartFile, resetFileHandle?: boolean) => void;
   toFile: () => OrgChartFile;
   markSaved: (handle?: FileSystemFileHandle) => void;
 
@@ -318,6 +324,32 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       selectedNodeIds: [],
       selectedFrameId: file.frames?.[0]?.id ?? null,
       collapsedNodeIds: [],
+    })),
+
+  applyCollaborativeFile: (file, resetFileHandle = false) =>
+    set((s) => ({
+      meta: file.meta,
+      templateId: file.templateId,
+      theme: file.theme,
+      nodes: file.nodes,
+      edges: file.edges,
+      layout: file.layout,
+      frames: file.frames ?? [],
+      fileHandle: resetFileHandle ? undefined : s.fileHandle,
+      isDirty: true,
+      selectedNodeIds: s.selectedNodeIds.filter((id) =>
+        file.nodes.some((node) => node.id === id),
+      ),
+      selectedFrameId:
+        s.selectedFrameId && file.frames?.some((frame) => frame.id === s.selectedFrameId)
+          ? s.selectedFrameId
+          : null,
+      collapsedNodeIds: s.collapsedNodeIds.filter((id) =>
+        file.nodes.some((node) => node.id === id),
+      ),
+      pageGuide: s.pageGuide,
+      past: [],
+      future: [],
     })),
 
   toFile: () => {
@@ -560,7 +592,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       };
 
       // Rattache le clone au même responsable que l'original, le cas échéant
-      const parentEdge = s.edges.find((e) => e.target === id);
+      const parentEdge = s.edges.find((e) => isHierarchyEdge(e) && e.target === id);
       const newEdges = parentEdge
         ? [...s.edges, { id: generateId("edge"), source: parentEdge.source, target: newId }]
         : s.edges;

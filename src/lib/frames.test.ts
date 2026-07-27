@@ -4,6 +4,7 @@ import { CARD_HEIGHT, CARD_WIDTH } from "./compactLayout";
 import { COMFORT_MM_PER_PX, pageSizeMm, DEFAULT_PAGE } from "./readability";
 import {
   FRAME_GAP_PX,
+  buildFramePages,
   computeFrameMembership,
   defaultFrameName,
   frameAtPoint,
@@ -122,12 +123,41 @@ describe("nodesBounds", () => {
 });
 
 describe("resolveFrameChrome", () => {
-  it("le titre du frame l'emporte, sinon celui du document", () => {
-    const doc = { title: "Doc", subtitle: "Sous" };
-    expect(resolveFrameChrome(makeFrame(), doc)).toEqual({ title: "Doc", subtitle: "Sous" });
-    expect(resolveFrameChrome(makeFrame({ meta: { title: "Pôle Tech" } }), doc)).toEqual({
+  it("les valeurs du frame l'emportent, sinon celles du document", () => {
+    const doc = {
+      title: "Doc",
+      subtitle: "Sous",
+      logoUrl: "data:image/png;base64,doc",
+      secondaryLogoUrl: "data:image/png;base64,partner",
+    };
+    expect(resolveFrameChrome(makeFrame(), doc)).toEqual(doc);
+    expect(
+      resolveFrameChrome(
+        makeFrame({ meta: { title: "Pôle Tech", logoUrl: "data:image/png;base64,page" } }),
+        doc
+      )
+    ).toEqual({
       title: "Pôle Tech",
       subtitle: "Sous",
+      logoUrl: "data:image/png;base64,page",
+      secondaryLogoUrl: "data:image/png;base64,partner",
     });
+  });
+});
+
+describe("buildFramePages", () => {
+  it("prépare les logos et le gabarit propres à chaque page pour les exports", () => {
+    const frame = makeFrame({
+      meta: { logoUrl: "data:image/png;base64,page" },
+      chromeLayout: { logo: { x: 14, y: 9, size: 18, width: 36 } },
+    });
+    const [page] = buildFramePages([frame], [], [], {
+      title: "Doc",
+      logoUrl: "data:image/png;base64,doc",
+      chromeLayout: { logo: { x: 10, y: 10, size: 15 } },
+    });
+
+    expect(page.logoUrl).toBe("data:image/png;base64,page");
+    expect(page.chromeLayout?.logo).toEqual({ x: 14, y: 9, size: 18, width: 36 });
   });
 });

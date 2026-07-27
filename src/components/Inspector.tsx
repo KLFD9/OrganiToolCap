@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
-import { isHierarchyEdge, NodeStyleVariantSchema, resolveDisplay, type OrgDisplayOptions } from "../types/orgchart";
+import {
+  isHierarchyEdge,
+  NodeStyleVariantSchema,
+  resolveDisplay,
+  type ChromeKey,
+  type OrgDisplayOptions,
+} from "../types/orgchart";
 import { computeOrgStats, computeTeamSize } from "../lib/stats";
+import { resolveChromeElement } from "../lib/chromeLayout";
 import type { PageSetup } from "../lib/readability";
 import { PageFormatSelect } from "./PageFormatSelect";
 import { SelectionContextHeader } from "./SelectionContextHeader";
@@ -54,17 +61,30 @@ function fileToDataUrl(file: File): Promise<string> {
   });
 }
 
+function imageAspect(url: string | undefined): Promise<number> {
+  if (!url) return Promise.resolve(1);
+  return new Promise((resolve) => {
+    const image = new window.Image();
+    image.onload = () =>
+      resolve(image.naturalWidth && image.naturalHeight ? image.naturalWidth / image.naturalHeight : 1);
+    image.onerror = () => resolve(1);
+    image.src = url;
+  });
+}
+
 // Composant d'importation de logo Awwwards
 function LogoPicker({
   label,
   value,
   onChange,
   themeMode,
+  removable = true,
 }: {
   label: string;
   value?: string;
   onChange: (dataUrl: string | undefined) => void;
   themeMode: "light" | "dark";
+  removable?: boolean;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -84,17 +104,23 @@ function LogoPicker({
         {value ? (
           <div className="relative group h-11 w-11 shrink-0 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-center justify-center p-1">
             <img src={value} alt="" className="h-full w-full object-contain" />
-            <button
-              onClick={() => onChange(undefined)}
-              title="Retirer le logo"
-              className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-white text-[10px] font-semibold cursor-pointer"
-            >
-              Retirer
-            </button>
+            {removable && (
+              <button
+                type="button"
+                onClick={() => onChange(undefined)}
+                aria-label={`Retirer ${label.toLowerCase()}`}
+                title="Retirer le logo"
+                className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-white text-[10px] font-semibold cursor-pointer"
+              >
+                Retirer
+              </button>
+            )}
           </div>
         ) : (
           <button
+            type="button"
             onClick={() => inputRef.current?.click()}
+            aria-label={`Importer ${label.toLowerCase()}`}
             className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-dashed text-xs transition-all cursor-pointer ${
               themeMode === "dark"
                 ? "border-zinc-800 bg-zinc-900/40 text-zinc-500 hover:border-zinc-700 hover:text-zinc-400"
@@ -106,6 +132,7 @@ function LogoPicker({
         )}
         <div className="flex flex-col items-start gap-1">
           <button
+            type="button"
             onClick={() => inputRef.current?.click()}
             className={`text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
               themeMode === "dark"
@@ -284,13 +311,33 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
     const index = frames.findIndex((f) => f.id === frame.id);
 
     const setPageOption = (patch: Partial<PageSetup>) => updateFrame(frame.id, { page: { ...frame.page, ...patch } });
+    const compactPageMeta = (nextMeta: NonNullable<typeof frame.meta>) =>
+      Object.values(nextMeta).every((value) => value === undefined) ? undefined : nextMeta;
     const setPageText = (key: "title" | "subtitle", value: string | undefined) => {
       const nextMeta = { ...frame.meta, [key]: value };
+      updateFrame(frame.id, { meta: compactPageMeta(nextMeta) });
+    };
+    const setPageLogo = async (
+      metaKey: "logoUrl" | "secondaryLogoUrl",
+      chromeKey: Extract<ChromeKey, "logo" | "secondaryLogo">,
+      value: string | undefined
+    ) => {
+      const currentUrl = frame.meta?.[metaKey] ?? theme[metaKey] ?? value;
+      const aspect = await imageAspect(currentUrl);
+      const mergedLayout = { ...meta.chromeLayout, ...frame.chromeLayout };
+      const currentElement = resolveChromeElement(mergedLayout, chromeKey, frame.page, { logoAspect: aspect });
+      const nextMeta = { ...frame.meta, [metaKey]: value };
       updateFrame(frame.id, {
-        meta:
-          nextMeta.title === undefined && nextMeta.subtitle === undefined
-            ? undefined
-            : nextMeta,
+        meta: compactPageMeta(nextMeta),
+        // Le premier remplacement matérialise la boîte du logo hérité.
+        // Les images suivantes reprennent donc exactement position et taille.
+        chromeLayout: {
+          ...frame.chromeLayout,
+          [chromeKey]: {
+            ...currentElement,
+            width: currentElement.width ?? currentElement.size * aspect,
+          },
+        },
       });
     };
     const effectiveTitle = frame.meta?.title ?? meta.title;
@@ -332,6 +379,68 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
           />
           <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
             Ce nom sert au navigateur de pages et n’est pas imprimé.
+          </p>
+        </div>
+
+        <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>
+          <div className={headerBorder}>
+            <Briefcase className="h-4 w-4 text-primary-500" />
+            <h3 className={headerTitle}>Logos de cette page</h3>
+          </div>
+
+          <div className="flex flex-col gap-4">
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
+                  {frame.meta?.logoUrl !== undefined ? "Logo propre à la page" : "Logo principal hérité du document"}
+                </span>
+                {frame.meta?.logoUrl !== undefined && (
+                  <button
+                    type="button"
+                    onClick={() => void setPageLogo("logoUrl", "logo", undefined)}
+                    className="cursor-pointer text-[10px] text-primary-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-primary-300"
+                  >
+                    Reprendre le document
+                  </button>
+                )}
+              </div>
+              <LogoPicker
+                label="Logo principal"
+                value={frame.meta?.logoUrl ?? theme.logoUrl}
+                onChange={(url) => void setPageLogo("logoUrl", "logo", url)}
+                themeMode={themeMode}
+                removable={frame.meta?.logoUrl !== undefined}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] text-zinc-400 dark:text-zinc-500">
+                  {frame.meta?.secondaryLogoUrl !== undefined ? "Logo propre à la page" : "Logo secondaire hérité du document"}
+                </span>
+                {frame.meta?.secondaryLogoUrl !== undefined && (
+                  <button
+                    type="button"
+                    onClick={() => void setPageLogo("secondaryLogoUrl", "secondaryLogo", undefined)}
+                    className="cursor-pointer text-[10px] text-primary-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:text-primary-300"
+                  >
+                    Reprendre le document
+                  </button>
+                )}
+              </div>
+              <LogoPicker
+                label="Logo secondaire"
+                value={frame.meta?.secondaryLogoUrl ?? theme.secondaryLogoUrl}
+                onChange={(url) => void setPageLogo("secondaryLogoUrl", "secondaryLogo", url)}
+                themeMode={themeMode}
+                removable={frame.meta?.secondaryLogoUrl !== undefined}
+              />
+            </div>
+          </div>
+
+          <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+            Un remplacement conserve le gabarit du logo précédent. Sélectionnez ensuite le logo sur la feuille
+            pour le déplacer ou le redimensionner.
           </p>
         </div>
 

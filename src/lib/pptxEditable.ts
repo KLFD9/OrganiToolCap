@@ -436,9 +436,11 @@ export async function exportFramesToPptxEditable(
       ...options,
       title: page.title,
       subtitle: page.subtitle,
+      logoUrl: page.logoUrl ?? options.logoUrl,
+      secondaryLogoUrl: page.secondaryLogoUrl ?? options.secondaryLogoUrl,
       chromeLayout: page.chromeLayout,
     };
-    const hasHeader = Boolean(slideOptions.title || options.logoUrl || options.secondaryLogoUrl);
+    const hasHeader = Boolean(slideOptions.title || slideOptions.logoUrl || slideOptions.secondaryLogoUrl);
     const hasFooter = Boolean(options.footer);
     await addSlideChrome(slide, slideOptions);
 

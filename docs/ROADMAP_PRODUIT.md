@@ -1,6 +1,23 @@
 # Roadmap produit — prochaines itérations
 
-Cette liste privilégie la fiabilité des livrables, la simplicité pour une équipe marketing et les fonctions démontrables sans backend. Elle complète `ROADMAP_PAGES.md`.
+Cette liste privilégie la collaboration d'équipe, la fiabilité des livrables et la simplicité pour une équipe marketing. Elle complète `ROADMAP_PAGES.md`.
+
+## Priorité équipe — Collaboration en direct
+
+- [x] Créer ou rejoindre une session par lien, sans compte.
+- [x] Afficher les participants, curseurs et sélections distantes.
+- [x] Synchroniser les personnes, liens, positions, pages, thèmes et éléments de page.
+- [x] Fusionner les champs indépendants d'une même fiche sans écraser tout le document.
+- [x] Réparer automatiquement les conflits de parent unique, cycles et liens orphelins.
+- [x] Conserver le moteur collaboratif dans un chargement séparé du mode local.
+- [x] Permettre un relais de signalisation et un serveur STUN/TURN configurables sur Vercel.
+- [x] Fournir un relais durci, des identifiants TURN temporaires et un diagnostic de transport.
+- [ ] Déployer un relais de signalisation et un TURN dédiés pour les données RH réelles.
+- [ ] Ajouter les rôles propriétaire, éditeur et lecteur avec révocation du lien.
+- [ ] Ajouter les commentaires ancrés, réponses et résolution.
+- [ ] Ajouter l'historique de versions d'équipe et la restauration.
+
+**Preuve client attendue :** deux collègues ouvrent le même lien, voient leurs curseurs et modifient simultanément l'organigramme sans perdre les pages ni les changements.
 
 ## P0 — Faire du PDF la référence fidèle
 
@@ -67,17 +84,19 @@ Références de conception consultées : [sélection multiple et propriétés da
 
 ## P4 — Fiabiliser les mises à jour récurrentes
 
-- [ ] Comparer deux fichiers `.orgchart.json` localement.
-- [ ] Présenter arrivées, départs, changements de poste et changements de responsable.
+- [x] Comparer deux fichiers `.orgchart.json` localement, sans modification des documents.
+- [x] Présenter arrivées, départs, changements de poste, de pôle, de coordonnées, de responsable et de rattachements fonctionnels.
 - [x] Prévisualiser un import CSV avant application : effectifs, racines, responsables, anomalies, choix explicite du rangement et remplacement annulable.
+- [x] Ouvrir directement un `.xlsx` : choix de feuille, ligne d’en-tête, mapping des colonnes et lecture 100 % locale.
 - [ ] Accepter ou ignorer les changements par groupe, avec annulation complète.
 
 **Preuve client attendue :** mettre à jour l'organigramme mensuel sans contrôle manuel ligne par ligne.
 
 ## Hors périmètre
 
-- Collaboration temps réel, comptes utilisateurs, stockage cloud et synchronisation SIRH.
-- Toute télémétrie ou dépendance à un service réseau.
+- Synchronisation SIRH automatique.
+- Télémétrie comportementale et analytics.
+- Stockage cloud durable tant que les règles d'accès, de chiffrement et de rétention ne sont pas définies.
 
 ## Fonctions différées et masquées
 

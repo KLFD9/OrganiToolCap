@@ -49,7 +49,7 @@ export function CsvImportDialog({
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="csv-import-title"
+        aria-labelledby="people-import-title"
         className={`flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-3xl border shadow-2xl ${panelClass}`}
       >
         <header className="flex items-start justify-between border-b border-zinc-200/70 px-6 py-5 dark:border-zinc-800">
@@ -58,13 +58,13 @@ export function CsvImportDialog({
               <FileSpreadsheet className="h-5 w-5" />
             </span>
             <div className="min-w-0">
-              <h2 id="csv-import-title" className="text-base font-bold">Préparer l’import CSV</h2>
+              <h2 id="people-import-title" className="text-base font-bold">Préparer l’import de la liste</h2>
               <p className="mt-1 truncate text-xs text-zinc-500 dark:text-zinc-400">{fileName}</p>
             </div>
           </div>
           <button
             type="button"
-            aria-label="Annuler l’import CSV"
+            aria-label="Annuler l’import de la liste"
             disabled={busy}
             onClick={onCancel}
             className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-40 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"

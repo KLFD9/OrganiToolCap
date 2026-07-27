@@ -146,16 +146,20 @@ export function nodesBounds(nodes: OrgNode[]): RectPx | undefined {
 export interface FrameChrome {
   title?: string;
   subtitle?: string;
+  logoUrl?: string;
+  secondaryLogoUrl?: string;
 }
 
-/** Titre / sous-titre effectifs d'une page : ceux du frame, sinon ceux du document. */
+/** Chrome effectif d'une page : celui du frame, sinon celui du document. */
 export function resolveFrameChrome(
   frame: OrgFrame,
-  docMeta: { title?: string; subtitle?: string }
+  docMeta: { title?: string; subtitle?: string; logoUrl?: string; secondaryLogoUrl?: string }
 ): FrameChrome {
   return {
     title: frame.meta?.title ?? docMeta.title,
     subtitle: frame.meta?.subtitle ?? docMeta.subtitle,
+    logoUrl: frame.meta?.logoUrl ?? docMeta.logoUrl,
+    secondaryLogoUrl: frame.meta?.secondaryLogoUrl ?? docMeta.secondaryLogoUrl,
   };
 }
 
@@ -168,6 +172,8 @@ export interface FramePageContent {
   edges: OrgEdge[];
   title?: string;
   subtitle?: string;
+  logoUrl?: string;
+  secondaryLogoUrl?: string;
   /** Disposition d'en-tête fusionnée : celle du frame prime, élément par élément. */
   chromeLayout?: ChromeLayout;
 }
@@ -180,7 +186,13 @@ export function buildFramePages(
   frames: OrgFrame[],
   nodes: OrgNode[],
   edges: OrgEdge[],
-  docMeta: { title?: string; subtitle?: string; chromeLayout?: ChromeLayout }
+  docMeta: {
+    title?: string;
+    subtitle?: string;
+    logoUrl?: string;
+    secondaryLogoUrl?: string;
+    chromeLayout?: ChromeLayout;
+  }
 ): FramePageContent[] {
   const membership = computeFrameMembership(frames, nodes);
   return frames.map((frame) => {
@@ -192,6 +204,8 @@ export function buildFramePages(
       edges: edges.filter((e) => memberIds.has(e.source) && memberIds.has(e.target)),
       title: chrome.title,
       subtitle: chrome.subtitle,
+      logoUrl: chrome.logoUrl,
+      secondaryLogoUrl: chrome.secondaryLogoUrl,
       chromeLayout:
         docMeta.chromeLayout || frame.chromeLayout
           ? { ...docMeta.chromeLayout, ...frame.chromeLayout }

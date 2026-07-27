@@ -73,6 +73,7 @@ import {
   distributionGap,
   type SelectionLayoutAction,
 } from "../lib/selectionLayout";
+import { useCollaboration } from "../collaboration/CollaborationContext";
 
 interface MenuState {
   x: number;
@@ -162,12 +163,39 @@ function useImageAspect(url?: string): number {
   return url && measured?.url === url ? measured.aspect : 1;
 }
 
+/** Ratios intrinsèques de plusieurs logos de pages, mémorisés par data-URL. */
+function useImageAspects(urls: Array<string | undefined>): Map<string, number> {
+  const [aspects, setAspects] = useState<Map<string, number>>(() => new Map());
+  useEffect(() => {
+    let cancelled = false;
+    for (const url of urls) {
+      if (!url || aspects.has(url)) continue;
+      const img = new window.Image();
+      img.onload = () => {
+        if (cancelled || !img.naturalWidth || !img.naturalHeight) return;
+        setAspects((current) => {
+          if (current.has(url)) return current;
+          const next = new Map(current);
+          next.set(url, img.naturalWidth / img.naturalHeight);
+          return next;
+        });
+      };
+      img.src = url;
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [urls, aspects]);
+  return aspects;
+}
+
 interface CanvasProps {
   themeMode?: "light" | "dark";
   showGroups?: boolean;
 }
 
 export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "light", showGroups = false }, ref) => {
+  const collaboration = useCollaboration();
   const storeNodes = useOrgChartStore((s) => s.nodes);
   const storeEdges = useOrgChartStore((s) => s.edges);
   const theme = useOrgChartStore((s) => s.theme);
@@ -446,6 +474,11 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   // (lib/chromeLayout) — toute divergence visuelle entre les deux est un bug.
   const primaryLogoAspect = useImageAspect(theme.logoUrl);
   const secondaryLogoAspect = useImageAspect(theme.secondaryLogoUrl);
+  const pageLogoUrls = useMemo(
+    () => frames.flatMap((frame) => [frame.meta?.logoUrl, frame.meta?.secondaryLogoUrl]),
+    [frames]
+  );
+  const pageLogoAspects = useImageAspects(pageLogoUrls);
 
   const handleChromeResizeEnd = useCallback(
     (
@@ -465,6 +498,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         x: pxToMm(params.x),
         y: pxToMm(params.y),
         size: isText ? sizeMm * PT_PER_MM : sizeMm,
+        ...(!isText ? { width: pxToMm(params.width) } : {}),
       };
       if (frameId) setFrameChromeElement(frameId, key, element);
       else setChromeElement(key, element);
@@ -485,13 +519,30 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
       value: string;
       logoAspect?: number;
     }
-    const buildItems = (chrome: { title?: string; subtitle?: string }): ChromeItem[] => {
+    const buildItems = (chrome: {
+      title?: string;
+      subtitle?: string;
+      logoUrl?: string;
+      secondaryLogoUrl?: string;
+    }): ChromeItem[] => {
       const items: ChromeItem[] = [];
       if (chrome.title) items.push({ key: "title", variant: "text", value: chrome.title });
       if (chrome.subtitle) items.push({ key: "subtitle", variant: "text", value: chrome.subtitle });
-      if (theme.logoUrl) items.push({ key: "logo", variant: "logo", value: theme.logoUrl, logoAspect: primaryLogoAspect });
-      if (theme.secondaryLogoUrl) {
-        items.push({ key: "secondaryLogo", variant: "logo", value: theme.secondaryLogoUrl, logoAspect: secondaryLogoAspect });
+      if (chrome.logoUrl) {
+        items.push({
+          key: "logo",
+          variant: "logo",
+          value: chrome.logoUrl,
+          logoAspect: pageLogoAspects.get(chrome.logoUrl) ?? primaryLogoAspect,
+        });
+      }
+      if (chrome.secondaryLogoUrl) {
+        items.push({
+          key: "secondaryLogo",
+          variant: "logo",
+          value: chrome.secondaryLogoUrl,
+          logoAspect: pageLogoAspects.get(chrome.secondaryLogoUrl) ?? secondaryLogoAspect,
+        });
       }
       if (meta.footer) items.push({ key: "footer", variant: "text", value: meta.footer });
       return items;
@@ -516,11 +567,12 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
 
         const fontPx = isText ? mmToPx(textHeightMm(element.size)) : undefined;
         const heightPx = isText ? undefined : mmToPx(element.size);
+        const widthPx = isText ? undefined : mmToPx(element.width ?? element.size * (logoAspect ?? 1));
         // Boîte de sélection collée au rendu : largeur mesurée du libellé (même
         // police que l'affichage), pas une approximation par nombre de caractères.
         const boxWidth = isText
           ? Math.max(24, mmToPx(measureChromeTextMm(value, element.size, element.bold, element.italic)))
-          : (heightPx ?? 24) * (logoAspect ?? 1);
+          : widthPx ?? 24;
         const boxHeight = isText ? (fontPx ?? 12) * CHROME_TEXT_LINE_HEIGHT : heightPx ?? 24;
 
         const textStyle = isText
@@ -542,6 +594,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
             value,
             fontPx,
             heightPx,
+            widthPx,
             bold: textStyle?.bold,
             italic: textStyle?.italic,
             color: textStyle?.color,
@@ -565,7 +618,11 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
       // élément (frame.chromeLayout prime sur celle du document).
       for (const frame of frames) {
         pushChromeNodes(
-          buildItems(resolveFrameChrome(frame, meta)),
+          buildItems(resolveFrameChrome(frame, {
+            ...meta,
+            logoUrl: theme.logoUrl,
+            secondaryLogoUrl: theme.secondaryLogoUrl,
+          })),
           { ...meta.chromeLayout, ...frame.chromeLayout },
           frame.page,
           frameNodeId(frame.id),
@@ -573,7 +630,12 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         );
       }
     } else if (pageGuideNodes.length > 0) {
-      pushChromeNodes(buildItems(meta), meta.chromeLayout, page, "__page-guide__");
+      pushChromeNodes(
+        buildItems({ ...meta, logoUrl: theme.logoUrl, secondaryLogoUrl: theme.secondaryLogoUrl }),
+        meta.chromeLayout,
+        page,
+        "__page-guide__"
+      );
     }
 
     return { chromeElementNodes: nodes, resolvedChrome: resolved };
@@ -588,6 +650,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     theme.secondaryLogoUrl,
     primaryLogoAspect,
     secondaryLogoAspect,
+    pageLogoAspects,
     themeMode,
     handleChromeResizeEnd,
     setChromeElement,
@@ -1443,6 +1506,13 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         onPaneContextMenu={onPaneContextMenu}
         onSelectionChange={onSelectionChange}
         onPaneClick={onPaneClick}
+        onPointerMove={(event) => {
+          if (collaboration.status !== "active") return;
+          collaboration.updateCursor(
+            screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+          );
+        }}
+        onPointerLeave={() => collaboration.updateCursor(null)}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
@@ -1459,6 +1529,69 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         className="transition-colors duration-300"
       >
         <Background gap={24} color={gridColor} />
+        {collaboration.status === "active" && (
+          <ViewportPortal>
+            {collaboration.participants
+              .filter((participant) => !participant.isLocal)
+              .flatMap((participant) =>
+                participant.selectedNodeIds.map((nodeId) => {
+                  const rect = nodeRects.get(nodeId);
+                  if (!rect) return null;
+                  return (
+                    <div
+                      key={`${participant.clientId}:${nodeId}`}
+                      className="pointer-events-none absolute z-[90] rounded-2xl"
+                      style={{
+                        left: rect.x - 3,
+                        top: rect.y - 3,
+                        width: rect.width + 6,
+                        height: rect.height + 6,
+                        border: `3px solid ${participant.color}`,
+                      }}
+                    >
+                      <span
+                        className="absolute -top-6 left-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm"
+                        style={{ background: participant.color }}
+                      >
+                        {participant.name}
+                      </span>
+                    </div>
+                  );
+                }),
+              )}
+            {collaboration.participants
+              .filter((participant) => !participant.isLocal && participant.cursor)
+              .map((participant) => {
+                const cursor = participant.cursor!;
+                const invZoom = 1 / Math.max(0.05, getZoom());
+                return (
+                  <div
+                    key={participant.clientId}
+                    className="pointer-events-none absolute left-0 top-0 z-[100] flex items-start"
+                    style={{
+                      transform: `translate(${cursor.x}px, ${cursor.y}px) scale(${invZoom})`,
+                      transformOrigin: "top left",
+                    }}
+                  >
+                    <svg width="18" height="22" viewBox="0 0 18 22" aria-hidden="true">
+                      <path
+                        d="M2 1.5 16 12l-7 .8-4.2 6.4L2 1.5Z"
+                        fill={participant.color}
+                        stroke="white"
+                        strokeWidth="1.5"
+                      />
+                    </svg>
+                    <span
+                      className="-ml-1 mt-4 whitespace-nowrap rounded-md px-2 py-1 text-[11px] font-bold text-white shadow-lg"
+                      style={{ background: participant.color }}
+                    >
+                      {participant.name}
+                    </span>
+                  </div>
+                );
+              })}
+          </ViewportPortal>
+        )}
         <SelectionToolbar
           nodeIds={selectedMemberIds}
           theme={theme}

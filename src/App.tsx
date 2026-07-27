@@ -12,6 +12,7 @@ import { TemplatePicker } from "./components/TemplatePicker";
 import { Directory } from "./components/Directory";
 import { PageRail } from "./components/PageRail";
 import { createBlankChart, createEmptyChart, prepareDraftForResume } from "./templates/blank";
+import { CollaborationDialog } from "./components/CollaborationDialog";
 
 const AUTOSAVE_DEBOUNCE_MS = 1500;
 
@@ -478,6 +479,8 @@ function App() {
           onSelect={handleNew}
           themeMode={themeMode}
         />
+
+        <CollaborationDialog themeMode={themeMode} />
       </div>
     </ReactFlowProvider>
   );

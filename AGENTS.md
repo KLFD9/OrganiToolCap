@@ -1,6 +1,6 @@
 # OrganiTool CAP
 
-Éditeur d'organigrammes mono-page **100 % client, sans backend**, pour une équipe marketing non technique. Toute la documentation produit est en français ; le code (identifiants, commits) reste en anglais technique standard.
+Éditeur web d'organigrammes pour une équipe marketing non technique, déployé sur Vercel. Le mode local reste fichier-first et fonctionne sans compte ; une session collaborative réseau peut être activée explicitement par partage de lien. Toute la documentation produit est en français ; le code (identifiants, commits) reste en anglais technique standard.
 
 ## Commandes
 
@@ -15,11 +15,11 @@ Toujours lancer `npm test` et `npm run lint` avant de considérer une modificati
 
 ## Invariants produit (ne jamais casser)
 
-1. **Aucun appel réseau, aucune télémétrie.** La souveraineté des données (noms, e-mails, photos RH) est l'argument n° 1 du produit. N'introduire ni fetch externe, ni CDN, ni analytics. Les polices sont bundlées via @fontsource (sous-ensembles latin + latin-ext uniquement).
+1. **Réseau explicite, aucune télémétrie.** Hors session collaborative, aucun document ni brouillon ne quitte le navigateur. Une connexion WebRTC n'est ouverte qu'après l'action « Partager » ou « Rejoindre ». Le relais de signalisation ne doit pas stocker le document ; préférer un relais et un TURN dédiés configurés par variables Vercel. N'introduire ni analytics, ni CDN d'assets, ni appel réseau silencieux. Les polices sont bundlées via @fontsource (sous-ensembles latin + latin-ext uniquement).
 2. **Le fichier est la source de vérité.** Le format `.orgchart.json` est versionné (v2 courante, `ORG_CHART_VERSION`) et validé par zod (`src/types/orgchart.ts`). Les fichiers v1 sont migrés à l'ouverture (`migrateOrgChartFile`, appelée par `parseOrgChartFile`). Évolution acceptée sans montée de version : champs **optionnels additifs** dont l'absence a une sémantique claire (précédents : `layout.mode`, `theme.display`, `edge.kind`, `layout.page`, `meta.chromeLayout`, `frames`). Tout changement incompatible exige une montée de version avec migration.
    Le repli de branches (`collapsedNodeIds`) est un état de vue **non persisté** — mais l'export est WYSIWYG : il exclut les branches repliées.
 3. **Liens : deux natures (v2).** `edge.kind` absent ou `"hierarchy"` = rattachement hiérarchique (parent unique, anti-cycle) ; `"dotted"` = rattachement fonctionnel (plusieurs autorisés, trait pointillé). **Toute logique d'arbre doit filtrer via `isHierarchyEdge`/`hierarchyEdges`** (types/orgchart.ts) — `lib/hierarchy.ts` le fait déjà pour ses consommateurs ; attention aux parcours d'edges directs (parentOf, `e.target === id`…).
-4. **IndexedDB n'est qu'un brouillon de confort** (restauration après fermeture accidentelle), pas un stockage principal.
+4. **IndexedDB n'est qu'un brouillon de confort** (restauration après fermeture accidentelle et reprise d'une session collaborative), pas un stockage principal.
 5. **Round-trip PowerPoint** : l'export .pptx embarque le `.orgchart.json` complet et doit toujours se réimporter à l'identique (`pptxEditable.ts` / `pptxImport.ts`).
 6. **Accessibilité** : `prefers-reduced-motion` respecté (voir `motionDuration()` dans Toolbar), focus visible, `aria-label` sur les boutons icône. Les raccourcis Tab/Entrée du canvas ne s'activent que si le focus est sur le canvas (jamais sur la toolbar ou un champ). PDF exporté : métadonnées + langue fr-FR (`applyPdfMetadata`).
 7. **Piège de layout NodeCard** : la poignée source React Flow est au bas-centre des cartes — tout élément ajouté à cet endroit doit être décalé et porter la classe `nodrag`, sinon il intercepte l'edge-drop et déclenche un déplacement de carte (bug corrigé sur la pastille de repli).
@@ -72,4 +72,4 @@ src/
 
 ## Contexte produit
 
-Positionnement et comparatif : `docs/ANALYSE_CONCURRENTIELLE.md`. Cahier des charges : `docs/PROMPT_orgchart_builder.md`. Différenciation structurelle : données 100 % locales, coût zéro, fichier-first, qualité d'export institutionnelle. Limites assumées : pas de collaboration temps réel, pas de sync SIRH.
+Positionnement et comparatif : `docs/ANALYSE_CONCURRENTIELLE.md`. Cahier des charges : `docs/PROMPT_orgchart_builder.md`. Différenciation structurelle : mode local sans compte, collaboration temporaire par lien, fichier-first et qualité d'export institutionnelle. Limites assumées : pas encore de comptes, de stockage cloud durable ni de sync SIRH.

@@ -132,14 +132,31 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
     const pages = buildFramePages(frames, visibleNodes, visibleEdges, {
       title: includeTitle ? meta.title : undefined,
       subtitle: includeTitle ? meta.subtitle : undefined,
+      logoUrl: includeLogos ? theme.logoUrl : undefined,
+      secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
       chromeLayout: meta.chromeLayout,
     });
     // « Inclure le titre » décoché : aucune bande d'en-tête, y compris les titres par page
     const withTitleRule = includeTitle
       ? pages
       : pages.map((p) => ({ ...p, title: undefined, subtitle: undefined }));
-    return scope === "all" ? withTitleRule : withTitleRule.filter((p) => p.frame.id === scope);
-  }, [hasFrames, open, frames, visibleNodes, visibleEdges, includeTitle, meta, scope]);
+    const withLogoRule = includeLogos
+      ? withTitleRule
+      : withTitleRule.map((p) => ({ ...p, logoUrl: undefined, secondaryLogoUrl: undefined }));
+    return scope === "all" ? withLogoRule : withLogoRule.filter((p) => p.frame.id === scope);
+  }, [
+    hasFrames,
+    open,
+    frames,
+    visibleNodes,
+    visibleEdges,
+    includeTitle,
+    includeLogos,
+    meta,
+    scope,
+    theme.logoUrl,
+    theme.secondaryLogoUrl,
+  ]);
 
   // Jauge multi-pages : la page la moins lisible du périmètre
   const frameReadability = useMemo(() => {
@@ -152,8 +169,8 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
       const avail = availableAreaForSetup(p.frame.page, {
         title: p.title,
         footer: includeFooter ? meta.footer : undefined,
-        logoUrl: includeLogos ? theme.logoUrl : undefined,
-        secondaryLogoUrl: includeLogos ? theme.secondaryLogoUrl : undefined,
+        logoUrl: p.logoUrl,
+        secondaryLogoUrl: p.secondaryLogoUrl,
       });
       const est = p.frame.page.placement === "exact"
         ? {
@@ -170,7 +187,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
       if (!worst || est.fontPt < worst.fontPt) worst = { id: p.frame.id, name: p.frame.name, ...est };
     }
     return worst;
-  }, [open, framePages, includeFooter, includeLogos, meta.footer, theme.logoUrl, theme.secondaryLogoUrl]);
+  }, [open, framePages, includeFooter, meta.footer]);
 
   // Lisibilité estimée du document : taille réelle du texte une fois
   // l'organigramme ajusté à la page (sans objet en multi-pages).
@@ -364,6 +381,8 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
               name: p.frame.name,
               title: p.title,
               subtitle: p.subtitle,
+              logoUrl: p.logoUrl,
+              secondaryLogoUrl: p.secondaryLogoUrl,
               chromeLayout: p.chromeLayout,
               placement: p.frame.page.placement,
               frameRect: frameRectPx(p.frame),
@@ -627,7 +646,9 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                   />
                   <span>Titre</span>
                 </label>
-                {(theme.logoUrl || theme.secondaryLogoUrl) && <label className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${includeLogos ? "border-primary-300 bg-primary-50 text-primary-800 dark:border-primary-700 dark:bg-primary-950/30 dark:text-primary-200" : "border-zinc-200 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400"}`}>
+                {(theme.logoUrl ||
+                  theme.secondaryLogoUrl ||
+                  frames.some((frame) => frame.meta?.logoUrl || frame.meta?.secondaryLogoUrl)) && <label className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition-colors ${includeLogos ? "border-primary-300 bg-primary-50 text-primary-800 dark:border-primary-700 dark:bg-primary-950/30 dark:text-primary-200" : "border-zinc-200 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400"}`}>
                   <input
                     type="checkbox"
                     checked={includeLogos}

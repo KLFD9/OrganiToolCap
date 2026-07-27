@@ -22,6 +22,8 @@ export interface ChromeElementData extends Record<string, unknown> {
   fontPx?: number;
   /** Hauteur en px canvas (variant logo). */
   heightPx?: number;
+  /** Largeur du gabarit en px canvas (variant logo). */
+  widthPx?: number;
   bold?: boolean;
   italic?: boolean;
   color?: string;
@@ -61,6 +63,7 @@ function ChromeElementImpl({ data, selected }: NodeProps & { data: ChromeElement
     value,
     fontPx = 16,
     heightPx = 40,
+    widthPx = 40,
     bold = false,
     italic = false,
     color,
@@ -245,7 +248,12 @@ function ChromeElementImpl({ data, selected }: NodeProps & { data: ChromeElement
           src={value}
           alt={LABELS[chromeKey]}
           draggable={false}
-          style={{ height: effectiveHeightPx, width: "auto", display: "block" }}
+          style={{
+            height: effectiveHeightPx,
+            width: liveHeightPx === null ? widthPx : "100%",
+            objectFit: "contain",
+            display: "block",
+          }}
         />
       ) : editing ? (
         <input

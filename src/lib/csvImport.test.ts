@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { CsvFormatError, detectDelimiter, importPeopleCsv, parseCsv } from "./csvImport";
+import {
+  CsvFormatError,
+  detectDelimiter,
+  detectPeopleColumns,
+  importPeopleCsv,
+  importPeopleRows,
+  parseCsv,
+} from "./csvImport";
 
 describe("detectDelimiter", () => {
   it("détecte le point-virgule (Excel FR)", () => {
@@ -117,5 +124,32 @@ describe("importPeopleCsv", () => {
     const { nodes } = importPeopleCsv("﻿Nom;Poste\nAlice;Dir");
     expect(nodes).toHaveLength(1);
     expect(nodes[0].data.name).toBe("Alice");
+  });
+});
+
+describe("importPeopleRows", () => {
+  it("importe des lignes Excel avec un en-tête et un mapping choisis", () => {
+    const rows = [
+      ["Rapport RH juillet"],
+      ["Collaborateur", "Fonction", "Direction", "N+1"],
+      ["Alice Martin", "DG", "Direction", ""],
+      ["Bob Durand", "Marketing", "Communication", "Alice Martin"],
+    ];
+    const mapping = detectPeopleColumns(rows[1]);
+    const result = importPeopleRows(rows, mapping, 1);
+
+    expect(result.nodes).toHaveLength(2);
+    expect(result.nodes[1].data).toMatchObject({
+      name: "Bob Durand",
+      role: "Marketing",
+      department: "Communication",
+    });
+    expect(result.edges).toContainEqual(
+      expect.objectContaining({ source: result.nodes[0].id, target: result.nodes[1].id })
+    );
+  });
+
+  it("refuse un mapping sans colonne Nom", () => {
+    expect(() => importPeopleRows([["Poste"], ["DG"]], { role: 0 })).toThrow(CsvFormatError);
   });
 });

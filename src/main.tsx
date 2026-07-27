@@ -21,11 +21,14 @@ import "@fontsource/playfair-display/latin-ext-400-italic.css";
 import './index.css'
 import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
+import { CollaborationProvider } from './collaboration/CollaborationProvider.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      <CollaborationProvider>
+        <App />
+      </CollaborationProvider>
     </ErrorBoundary>
   </StrictMode>,
 )

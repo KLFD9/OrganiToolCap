@@ -1,6 +1,6 @@
 import type { Node } from "@xyflow/react";
 import { captureFlow, fitContain, loadLogoForExport } from "./pdfExport";
-import { resolveChromeTextStyle } from "./chromeLayout";
+import { CHROME_HEADER_MM, resolveChromeTextStyle } from "./chromeLayout";
 import type { ChromeLayout } from "../types/orgchart";
 
 /**
@@ -67,8 +67,20 @@ export async function addSlideChrome(slide: Slide, options: PptxExportOptions): 
   if (options.logoUrl) {
     try {
       const logo = await loadLogoForExport(options.logoUrl);
-      const w = (logo.width / logo.height) * HEADER_HEIGHT_IN;
-      slide.addImage({ data: logo.dataUrl, x: MARGIN_IN, y: MARGIN_IN, w, h: HEADER_HEIGHT_IN });
+      const element = options.chromeLayout?.logo;
+      const h = element ? HEADER_HEIGHT_IN * (element.size / CHROME_HEADER_MM) : HEADER_HEIGHT_IN;
+      const boxW =
+        element?.width && element.size > 0
+          ? (element.width / element.size) * h
+          : (logo.width / logo.height) * h;
+      const placement = fitContain(logo.width, logo.height, MARGIN_IN, MARGIN_IN, boxW, h);
+      slide.addImage({
+        data: logo.dataUrl,
+        x: placement.x,
+        y: placement.y,
+        w: placement.width,
+        h: placement.height,
+      });
     } catch {
       // logo illisible : on ignore silencieusement, comme pour le PDF
     }
@@ -76,13 +88,26 @@ export async function addSlideChrome(slide: Slide, options: PptxExportOptions): 
   if (options.secondaryLogoUrl) {
     try {
       const logo = await loadLogoForExport(options.secondaryLogoUrl);
-      const w = (logo.width / logo.height) * HEADER_HEIGHT_IN;
+      const element = options.chromeLayout?.secondaryLogo;
+      const h = element ? HEADER_HEIGHT_IN * (element.size / CHROME_HEADER_MM) : HEADER_HEIGHT_IN;
+      const boxW =
+        element?.width && element.size > 0
+          ? (element.width / element.size) * h
+          : (logo.width / logo.height) * h;
+      const placement = fitContain(
+        logo.width,
+        logo.height,
+        SLIDE_WIDTH_IN - MARGIN_IN - boxW,
+        MARGIN_IN,
+        boxW,
+        h
+      );
       slide.addImage({
         data: logo.dataUrl,
-        x: SLIDE_WIDTH_IN - MARGIN_IN - w,
-        y: MARGIN_IN,
-        w,
-        h: HEADER_HEIGHT_IN,
+        x: placement.x,
+        y: placement.y,
+        w: placement.width,
+        h: placement.height,
       });
     } catch {
       // logo illisible : on ignore silencieusement

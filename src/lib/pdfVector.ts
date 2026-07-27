@@ -421,8 +421,8 @@ export async function buildFramesPdfVector(
       title: page.title,
       subtitle: page.subtitle,
       footer: common.footer,
-      logoUrl: common.logoUrl,
-      secondaryLogoUrl: common.secondaryLogoUrl,
+      logoUrl: page.logoUrl ?? common.logoUrl,
+      secondaryLogoUrl: page.secondaryLogoUrl ?? common.secondaryLogoUrl,
       chromeLayout: page.chromeLayout,
     };
     const label = pages.length > 1 ? `${page.frame.name} · ${i + 1}/${pages.length}` : undefined;

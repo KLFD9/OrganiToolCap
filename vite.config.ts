@@ -10,7 +10,7 @@ export default defineConfig({
       output: {
         // Sépare les gros vendors du code applicatif : le cache navigateur
         // survit aux déploiements qui ne touchent que le code de l'app.
-        advancedChunks: {
+        codeSplitting: {
           groups: [
             { name: 'react-vendor', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ },
             { name: 'react-flow', test: /node_modules[\\/]@xyflow[\\/]/ },

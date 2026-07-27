@@ -118,6 +118,9 @@ export const ChromeElementSchema = z.object({
   x: z.number(),
   y: z.number(),
   size: z.number(),
+  // Largeur explicite du gabarit d'un logo, en mm. Optionnelle et additive :
+  // son absence conserve le ratio intrinsèque historique de l'image.
+  width: z.number().optional(),
   // Mise en forme des textes de page. Champs optionnels additifs v2 :
   // absence = style typographique par défaut de l'élément.
   bold: z.boolean().optional(),
@@ -164,6 +167,11 @@ export const OrgFrameSchema = z.object({
     .object({
       title: z.string().optional(),
       subtitle: z.string().optional(),
+      // Logos propres à la page ; absents = logos hérités du document.
+      // La géométrie reste dans chromeLayout afin qu'un remplacement conserve
+      // exactement le même gabarit, tout en restant déplaçable.
+      logoUrl: z.string().optional(),
+      secondaryLogoUrl: z.string().optional(),
     })
     .optional(),
   // Disposition d'en-tête propre à la page ; absente = celle du document.

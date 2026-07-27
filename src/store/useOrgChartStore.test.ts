@@ -250,6 +250,32 @@ describe("useOrgChartStore", () => {
     expect(state.edges).toContainEqual(expect.objectContaining({ source: rootId, target: clone.id }));
   });
 
+  it("duplicateNode ignore un rattachement fonctionnel placé avant le responsable hiérarchique", () => {
+    const { addNode, addDottedEdge, duplicateNode } = useOrgChartStore.getState();
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+    addNode(rootId);
+    const childId = useOrgChartStore.getState().nodes[1].id;
+    addNode();
+    const functionalManagerId = useOrgChartStore.getState().nodes[2].id;
+    addDottedEdge(functionalManagerId, childId);
+
+    const current = useOrgChartStore.getState();
+    useOrgChartStore.setState({
+      edges: [...current.edges].sort((a, b) => Number(b.kind === "dotted") - Number(a.kind === "dotted")),
+    });
+
+    duplicateNode(childId);
+
+    const state = useOrgChartStore.getState();
+    const clone = state.nodes.at(-1)!;
+    expect(state.edges).toContainEqual(
+      expect.objectContaining({ source: rootId, target: clone.id })
+    );
+    expect(state.edges).not.toContainEqual(
+      expect.objectContaining({ source: functionalManagerId, target: clone.id })
+    );
+  });
+
   it("undo/redo restore previous and next states", () => {
     const { addNode, undo, redo } = useOrgChartStore.getState();
     const rootId = useOrgChartStore.getState().nodes[0].id;
@@ -289,6 +315,29 @@ describe("useOrgChartStore", () => {
     state = useOrgChartStore.getState();
     expect(state.meta.title).toBe(original.meta.title);
     expect(state.nodes).toEqual(original.nodes);
+  });
+
+  it("une mise à jour collaborative conserve la sélection valide et isole le fichier de l'invité", () => {
+    const original = useOrgChartStore.getState().toFile();
+    const handle = {} as FileSystemFileHandle;
+    useOrgChartStore.getState().loadFile(original, handle);
+    const selectedId = original.nodes[0].id;
+    useOrgChartStore.getState().selectNode(selectedId);
+    useOrgChartStore.getState().setTitle("Modification locale");
+
+    const remote = {
+      ...original,
+      meta: { ...original.meta, title: "Document partagé" },
+    };
+    useOrgChartStore.getState().applyCollaborativeFile(remote, true);
+
+    const state = useOrgChartStore.getState();
+    expect(state.meta.title).toBe("Document partagé");
+    expect(state.selectedNodeIds).toEqual([selectedId]);
+    expect(state.fileHandle).toBeUndefined();
+    expect(state.past).toEqual([]);
+    expect(state.future).toEqual([]);
+    expect(state.isDirty).toBe(true);
   });
 
   it("deleteNode also removes its connected edges", () => {

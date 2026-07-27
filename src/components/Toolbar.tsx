@@ -23,14 +23,21 @@ import {
   ChevronDown,
   SlidersHorizontal,
   Eye,
+  GitCompareArrows,
+  Share2,
 } from "lucide-react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
-import { openOrgChartFile, saveOrgChartFile, FileFormatError } from "../lib/fileIO";
+import { openOrgChartFile, parseOrgChartFile, saveOrgChartFile, FileFormatError } from "../lib/fileIO";
 import { importPeopleCsv, CsvFormatError, type CsvImportResult } from "../lib/csvImport";
+import type { WorkbookSheet } from "../lib/xlsxImport";
+import type { OrgChartDiff } from "../lib/orgChartDiff";
 import { availableAreaForSetup, DEFAULT_PAGE } from "../lib/readability";
 import { demoCompany } from "../templates/demoCompany";
 import { clearDraft } from "../lib/db";
 import { CsvImportDialog } from "./CsvImportDialog";
+import { SpreadsheetImportDialog } from "./SpreadsheetImportDialog";
+import { OrgChartDiffDialog } from "./OrgChartDiffDialog";
+import { useCollaboration } from "../collaboration/CollaborationContext";
 
 interface ToolbarProps {
   onExportClick: () => void;
@@ -83,6 +90,7 @@ export function Toolbar({
   const canRedo = useOrgChartStore((s) => s.future.length > 0);
   const nodes = useOrgChartStore((s) => s.nodes);
   const selectNode = useOrgChartStore((s) => s.selectNode);
+  const collaboration = useCollaboration();
 
   const { fitView, getNode, setCenter } = useReactFlow();
 
@@ -92,8 +100,11 @@ export function Toolbar({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [pendingCsv, setPendingCsv] = useState<{ fileName: string; result: CsvImportResult } | null>(null);
+  const [pendingWorkbook, setPendingWorkbook] = useState<{ fileName: string; sheets: WorkbookSheet[] } | null>(null);
+  const [diffResult, setDiffResult] = useState<{ referenceName: string; diff: OrgChartDiff } | null>(null);
   const [csvBusy, setCsvBusy] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
+  const compareInputRef = useRef<HTMLInputElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -214,17 +225,40 @@ export function Toolbar({
     }
   };
 
-  const handleImportCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImportPeople = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
     e.target.value = "";
     if (!f) return;
     setError(null);
     setNotice(null);
     try {
+      if (/\.xlsx$/i.test(f.name)) {
+        const { readPeopleWorkbook } = await import("../lib/xlsxImport");
+        const sheets = await readPeopleWorkbook(f);
+        if (sheets.length === 0) throw new CsvFormatError("Le classeur Excel ne contient aucune feuille.");
+        setPendingWorkbook({ fileName: f.name, sheets });
+        return;
+      }
       const text = await f.text();
       setPendingCsv({ fileName: f.name, result: importPeopleCsv(text) });
     } catch (err) {
-      setError(err instanceof CsvFormatError ? err.message : "Impossible d'importer ce fichier CSV.");
+      setError(err instanceof CsvFormatError ? err.message : "Impossible d’importer ce fichier Excel ou CSV.");
+      console.error(err);
+    }
+  };
+
+  const handleCompareFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setError(null);
+    setNotice(null);
+    try {
+      const reference = parseOrgChartFile(await file.text());
+      const { compareOrgCharts } = await import("../lib/orgChartDiff");
+      setDiffResult({ referenceName: file.name, diff: compareOrgCharts(reference, toFile()) });
+    } catch (err) {
+      setError(err instanceof FileFormatError ? err.message : "Impossible de comparer ce fichier.");
       console.error(err);
     }
   };
@@ -364,7 +398,8 @@ export function Toolbar({
           <div className={`${menuPanel} left-0`}>
             <button className={menuItem} onClick={() => { closeMenus(); onNewClick(); }}><FilePlus2 className="h-4 w-4 text-zinc-400" /><span><b className="block font-semibold">Nouveau</b><small className="text-zinc-400">Créer un autre organigramme</small></span></button>
             <button data-action="open" className={menuItem} onClick={() => { closeMenus(); void handleOpen(); }}><FolderOpen className="h-4 w-4 text-zinc-400" /><span><b className="block font-semibold">Ouvrir</b><small className="text-zinc-400">Fichier OrganiTool</small></span></button>
-            <button data-action="import-csv" className={menuItem} onClick={() => { closeMenus(); csvInputRef.current?.click(); }}><FileSpreadsheet className="h-4 w-4 text-zinc-400" /><span><b className="block font-semibold">Importer Excel / CSV</b><small className="text-zinc-400">Créer depuis une liste</small></span></button>
+            <button data-action="import-csv" className={menuItem} onClick={() => { closeMenus(); csvInputRef.current?.click(); }}><FileSpreadsheet className="h-4 w-4 text-zinc-400" /><span><b className="block font-semibold">Importer Excel / CSV</b><small className="text-zinc-400">Créer depuis une liste locale</small></span></button>
+            <button className={menuItem} onClick={() => { closeMenus(); compareInputRef.current?.click(); }}><GitCompareArrows className="h-4 w-4 text-zinc-400" /><span><b className="block font-semibold">Comparer deux versions</b><small className="text-zinc-400">Mesurer les évolutions localement</small></span></button>
             <button className={menuItem} onClick={() => { closeMenus(); loadFile(demoCompany); }}><Sparkles className="h-4 w-4 text-zinc-400" /><span><b className="block font-semibold">Voir l’exemple</b><small className="text-zinc-400">Société Horizon</small></span></button>
             <div className="my-1 h-px bg-zinc-100 dark:bg-zinc-800" />
             <button className={menuItem} onClick={() => { closeMenus(); void handleSaveAs(); }}><SaveAll className="h-4 w-4 text-zinc-400" /><span><b className="block font-semibold">Enregistrer une copie</b><small className="text-zinc-400">Créer un fichier distinct</small></span></button>
@@ -399,7 +434,8 @@ export function Toolbar({
         </summary>
         <div className={`${menuPanel} left-0 grid w-72 grid-cols-2 gap-1`}>
           <button data-action="open" className={menuItem} onClick={() => { closeMenus(); void handleOpen(); }}><FolderOpen className="h-4 w-4 text-zinc-400" /><span className="font-semibold">Ouvrir</span></button>
-          <button data-action="import-csv" className={menuItem} onClick={() => { closeMenus(); csvInputRef.current?.click(); }}><FileSpreadsheet className="h-4 w-4 text-zinc-400" /><span className="font-semibold">Importer</span></button>
+          <button data-action="import-csv" className={menuItem} onClick={() => { closeMenus(); csvInputRef.current?.click(); }}><FileSpreadsheet className="h-4 w-4 text-zinc-400" /><span className="font-semibold">Excel / CSV</span></button>
+          <button className={menuItem} onClick={() => { closeMenus(); compareInputRef.current?.click(); }}><GitCompareArrows className="h-4 w-4 text-zinc-400" /><span className="font-semibold">Comparer</span></button>
           <button disabled={busy} className={menuItem} onClick={() => { closeMenus(); void handleAutoLayout(); }}><Wand2 className="h-4 w-4 text-primary-500" /><span className="font-semibold">Réorganiser</span></button>
           <button className={menuItem} onClick={() => { closeMenus(); fitView({ duration: motionDuration(300), padding: 0.2 }); }}><Maximize className="h-4 w-4 text-zinc-400" /><span className="font-semibold">Tout afficher</span></button>
           <button className={menuItem} onClick={() => { closeMenus(); onTogglePresentation(); }}><Presentation className="h-4 w-4 text-zinc-400" /><span className="font-semibold">Présenter</span></button>
@@ -409,7 +445,8 @@ export function Toolbar({
         </div>
       </details>
 
-      <input ref={csvInputRef} type="file" accept=".csv,text/csv,text/tab-separated-values" className="hidden" onChange={handleImportCsv} />
+      <input ref={csvInputRef} type="file" accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,text/tab-separated-values" className="hidden" onChange={handleImportPeople} />
+      <input ref={compareInputRef} type="file" accept=".json,.orgchart.json,application/json" className="hidden" onChange={handleCompareFile} />
 
       <div className="mx-auto flex shrink-0 rounded-lg bg-zinc-100 p-0.5 dark:bg-zinc-900" role="group" aria-label="Changer de vue">
         <button title="Organigramme" onClick={() => directoryOpen && onToggleDirectory()} aria-pressed={!directoryOpen} className={`flex h-8 items-center gap-2 rounded-md px-2 text-xs font-semibold transition-colors lg:px-3 ${!directoryOpen ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-white" : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"}`}><Frame className="h-3.5 w-3.5" /><span className="hidden md:inline">Organigramme</span></button>
@@ -428,6 +465,30 @@ export function Toolbar({
         <button aria-label="Rétablir" title="Rétablir (Ctrl+Maj+Z)" onClick={redo} disabled={!canRedo} className={`${iconButton} hidden lg:flex`}><Redo2 className="h-4 w-4" /></button>
         <button aria-label="Changer de thème" title="Mode clair / sombre" onClick={onToggleTheme} className={`${iconButton} hidden sm:flex`}>{themeMode === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</button>
         <div className="mx-1 h-6 w-px bg-zinc-200 dark:bg-zinc-800" />
+        <button
+          onClick={collaboration.openDialog}
+          className={`relative flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition-colors ${
+            collaboration.status === "active"
+              ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+              : collaboration.invitationAvailable
+                ? "border-primary-300 bg-primary-50 text-primary-700 hover:bg-primary-100 dark:border-primary-800 dark:bg-primary-950/40 dark:text-primary-300"
+                : themeMode === "dark"
+                  ? "border-zinc-800 text-zinc-300 hover:bg-zinc-900"
+                  : "border-zinc-200 text-zinc-600 hover:bg-zinc-50"
+          }`}
+        >
+          <Share2 className="h-3.5 w-3.5" />
+          <span className="hidden lg:inline">
+            {collaboration.status === "active"
+              ? `${collaboration.participants.length} en direct`
+              : collaboration.invitationAvailable
+                ? "Rejoindre"
+                : "Partager"}
+          </span>
+          {collaboration.status === "active" && (
+            <span className={`h-2 w-2 rounded-full ${collaboration.connected ? "bg-emerald-500" : "bg-amber-500"}`} />
+          )}
+        </button>
         <button data-action="save" onClick={() => void handleSave()} className={`flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition-colors ${isDirty ? "bg-primary-700 text-white hover:bg-primary-600 dark:bg-primary-600 dark:hover:bg-primary-500" : themeMode === "dark" ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}><Save className="h-3.5 w-3.5" /><span className="hidden sm:inline">Enregistrer</span></button>
         <button onClick={onExportClick} className="flex h-9 items-center gap-2 rounded-lg bg-primary-800 px-3 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-primary-700"><Download className="h-3.5 w-3.5" /><span className="hidden sm:inline">Exporter</span></button>
       </div>
@@ -443,6 +504,26 @@ export function Toolbar({
           themeMode={themeMode}
           onCancel={() => setPendingCsv(null)}
           onConfirm={(organize) => void confirmCsvImport(organize)}
+        />
+      )}
+      {pendingWorkbook && (
+        <SpreadsheetImportDialog
+          fileName={pendingWorkbook.fileName}
+          sheets={pendingWorkbook.sheets}
+          themeMode={themeMode}
+          onCancel={() => setPendingWorkbook(null)}
+          onConfirm={(result) => {
+            setPendingCsv({ fileName: pendingWorkbook.fileName, result });
+            setPendingWorkbook(null);
+          }}
+        />
+      )}
+      {diffResult && (
+        <OrgChartDiffDialog
+          referenceName={diffResult.referenceName}
+          diff={diffResult.diff}
+          themeMode={themeMode}
+          onClose={() => setDiffResult(null)}
         />
       )}
     </div>

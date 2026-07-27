@@ -1,0 +1,59 @@
+services:
+  signaling:
+    build:
+      context: ../../services/collaboration-relay
+    restart: unless-stopped
+    environment:
+      PORT: "4444"
+      SIGNALING_PATH: "/signal"
+      ALLOWED_ORIGINS: "${APP_ORIGINS:?APP_ORIGINS est requis}"
+      MAX_MESSAGE_BYTES: "65536"
+      MAX_CONNECTIONS: "1000"
+      MAX_TOPICS_PER_CONNECTION: "16"
+      MAX_CLIENTS_PER_TOPIC: "24"
+      MAX_MESSAGES_PER_MINUTE: "600"
+    ports:
+      - "4444:4444"
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --tries=1
+        - --spider
+        - http://127.0.0.1:4444/healthz
+      interval: 15s
+      timeout: 3s
+      retries: 3
+
+  turn:
+    image: coturn/coturn:4.11.0-r0
+    restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - -ec
+    command:
+      - |
+        exec turnserver \
+          -n \
+          --log-file=stdout \
+          --listening-port=3478 \
+          --min-port=49160 \
+          --max-port=49200 \
+          --realm="$${TURN_REALM}" \
+          --external-ip="$${TURN_EXTERNAL_IP}" \
+          --use-auth-secret \
+          --static-auth-secret="$${TURN_SHARED_SECRET}" \
+          --fingerprint \
+          --stale-nonce \
+          --no-multicast-peers \
+          --no-loopback-peers \
+          --no-cli
+    environment:
+      TURN_REALM: "${TURN_REALM:?TURN_REALM est requis}"
+      TURN_EXTERNAL_IP: "${TURN_EXTERNAL_IP:?TURN_EXTERNAL_IP est requis}"
+      TURN_SHARED_SECRET: "${TURN_SHARED_SECRET:?TURN_SHARED_SECRET est requis}"
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49160-49200:49160-49200/udp"

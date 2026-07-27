@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run && npm run test:collaboration-infra",
+    "test:collaboration-infra": "node --test api/turn-credentials.node-test.js services/collaboration-relay/server.node-test.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
@@ -24,6 +25,10 @@
     "pptxgenjs": "^4.0.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "read-excel-file": "^9.3.4",
+    "y-indexeddb": "^9.0.12",
+    "y-webrtc": "^10.3.0",
+    "yjs": "^13.6.31",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
   },
@@ -45,5 +50,10 @@
     "typescript-eslint": "^8.59.2",
     "vite": "^8.0.12",
     "vitest": "^4.1.8"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.8",
+    "dompurify": "3.4.12",
+    "postcss": "8.5.18"
   }
 }

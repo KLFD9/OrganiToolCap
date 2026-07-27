@@ -24,6 +24,9 @@ export interface CsvImportResult {
   warnings: string[];
 }
 
+export type PeopleColumnKey = "name" | "role" | "department" | "email" | "phone" | "manager";
+export type PeopleColumnMapping = Partial<Record<PeopleColumnKey, number>>;
+
 /** Normalise pour comparaison : minuscules, accents retirés, espaces réduits. */
 function normalize(value: string): string {
   return value
@@ -34,7 +37,7 @@ function normalize(value: string): string {
     .trim();
 }
 
-const COLUMN_ALIASES: Record<"name" | "role" | "department" | "email" | "phone" | "manager", string[]> = {
+const COLUMN_ALIASES: Record<PeopleColumnKey, string[]> = {
   name: ["nom", "name", "nom complet", "prenom nom", "collaborateur", "personne"],
   role: ["poste", "role", "fonction", "title", "intitule", "intitule de poste"],
   department: ["pole", "departement", "department", "service", "equipe", "direction", "bu"],
@@ -96,17 +99,104 @@ export function parseCsv(text: string, delimiter: string): string[][] {
   return rows.filter((r) => r.some((c) => c.trim() !== ""));
 }
 
-function mapColumns(header: string[]): Partial<Record<keyof typeof COLUMN_ALIASES, number>> {
-  const mapping: Partial<Record<keyof typeof COLUMN_ALIASES, number>> = {};
+export function detectPeopleColumns(header: string[]): PeopleColumnMapping {
+  const mapping: PeopleColumnMapping = {};
   header.forEach((raw, index) => {
     const cell = normalize(raw);
-    for (const key of Object.keys(COLUMN_ALIASES) as Array<keyof typeof COLUMN_ALIASES>) {
+    for (const key of Object.keys(COLUMN_ALIASES) as PeopleColumnKey[]) {
       if (mapping[key] === undefined && COLUMN_ALIASES[key].includes(cell)) {
         mapping[key] = index;
       }
     }
   });
   return mapping;
+}
+
+/** Convertit des lignes tabulaires déjà décodées (CSV ou XLSX) en organigramme. */
+export function importPeopleRows(
+  rows: string[][],
+  columns: PeopleColumnMapping,
+  headerRowIndex = 0
+): CsvImportResult {
+  if (columns.name === undefined) {
+    throw new CsvFormatError("Associez une colonne au champ obligatoire « Nom ».");
+  }
+
+  const dataRows = rows.slice(headerRowIndex + 1);
+  if (dataRows.length === 0) {
+    throw new CsvFormatError("Le tableau doit contenir au moins une personne sous la ligne d’en-tête.");
+  }
+
+  const warnings: string[] = [];
+  const nodes: OrgNode[] = [];
+  const sourceRows = new Map<number, { row: string[]; id: string }>();
+  const byName = new Map<string, string>();
+  const byEmail = new Map<string, string>();
+
+  const cellAt = (row: string[], index: number | undefined): string | undefined => {
+    if (index === undefined) return undefined;
+    const value = row[index]?.trim();
+    return value ? value : undefined;
+  };
+
+  dataRows.forEach((row, dataIndex) => {
+    const sourceLine = headerRowIndex + dataIndex + 2;
+    const name = cellAt(row, columns.name);
+    if (!name) {
+      if (row.some((cell) => cell.trim())) warnings.push(`Ligne ${sourceLine} ignorée : nom manquant.`);
+      return;
+    }
+    const id = `import-${dataIndex + 1}`;
+    const email = cellAt(row, columns.email);
+    const nameKey = normalize(name);
+    if (byName.has(nameKey)) {
+      warnings.push(`Doublon de nom « ${name} » : les rattachements utiliseront la première occurrence.`);
+    } else {
+      byName.set(nameKey, id);
+    }
+    if (email) byEmail.set(normalize(email), id);
+
+    sourceRows.set(dataIndex, { row, id });
+    nodes.push({
+      id,
+      position: { x: 0, y: (dataIndex + 1) * 140 },
+      data: {
+        name,
+        role: cellAt(row, columns.role),
+        department: cellAt(row, columns.department),
+        email,
+        phone: cellAt(row, columns.phone),
+      },
+    });
+  });
+
+  if (nodes.length === 0) throw new CsvFormatError("Aucune personne valide trouvée dans le fichier.");
+
+  const edges: OrgEdge[] = [];
+  for (const [dataIndex, source] of sourceRows) {
+    const manager = cellAt(source.row, columns.manager);
+    if (!manager) continue;
+    const sourceLine = headerRowIndex + dataIndex + 2;
+    const key = normalize(manager);
+    const managerId = manager.includes("@") ? byEmail.get(key) : byName.get(key);
+    if (!managerId) {
+      warnings.push(`Responsable « ${manager} » introuvable (ligne ${sourceLine}) : nœud laissé sans rattachement.`);
+      continue;
+    }
+    if (managerId === source.id) {
+      warnings.push(`Ligne ${sourceLine} : une personne ne peut pas être son propre responsable.`);
+      continue;
+    }
+    if (wouldCreateHierarchyCycle(edges, managerId, source.id)) {
+      warnings.push(
+        `Ligne ${sourceLine} : le rattachement à « ${manager} » créerait une boucle hiérarchique et a été ignoré.`
+      );
+      continue;
+    }
+    edges.push({ id: `import-edge-${dataIndex + 1}`, source: managerId, target: source.id });
+  }
+
+  return { nodes, edges, warnings };
 }
 
 /**
@@ -123,82 +213,12 @@ export function importPeopleCsv(text: string): CsvImportResult {
     throw new CsvFormatError("Le fichier CSV doit contenir une ligne d'en-tête et au moins une personne.");
   }
 
-  const columns = mapColumns(rows[0]);
+  const columns = detectPeopleColumns(rows[0]);
   if (columns.name === undefined) {
     throw new CsvFormatError(
       "Colonne « Nom » introuvable. L'en-tête doit contenir une colonne nom/name/collaborateur."
     );
   }
 
-  const warnings: string[] = [];
-  const nodes: OrgNode[] = [];
-  // Index pour résoudre les responsables : par nom normalisé et par email
-  const byName = new Map<string, string>();
-  const byEmail = new Map<string, string>();
-
-  const cellAt = (row: string[], index: number | undefined): string | undefined => {
-    if (index === undefined) return undefined;
-    const value = row[index]?.trim();
-    return value ? value : undefined;
-  };
-
-  rows.slice(1).forEach((row, lineIndex) => {
-    const name = cellAt(row, columns.name);
-    if (!name) {
-      warnings.push(`Ligne ${lineIndex + 2} ignorée : nom manquant.`);
-      return;
-    }
-    const id = `csv-${lineIndex + 1}`;
-    const email = cellAt(row, columns.email);
-
-    const nameKey = normalize(name);
-    if (byName.has(nameKey)) {
-      warnings.push(`Doublon de nom « ${name} » : les rattachements utiliseront la première occurrence.`);
-    } else {
-      byName.set(nameKey, id);
-    }
-    if (email) byEmail.set(normalize(email), id);
-
-    nodes.push({
-      id,
-      position: { x: 0, y: (lineIndex + 1) * 140 },
-      data: {
-        name,
-        role: cellAt(row, columns.role),
-        department: cellAt(row, columns.department),
-        email,
-        phone: cellAt(row, columns.phone),
-      },
-    });
-  });
-
-  if (nodes.length === 0) throw new CsvFormatError("Aucune personne valide trouvée dans le fichier.");
-
-  const edges: OrgEdge[] = [];
-  rows.slice(1).forEach((row, lineIndex) => {
-    const manager = cellAt(row, columns.manager);
-    if (!manager) return;
-    const targetId = `csv-${lineIndex + 1}`;
-    if (!nodes.some((n) => n.id === targetId)) return; // ligne ignorée plus haut
-
-    const key = normalize(manager);
-    const sourceId = manager.includes("@") ? byEmail.get(key) : byName.get(key);
-    if (!sourceId) {
-      warnings.push(`Responsable « ${manager} » introuvable (ligne ${lineIndex + 2}) : nœud laissé sans rattachement.`);
-      return;
-    }
-    if (sourceId === targetId) {
-      warnings.push(`Ligne ${lineIndex + 2} : une personne ne peut pas être son propre responsable.`);
-      return;
-    }
-    if (wouldCreateHierarchyCycle(edges, sourceId, targetId)) {
-      warnings.push(
-        `Ligne ${lineIndex + 2} : le rattachement à « ${manager} » créerait une boucle hiérarchique et a été ignoré.`
-      );
-      return;
-    }
-    edges.push({ id: `csv-edge-${lineIndex + 1}`, source: sourceId, target: targetId });
-  });
-
-  return { nodes, edges, warnings };
+  return importPeopleRows(rows, columns);
 }
