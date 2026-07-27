@@ -216,11 +216,52 @@ export const OrgChartFileSchema = z.object({
 export type OrgChartFile = z.infer<typeof OrgChartFileSchema>;
 
 /**
+ * Répare les identifiants de pages vides ou dupliqués sans changer leur ordre
+ * ni leur contenu. La génération est déterministe : deux collaborateurs qui
+ * ouvrent le même fichier produisent exactement les mêmes ids.
+ */
+export function normalizeFrameIds(file: OrgChartFile): OrgChartFile {
+  if (!file.frames || file.frames.length === 0) return file;
+
+  const reservedIds = new Set(
+    file.frames.map((frame) => frame.id.trim()).filter(Boolean),
+  );
+  const usedIds = new Set<string>();
+  let changed = false;
+
+  const frames = file.frames.map((frame) => {
+    const cleanId = frame.id.trim();
+    if (cleanId && !usedIds.has(cleanId)) {
+      usedIds.add(cleanId);
+      if (cleanId === frame.id) return frame;
+      changed = true;
+      return { ...frame, id: cleanId };
+    }
+
+    const base = cleanId || "page";
+    let suffix = cleanId ? 2 : 1;
+    let id = `${base}-${suffix}`;
+    while (reservedIds.has(id) || usedIds.has(id)) {
+      suffix += 1;
+      id = `${base}-${suffix}`;
+    }
+    usedIds.add(id);
+    changed = true;
+    return { ...frame, id };
+  });
+
+  return changed ? { ...file, frames } : file;
+}
+
+/**
  * Migration à l'ouverture : porte un fichier valide vers la version courante.
  * v1 → v2 : aucune transformation de données nécessaire — l'absence de `kind`
  * sur un lien vaut « hiérarchique », seule la version est relevée.
  */
 export function migrateOrgChartFile(file: OrgChartFile): OrgChartFile {
-  if (file.version === ORG_CHART_VERSION) return file;
-  return { ...file, version: ORG_CHART_VERSION };
+  return normalizeFrameIds(
+    file.version === ORG_CHART_VERSION
+      ? file
+      : { ...file, version: ORG_CHART_VERSION },
+  );
 }

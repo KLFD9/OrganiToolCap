@@ -38,6 +38,7 @@ import { CsvImportDialog } from "./CsvImportDialog";
 import { SpreadsheetImportDialog } from "./SpreadsheetImportDialog";
 import { OrgChartDiffDialog } from "./OrgChartDiffDialog";
 import { useCollaboration } from "../collaboration/CollaborationContext";
+import { collaborationToolbarLabel } from "../lib/collaborationStatus";
 
 interface ToolbarProps {
   onExportClick: () => void;
@@ -91,6 +92,11 @@ export function Toolbar({
   const nodes = useOrgChartStore((s) => s.nodes);
   const selectNode = useOrgChartStore((s) => s.selectNode);
   const collaboration = useCollaboration();
+  const collaborationLabel = collaborationToolbarLabel(
+    collaboration.connectionState,
+    collaboration.peerCount,
+    collaboration.participants.length,
+  );
 
   const { fitView, getNode, setCenter } = useReactFlow();
 
@@ -467,9 +473,31 @@ export function Toolbar({
         <div className="mx-1 h-6 w-px bg-zinc-200 dark:bg-zinc-800" />
         <button
           onClick={collaboration.openDialog}
+          aria-label={
+            collaboration.connectionState === "reconnecting"
+              ? "Collaboration : reconnexion automatique en cours"
+              : collaboration.connectionState === "connecting"
+                ? "Collaboration : connexion en cours"
+                : collaboration.connectionState === "online"
+                  ? collaboration.peerCount === 0
+                    ? "Collaboration : en attente d’un collaborateur"
+                    : `Collaboration : ${collaborationLabel}`
+                  : collaboration.invitationAvailable
+                    ? "Rejoindre la session collaborative"
+                    : "Partager en direct"
+          }
+          title={
+            collaboration.connectionState === "reconnecting"
+              ? "Connexion interrompue · votre travail reste local et sera resynchronisé automatiquement"
+              : undefined
+          }
           className={`relative flex h-9 items-center gap-2 rounded-lg border px-3 text-xs font-semibold transition-colors ${
             collaboration.status === "active"
-              ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+              ? collaboration.connectionState === "online"
+                ? "border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                : collaboration.connectionState === "reconnecting"
+                  ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                  : "border-primary-300 bg-primary-50 text-primary-700 hover:bg-primary-100 dark:border-primary-800 dark:bg-primary-950/40 dark:text-primary-300"
               : collaboration.invitationAvailable
                 ? "border-primary-300 bg-primary-50 text-primary-700 hover:bg-primary-100 dark:border-primary-800 dark:bg-primary-950/40 dark:text-primary-300"
                 : themeMode === "dark"
@@ -480,13 +508,21 @@ export function Toolbar({
           <Share2 className="h-3.5 w-3.5" />
           <span className="hidden lg:inline">
             {collaboration.status === "active"
-              ? `${collaboration.participants.length} en direct`
+              ? collaborationLabel
               : collaboration.invitationAvailable
                 ? "Rejoindre"
                 : "Partager"}
           </span>
           {collaboration.status === "active" && (
-            <span className={`h-2 w-2 rounded-full ${collaboration.connected ? "bg-emerald-500" : "bg-amber-500"}`} />
+            <span
+              className={`h-2 w-2 rounded-full ${
+                collaboration.connectionState === "online"
+                  ? "bg-emerald-500"
+                  : collaboration.connectionState === "reconnecting"
+                    ? "bg-amber-500"
+                    : "bg-primary-500"
+              }`}
+            />
           )}
         </button>
         <button data-action="save" onClick={() => void handleSave()} className={`flex h-9 items-center gap-2 rounded-lg px-3 text-xs font-semibold transition-colors ${isDirty ? "bg-primary-700 text-white hover:bg-primary-600 dark:bg-primary-600 dark:hover:bg-primary-500" : themeMode === "dark" ? "bg-zinc-800 text-zinc-300 hover:bg-zinc-700" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}><Save className="h-3.5 w-3.5" /><span className="hidden sm:inline">Enregistrer</span></button>

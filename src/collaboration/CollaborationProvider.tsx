@@ -18,8 +18,24 @@ import {
   type CollaborationContextValue,
   type CollaborationStatus,
 } from "./CollaborationContext";
+import { resolveCollaborationConnectionState } from "../lib/collaborationStatus";
 const PARTICIPANT_COLORS = ["#6D4AAE", "#2563EB", "#059669", "#D97706", "#DB2777", "#0891B2"];
 const DOCUMENT_KEYS = ["meta", "templateId", "theme", "nodes", "edges", "layout", "frames"] as const;
+const CONNECTION_TIMEOUT_MS = 12_000;
+const DISCONNECTION_GRACE_MS = 2_000;
+
+function initialTransport(): CollaborationTransport {
+  return {
+    signaling: "public",
+    signalingConnected: false,
+    ignoredConfiguredSignaling: Boolean(import.meta.env.VITE_COLLAB_SIGNALING_URLS?.trim()),
+    turn:
+      import.meta.env.VITE_COLLAB_TURN_CREDENTIALS_URL?.trim() ||
+      import.meta.env.VITE_COLLAB_ICE_SERVERS_JSON?.trim()
+        ? "unavailable"
+        : "not-configured",
+  };
+}
 
 function randomParticipantColor(): string {
   const index = crypto.getRandomValues(new Uint8Array(1))[0] % PARTICIPANT_COLORS.length;
@@ -44,26 +60,27 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
   const resetFileHandleOnNextRemoteRef = useRef(false);
   const pendingCursorRef = useRef<CollaborationCursor | null>(null);
   const cursorFrameRef = useRef<number | null>(null);
+  const connectionTimerRef = useRef<number | null>(null);
+  const disconnectionTimerRef = useRef<number | null>(null);
+  const connectedRef = useRef(false);
+  const everConnectedRef = useRef(false);
+  const documentReadyRef = useRef(false);
 
   const [status, setStatus] = useState<CollaborationStatus>("idle");
   const [connected, setConnected] = useState(false);
+  const [everConnected, setEverConnected] = useState(false);
   const [peerCount, setPeerCount] = useState(0);
   const [participants, setParticipants] = useState<CollaborationParticipant[]>([]);
+  const [documentReady, setDocumentReady] = useState(false);
   const [invite, setInvite] = useState<CollaborationInvite | undefined>(() =>
     typeof window === "undefined" ? undefined : parseCollaborationInvite(),
   );
   const [shareUrl, setShareUrl] = useState<string>();
   const [dialogOpen, setDialogOpen] = useState(() => Boolean(invite));
   const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
   const [isHost, setIsHost] = useState(false);
-  const [transport, setTransport] = useState<CollaborationTransport>({
-    signaling: import.meta.env.VITE_COLLAB_SIGNALING_URLS?.trim() ? "private" : "public",
-    turn:
-      import.meta.env.VITE_COLLAB_TURN_CREDENTIALS_URL?.trim() ||
-      import.meta.env.VITE_COLLAB_ICE_SERVERS_JSON?.trim()
-        ? "unavailable"
-        : "not-configured",
-  });
+  const [transport, setTransport] = useState<CollaborationTransport>(initialTransport);
   const selectedNodeIds = useOrgChartStore((state) => state.selectedNodeIds);
 
   useEffect(() => {
@@ -90,6 +107,14 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
       window.cancelAnimationFrame(cursorFrameRef.current);
       cursorFrameRef.current = null;
     }
+    if (connectionTimerRef.current !== null) {
+      window.clearTimeout(connectionTimerRef.current);
+      connectionTimerRef.current = null;
+    }
+    if (disconnectionTimerRef.current !== null) {
+      window.clearTimeout(disconnectionTimerRef.current);
+      disconnectionTimerRef.current = null;
+    }
     const runtime = runtimeRef.current;
     runtimeRef.current = null;
     if (runtime) await runtime.destroy();
@@ -107,6 +132,13 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
 
       setStatus("starting");
       setError(undefined);
+      setNotice(undefined);
+      setConnected(false);
+      connectedRef.current = false;
+      setEverConnected(false);
+      everConnectedRef.current = false;
+      setDocumentReady(host);
+      documentReadyRef.current = host;
       setIsHost(host);
       resetFileHandleOnNextRemoteRef.current = !host;
       localStorage.setItem("collaboration-display-name", name);
@@ -128,8 +160,40 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
           },
           onParticipants: setParticipants,
           onPeers: setPeerCount,
-          onConnection: setConnected,
+          onConnection: (value) => {
+            if (value) {
+              if (disconnectionTimerRef.current !== null) {
+                window.clearTimeout(disconnectionTimerRef.current);
+                disconnectionTimerRef.current = null;
+              }
+              connectedRef.current = true;
+              everConnectedRef.current = true;
+              setConnected(true);
+              setEverConnected(true);
+              if (documentReadyRef.current) setNotice(undefined);
+              return;
+            }
+            if (!everConnectedRef.current) {
+              connectedRef.current = false;
+              setConnected(false);
+              return;
+            }
+            if (disconnectionTimerRef.current !== null) return;
+            disconnectionTimerRef.current = window.setTimeout(() => {
+              disconnectionTimerRef.current = null;
+              connectedRef.current = false;
+              setConnected(false);
+              setNotice(
+                "Connexion interrompue. La reconnexion est automatique et votre travail reste conservé localement.",
+              );
+            }, DISCONNECTION_GRACE_MS);
+          },
           onTransport: setTransport,
+          onDocumentReady: () => {
+            documentReadyRef.current = true;
+            setDocumentReady(true);
+            setNotice(undefined);
+          },
         });
         runtimeRef.current = runtime;
         setInvite(sessionInvite);
@@ -137,10 +201,27 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
         setShareUrl(url);
         window.history.replaceState(null, "", url);
         setStatus("active");
+        connectionTimerRef.current = window.setTimeout(() => {
+          connectionTimerRef.current = null;
+          if (!connectedRef.current) {
+            setNotice(
+              "Le relais de connexion ne répond pas. Vérifiez le réseau puis réessayez ; le document local reste intact.",
+            );
+          } else if (!host && !documentReadyRef.current) {
+            setNotice(
+              "Connexion établie, mais l’organisateur n’est pas encore présent sur cette session.",
+            );
+          }
+        }, CONNECTION_TIMEOUT_MS);
       } catch (sessionError) {
         console.error(sessionError);
         setStatus("error");
-        setError("La session collaborative n’a pas pu démarrer. Vérifiez votre connexion.");
+        const detail = sessionError instanceof Error ? sessionError.message : "";
+        setError(
+          detail
+            ? `La session collaborative n’a pas pu démarrer : ${detail}`
+            : "La session collaborative n’a pas pu démarrer. Vérifiez votre connexion.",
+        );
       }
     },
     [stopRuntime],
@@ -167,20 +248,19 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
     await stopRuntime();
     setStatus("idle");
     setConnected(false);
+    connectedRef.current = false;
+    setEverConnected(false);
+    everConnectedRef.current = false;
     setPeerCount(0);
     setParticipants([]);
+    setDocumentReady(false);
+    documentReadyRef.current = false;
     setShareUrl(undefined);
     setInvite(undefined);
     setIsHost(false);
-    setTransport({
-      signaling: import.meta.env.VITE_COLLAB_SIGNALING_URLS?.trim() ? "private" : "public",
-      turn:
-        import.meta.env.VITE_COLLAB_TURN_CREDENTIALS_URL?.trim() ||
-        import.meta.env.VITE_COLLAB_ICE_SERVERS_JSON?.trim()
-          ? "unavailable"
-          : "not-configured",
-    });
+    setTransport(initialTransport());
     setError(undefined);
+    setNotice(undefined);
     window.history.replaceState(null, "", removeCollaborationInviteFromUrl());
   }, [stopRuntime]);
 
@@ -193,16 +273,27 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const updateEditingNode = useCallback((nodeId: string | null) => {
+    runtimeRef.current?.updatePresence({ editingNodeId: nodeId });
+  }, []);
+
   const value = useMemo<CollaborationContextValue>(
     () => ({
       status,
+      connectionState: resolveCollaborationConnectionState(
+        status,
+        connected,
+        everConnected,
+      ),
       connected,
       peerCount,
       participants,
+      documentReady,
       shareUrl,
       invitationAvailable: Boolean(invite) && status === "idle",
       dialogOpen,
       error,
+      notice,
       isHost,
       transport,
       openDialog: () => setDialogOpen(true),
@@ -211,22 +302,27 @@ export function CollaborationProvider({ children }: { children: ReactNode }) {
       joinSession,
       leaveSession,
       updateCursor,
+      updateEditingNode,
     }),
     [
       status,
+      everConnected,
       connected,
       peerCount,
       participants,
+      documentReady,
       shareUrl,
       invite,
       dialogOpen,
       error,
+      notice,
       isHost,
       transport,
       startSession,
       joinSession,
       leaveSession,
       updateCursor,
+      updateEditingNode,
     ],
   );
 

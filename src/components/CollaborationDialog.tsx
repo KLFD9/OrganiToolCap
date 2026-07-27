@@ -1,9 +1,20 @@
-import { useState } from "react";
-import { Check, Copy, Link2, LoaderCircle, ShieldCheck, Users, X } from "lucide-react";
+import { useRef, useState } from "react";
+import {
+  Check,
+  Copy,
+  Link2,
+  LoaderCircle,
+  ShieldCheck,
+  TriangleAlert,
+  Users,
+  X,
+} from "lucide-react";
 import {
   defaultCollaborationName,
   useCollaboration,
 } from "../collaboration/CollaborationContext";
+import { useOrgChartStore } from "../store/useOrgChartStore";
+import { editingNodeLabel } from "../lib/collaborationPresence";
 
 interface CollaborationDialogProps {
   themeMode: "light" | "dark";
@@ -11,8 +22,11 @@ interface CollaborationDialogProps {
 
 export function CollaborationDialog({ themeMode }: CollaborationDialogProps) {
   const collaboration = useCollaboration();
+  const nodes = useOrgChartStore((state) => state.nodes);
   const [name, setName] = useState(() => defaultCollaborationName());
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState(false);
+  const shareInputRef = useRef<HTMLInputElement>(null);
 
   if (!collaboration.dialogOpen) return null;
 
@@ -25,9 +39,16 @@ export function CollaborationDialog({ themeMode }: CollaborationDialogProps) {
 
   const copyLink = async () => {
     if (!collaboration.shareUrl) return;
-    await navigator.clipboard.writeText(collaboration.shareUrl);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1800);
+    setCopyError(false);
+    try {
+      await navigator.clipboard.writeText(collaboration.shareUrl);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1800);
+    } catch {
+      shareInputRef.current?.focus();
+      shareInputRef.current?.select();
+      setCopyError(true);
+    }
   };
 
   return (
@@ -83,12 +104,13 @@ export function CollaborationDialog({ themeMode }: CollaborationDialogProps) {
             </label>
 
             <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-              Toute personne possédant le lien peut modifier le document. La session utilise Internet ; le document n’est pas stocké par le relais de connexion.
+              Toute personne possédant le lien peut modifier le document. La session utilise Internet ; le document n’est pas stocké par les relais de découverte.
             </div>
 
             {collaboration.transport.signaling === "public" && (
               <p className="mt-2 text-[10px] leading-relaxed text-zinc-400">
-                Environnement actuel : relais public de signalisation. Configurez un relais dédié avant un usage avec des données RH réelles.
+                Aucun compte requis : plusieurs relais décentralisés mettent les navigateurs en
+                relation, puis le contenu est échangé directement et chiffré par la clé du lien.
               </p>
             )}
 
@@ -119,15 +141,45 @@ export function CollaborationDialog({ themeMode }: CollaborationDialogProps) {
 
         {active && (
           <>
-            <div className="mt-5 flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900/60 dark:bg-emerald-950/30">
-              <ShieldCheck className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+            <div
+              className={`mt-5 flex items-center gap-3 rounded-xl border p-3 ${
+                collaboration.connected
+                  ? "border-emerald-200 bg-emerald-50 dark:border-emerald-900/60 dark:bg-emerald-950/30"
+                  : "border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/30"
+              }`}
+            >
+              {collaboration.connected ? (
+                <ShieldCheck className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <LoaderCircle className="h-5 w-5 shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
+              )}
               <div className="min-w-0">
-                <p className="text-xs font-bold text-emerald-900 dark:text-emerald-200">
-                  {collaboration.connected ? "Session ouverte" : "Reconnexion…"}
+                <p
+                  className={`text-xs font-bold ${
+                    collaboration.connected
+                      ? "text-emerald-900 dark:text-emerald-200"
+                      : "text-amber-900 dark:text-amber-200"
+                  }`}
+                >
+                  {!collaboration.connected
+                    ? collaboration.connectionState === "reconnecting"
+                      ? "Reconnexion automatique…"
+                      : "Recherche des participants…"
+                    : !collaboration.documentReady
+                      ? "Synchronisation du document…"
+                      : "Session ouverte"}
                 </p>
-                <p className="text-[10px] text-emerald-700 dark:text-emerald-400">
-                  {collaboration.peerCount === 0
-                    ? "En attente d’un collaborateur"
+                <p
+                  className={`text-[10px] ${
+                    collaboration.connected
+                      ? "text-emerald-700 dark:text-emerald-400"
+                      : "text-amber-700 dark:text-amber-400"
+                  }`}
+                >
+                  {collaboration.connectionState === "reconnecting"
+                    ? "Votre travail reste conservé localement"
+                    : collaboration.peerCount === 0
+                      ? "En attente d’un collaborateur"
                     : `${collaboration.peerCount} collaborateur${collaboration.peerCount > 1 ? "s" : ""} connecté${collaboration.peerCount > 1 ? "s" : ""}`}
                 </p>
               </div>
@@ -136,6 +188,7 @@ export function CollaborationDialog({ themeMode }: CollaborationDialogProps) {
             {collaboration.shareUrl && (
               <div className="mt-4 flex gap-2">
                 <input
+                  ref={shareInputRef}
                   readOnly
                   value={collaboration.shareUrl}
                   aria-label="Lien de partage"
@@ -151,6 +204,19 @@ export function CollaborationDialog({ themeMode }: CollaborationDialogProps) {
               </div>
             )}
 
+            {copyError && (
+              <p className="mt-2 text-[10px] text-amber-700 dark:text-amber-300">
+                La copie automatique est bloquée. Le lien est sélectionné : utilisez Ctrl+C.
+              </p>
+            )}
+
+            {collaboration.notice && (
+              <div className="mt-3 flex gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-[11px] leading-relaxed text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{collaboration.notice}</span>
+              </div>
+            )}
+
             <div className="mt-5">
               <p className="text-[11px] font-bold uppercase tracking-wide text-zinc-400">
                 Participants
@@ -162,8 +228,16 @@ export function CollaborationDialog({ themeMode }: CollaborationDialogProps) {
                     className="flex items-center gap-2 rounded-full border border-zinc-200 px-2.5 py-1.5 text-xs dark:border-zinc-800"
                   >
                     <span className="h-2.5 w-2.5 rounded-full" style={{ background: participant.color }} />
-                    {participant.name}
-                    {participant.isLocal ? " (vous)" : ""}
+                    <span>
+                      {participant.name}
+                      {participant.isLocal ? " (vous)" : ""}
+                      {participant.editingNodeId && (
+                        <span className="ml-1 text-[10px] text-zinc-400">
+                          · modifie{" "}
+                          {editingNodeLabel(participant, nodes)}
+                        </span>
+                      )}
+                    </span>
                   </span>
                 ))}
               </div>
@@ -171,9 +245,16 @@ export function CollaborationDialog({ themeMode }: CollaborationDialogProps) {
 
             <div className="mt-4 grid grid-cols-2 gap-2 text-[10px]">
               <div className="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-800">
-                <span className="block text-zinc-400">Relais de connexion</span>
-                <span className="font-semibold">
-                  {collaboration.transport.signaling === "private" ? "Privé" : "Public (démo)"}
+                <span className="block text-zinc-400">Découverte décentralisée</span>
+                <span className="font-semibold">Sans compte</span>
+                <span
+                  className={`mt-0.5 block ${
+                    collaboration.transport.signalingConnected
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-amber-600 dark:text-amber-400"
+                  }`}
+                >
+                  {collaboration.transport.signalingConnected ? "Opérationnelle" : "Connexion…"}
                 </span>
               </div>
               <div className="rounded-lg border border-zinc-200 px-3 py-2 dark:border-zinc-800">
@@ -187,6 +268,13 @@ export function CollaborationDialog({ themeMode }: CollaborationDialogProps) {
                 </span>
               </div>
             </div>
+
+            {collaboration.transport.ignoredConfiguredSignaling && (
+              <p className="mt-2 text-[10px] leading-relaxed text-amber-700 dark:text-amber-300">
+                L’ancienne adresse de relais WebRTC est ignorée : la découverte décentralisée est
+                utilisée automatiquement.
+              </p>
+            )}
 
             <div className="mt-5 flex gap-2">
               <button

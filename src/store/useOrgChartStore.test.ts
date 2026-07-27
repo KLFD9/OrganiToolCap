@@ -461,6 +461,19 @@ describe("useOrgChartStore", () => {
 });
 
 describe("useOrgChartStore — frames multi-pages", () => {
+  it("normalise aussi les ids dupliqués reçus hors parseur", () => {
+    const file = createBlankChart("glass-cap");
+    const page = file.frames![0];
+    file.frames = [page, { ...page, name: "Page dupliquée" }];
+
+    useOrgChartStore.getState().applyCollaborativeFile(file);
+
+    expect(useOrgChartStore.getState().frames.map((frame) => frame.id)).toEqual([
+      "page-1",
+      "page-1-2",
+    ]);
+  });
+
   beforeEach(() => {
     const legacy = createBlankChart("blank");
     useOrgChartStore.getState().loadFile({ ...legacy, frames: undefined });

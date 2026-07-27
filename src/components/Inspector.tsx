@@ -9,6 +9,7 @@ import {
 } from "../types/orgchart";
 import { computeOrgStats, computeTeamSize } from "../lib/stats";
 import { resolveChromeElement } from "../lib/chromeLayout";
+import { useCollaboration } from "../collaboration/CollaborationContext";
 import type { PageSetup } from "../lib/readability";
 import { PageFormatSelect } from "./PageFormatSelect";
 import { SelectionContextHeader } from "./SelectionContextHeader";
@@ -219,6 +220,8 @@ interface InspectorProps {
 }
 
 export function Inspector({ themeMode = "light" }: InspectorProps) {
+  const collaboration = useCollaboration();
+  const { updateEditingNode } = collaboration;
   const [inspectorTab, setInspectorTab] = useState<"content" | "style" | "document">("content");
   const nodes = useOrgChartStore((s) => s.nodes);
   const edges = useOrgChartStore((s) => s.edges);
@@ -250,6 +253,11 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   const selected = selectedNodeIds.length === 1 ? nodes.find((n) => n.id === selectedNodeIds[0]) : undefined;
+
+  useEffect(
+    () => () => updateEditingNode(null),
+    [selected?.id, updateEditingNode],
+  );
 
   useEffect(() => {
     if (selected?.data.name !== "Nouveau membre") return;
@@ -1114,6 +1122,8 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
               data-org-node-name-input="true"
               type="text"
               value={selected.data.name}
+              onFocus={() => updateEditingNode(selected.id)}
+              onBlur={() => updateEditingNode(null)}
               onChange={(e) => updateNodeData(selected.id, { name: e.target.value })}
               className={inputClass}
             />
@@ -1126,6 +1136,8 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
             <input
               type="text"
               value={selected.data.role ?? ""}
+              onFocus={() => updateEditingNode(selected.id)}
+              onBlur={() => updateEditingNode(null)}
               onChange={(e) => updateNodeData(selected.id, { role: e.target.value })}
               className={inputClass}
             />
@@ -1138,6 +1150,8 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
             <input
               type="text"
               value={selected.data.department ?? ""}
+              onFocus={() => updateEditingNode(selected.id)}
+              onBlur={() => updateEditingNode(null)}
               onChange={(e) => updateNodeData(selected.id, { department: e.target.value })}
               className={inputClass}
             />
@@ -1150,6 +1164,8 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
             <input
               type="email"
               value={selected.data.email ?? ""}
+              onFocus={() => updateEditingNode(selected.id)}
+              onBlur={() => updateEditingNode(null)}
               onChange={(e) => updateNodeData(selected.id, { email: e.target.value })}
               className={inputClass}
             />
@@ -1162,6 +1178,8 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
             <input
               type="tel"
               value={selected.data.phone ?? ""}
+              onFocus={() => updateEditingNode(selected.id)}
+              onBlur={() => updateEditingNode(null)}
               onChange={(e) => updateNodeData(selected.id, { phone: e.target.value })}
               className={inputClass}
             />

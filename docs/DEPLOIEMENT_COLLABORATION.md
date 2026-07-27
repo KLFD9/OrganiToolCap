@@ -1,78 +1,59 @@
 # Déployer la collaboration en production
 
-L’interface reste hébergée sur Vercel. Deux petits services réseau complètent le
-mode collaboratif :
+## Vercel seul : le mode recommandé
 
-1. le relais WebSocket met les navigateurs en relation ;
-2. TURN prend le relais lorsque le réseau d’entreprise bloque le pair-à-pair.
+Le partage en direct fonctionne sans compte, sans base de données et sans
+variable d’environnement. Vercel sert uniquement l’application statique.
 
-Le document RH n’est stocké par aucun de ces services. Il reste dans les
-navigateurs et dans le fichier `.orgchart.json`.
+Après une action explicite sur « Partager en direct » ou « Rejoindre » :
 
-## 1. Préparer le serveur réseau
+1. plusieurs relais Nostr publics et interchangeables aident les navigateurs à
+   se découvrir ;
+2. WebRTC établit ensuite la connexion directe entre participants ;
+3. le document est chiffré avec la clé présente dans le fragment `#session` du
+   lien, fragment qui n’est pas envoyé à Vercel.
 
-Utiliser une petite machine Linux avec Docker, une adresse IPv4 publique et un
-sous-domaine, par exemple `collaboration.example.com`.
+Les relais de découverte ne stockent pas l’organigramme. Le fichier
+`.orgchart.json` reste la source de vérité et la session conserve un brouillon
+local dans chaque navigateur.
 
-Copier `infra/collaboration/.env.example` vers `.env`, puis renseigner :
+## Déploiement
 
-- l’URL Vercel dans `APP_ORIGINS` ;
-- l’adresse IPv4 publique dans `TURN_EXTERNAL_IP` ;
-- un secret aléatoire d’au moins 32 octets dans `TURN_SHARED_SECRET`.
+1. Déployer la branche principale sur Vercel.
+2. Ne configurer aucune variable pour la collaboration standard.
+3. Ouvrir l’application dans deux navigateurs ou deux appareils.
+4. Créer un lien depuis « Partager en direct », puis le rejoindre avec un
+   pseudonyme différent.
+5. Vérifier que la fenêtre indique « Découverte : opérationnelle », deux
+   participants, puis déplacer une fiche et contrôler le curseur distant.
 
-Lancer depuis `infra/collaboration` :
+## Secours TURN facultatif
 
-```bash
-docker compose up -d --build
-```
-
-Ouvrir les ports TCP `4444`, TCP/UDP `3478` et UDP `49160-49200`. Placer le port
-`4444` derrière un reverse proxy HTTPS qui transmet les WebSockets, par exemple
-sur `wss://collaboration.example.com/signal`.
-
-Vérifier ensuite :
-
-```text
-https://collaboration.example.com/healthz
-```
-
-La réponse doit contenir `"status":"ok"`.
-
-## 2. Configurer Vercel
-
-Ajouter ces variables d’environnement au projet :
+Certains réseaux d’entreprise bloquent toutes les connexions directes WebRTC.
+Dans ce cas seulement, déployer le service TURN décrit dans
+`infra/collaboration`, puis ajouter dans Vercel :
 
 ```text
-VITE_COLLAB_SIGNALING_URLS=wss://collaboration.example.com/signal
 VITE_COLLAB_TURN_CREDENTIALS_URL=/api/turn-credentials
 COLLAB_ALLOWED_ORIGINS=https://votre-projet.vercel.app,https://votre-domaine.fr
 TURN_URLS=turn:collaboration.example.com:3478?transport=udp,turn:collaboration.example.com:3478?transport=tcp
-TURN_SHARED_SECRET=le-même-secret-que-sur-le-serveur
+TURN_SHARED_SECRET=un-secret-aleatoire-d-au-moins-32-octets
 TURN_CREDENTIAL_TTL_SECONDS=600
 ```
 
-`TURN_SHARED_SECRET` ne doit jamais être préfixé par `VITE_` : il reste ainsi
-dans la fonction Vercel et n’entre pas dans le JavaScript envoyé au navigateur.
+`TURN_SHARED_SECRET` ne doit jamais être préfixé par `VITE_` : il reste dans la
+fonction Vercel et n’entre pas dans le JavaScript envoyé au navigateur.
 
-Redéployer l’application après modification des variables `VITE_`.
+Le fichier `infra/collaboration/docker-compose.yml` ne déploie que coturn. Il
+faut une adresse IPv4 publique, ouvrir TCP/UDP `3478` et UDP `49160-49200`, puis
+renseigner les variables décrites dans `infra/collaboration/.env.example`.
 
-## 3. Contrôler dans OrganiTool
+## Sécurité et limites
 
-Créer une session depuis « Partager en direct ». La fenêtre doit afficher :
-
-- « Relais de connexion : Privé » ;
-- « Secours réseau TURN : Opérationnel ».
-
-Tester avec deux réseaux différents, idéalement un poste d’entreprise et un
-téléphone en 4G/5G. Vérifier le déplacement d’une fiche, les curseurs, le
-rechargement de la page et la reconnexion.
-
-## Limites et exploitation
-
-- Vercel sert l’interface et les identifiants TURN temporaires, pas le WebSocket.
-- Le lien de partage donne actuellement le droit de modifier : ne pas le publier.
-- Surveiller `/healthz` sans collecter le nom des sessions.
-- Protéger `/api/turn-credentials` par les limites de débit Vercel afin d’éviter
-  qu’un tiers consomme inutilement la bande passante TURN.
-- Faire tourner `TURN_SHARED_SECRET` si un lien ou une configuration est exposé.
-- Ajouter ensuite un mode lecture seule et la révocation des liens.
+- Toute personne possédant le lien peut actuellement modifier le document.
+- Ne pas publier un lien de session dans un espace public.
+- Aucun nom, e-mail, contenu RH ou identifiant de session n’est journalisé.
+- Les identifiants TURN sont temporaires et générés uniquement à la demande.
+- La première reconnexion après un rechargement peut prendre quelques secondes.
+- Les prochaines protections prévues sont le mode lecture seule et la
+  révocation d’un lien.

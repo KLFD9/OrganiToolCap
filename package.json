@@ -9,12 +9,13 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run && npm run test:collaboration-infra",
-    "test:collaboration-infra": "node --test api/turn-credentials.node-test.js services/collaboration-relay/server.node-test.mjs"
+    "test:collaboration-infra": "node --test api/turn-credentials.node-test.js"
   },
   "dependencies": {
     "@fontsource/inter": "^5.2.8",
     "@fontsource/playfair-display": "^5.2.8",
     "@fontsource/poppins": "^5.2.7",
+    "@trystero-p2p/nostr": "^0.25.3",
     "@xyflow/react": "^12.11.0",
     "dexie": "^4.4.3",
     "elkjs": "^0.11.1",
@@ -27,7 +28,7 @@
     "react-dom": "^19.2.6",
     "read-excel-file": "^9.3.4",
     "y-indexeddb": "^9.0.12",
-    "y-webrtc": "^10.3.0",
+    "y-protocols": "^1.0.7",
     "yjs": "^13.6.31",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"

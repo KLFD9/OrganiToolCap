@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useReactFlow } from "@xyflow/react";
 import { useOrgChartStore } from "../store/useOrgChartStore";
 import { isHierarchyEdge } from "../types/orgchart";
 import { computeLevels, computeNodeStyle } from "../lib/nodeStyle";
 import { buildChildrenMap, computeDescendantCounts, computeDescendants } from "../lib/hierarchy";
+import { useCollaboration } from "../collaboration/CollaborationContext";
 import {
   Search,
   Plus,
@@ -78,12 +79,14 @@ function EditableCell({
   mono = false,
   dark,
   onCommit,
+  onEditingChange,
 }: {
   value: string;
   placeholder: string;
   mono?: boolean;
   dark: boolean;
   onCommit: (value: string) => void;
+  onEditingChange?: (editing: boolean) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
@@ -95,6 +98,7 @@ function EditableCell({
           e.stopPropagation();
           setDraft(value);
           setEditing(true);
+          onEditingChange?.(true);
         }}
         title="Double-clic pour modifier"
         className={`w-full cursor-text truncate rounded px-1 py-0.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${
@@ -108,6 +112,7 @@ function EditableCell({
 
   const commit = () => {
     setEditing(false);
+    onEditingChange?.(false);
     if (draft !== value) onCommit(draft);
   };
 
@@ -122,7 +127,10 @@ function EditableCell({
       onKeyDown={(e) => {
         e.stopPropagation();
         if (e.key === "Enter") commit();
-        else if (e.key === "Escape") setEditing(false);
+        else if (e.key === "Escape") {
+          setEditing(false);
+          onEditingChange?.(false);
+        }
       }}
       className={`w-full rounded border px-1 py-0.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 ${
         mono ? "font-mono text-[10px]" : ""
@@ -136,6 +144,8 @@ function EditableCell({
 }
 
 export function Directory({ themeMode, onClose }: DirectoryProps) {
+  const collaboration = useCollaboration();
+  const { updateEditingNode } = collaboration;
   const nodes = useOrgChartStore((s) => s.nodes);
   const edges = useOrgChartStore((s) => s.edges);
   const theme = useOrgChartStore((s) => s.theme);
@@ -152,6 +162,8 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   /** Ligne dont le sélecteur de responsable est ouvert. */
   const [managerEditId, setManagerEditId] = useState<string | null>(null);
+
+  useEffect(() => () => updateEditingNode(null), [updateEditingNode]);
 
   const rows = useMemo<DirectoryRow[]>(() => {
     const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -341,18 +353,51 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
                         {initials(row.name) || "?"}
                       </span>
                       <span className="min-w-0 flex-1 font-semibold text-zinc-800 dark:text-zinc-100">
-                        <EditableCell value={row.name} placeholder="Sans nom" dark={dark} onCommit={commit("name")} />
+                        <EditableCell
+                          value={row.name}
+                          placeholder="Sans nom"
+                          dark={dark}
+                          onCommit={commit("name")}
+                          onEditingChange={(editing) =>
+                            updateEditingNode(editing ? row.id : null)
+                          }
+                        />
                       </span>
                     </span>
                   </td>
                   <td className="border-b border-zinc-100 px-3 py-1.5 text-zinc-500 dark:border-zinc-900 dark:text-zinc-400">
-                    <EditableCell value={row.role} placeholder="—" dark={dark} onCommit={commit("role")} />
+                    <EditableCell
+                      value={row.role}
+                      placeholder="—"
+                      dark={dark}
+                      onCommit={commit("role")}
+                      onEditingChange={(editing) =>
+                        updateEditingNode(editing ? row.id : null)
+                      }
+                    />
                   </td>
                   <td className="border-b border-zinc-100 px-3 py-1.5 dark:border-zinc-900">
-                    <EditableCell value={row.department} placeholder="—" dark={dark} onCommit={commit("department")} />
+                    <EditableCell
+                      value={row.department}
+                      placeholder="—"
+                      dark={dark}
+                      onCommit={commit("department")}
+                      onEditingChange={(editing) =>
+                        updateEditingNode(editing ? row.id : null)
+                      }
+                    />
                   </td>
                   <td className="hidden border-b border-zinc-100 px-3 py-1.5 text-zinc-550 lg:table-cell dark:border-zinc-900 dark:text-zinc-400">
-                    <EditableCell value={row.email} placeholder="—" mono dark={dark} onCommit={commit("email")} />
+                    <EditableCell
+                      value={row.email}
+                      placeholder="—"
+                      mono
+                      dark={dark}
+                      onCommit={commit("email")}
+                      onEditingChange={(editing) =>
+                        updateEditingNode(editing ? row.id : null)
+                      }
+                    />
                   </td>
                   <td className="border-b border-zinc-100 px-3 py-1.5 text-zinc-500 dark:border-zinc-900 dark:text-zinc-400">
                     {managerEditId === row.id ? (
@@ -360,14 +405,21 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
                         autoFocus
                         value={row.managerId ?? ""}
                         onClick={(e) => e.stopPropagation()}
-                        onBlur={() => setManagerEditId(null)}
+                        onBlur={() => {
+                          setManagerEditId(null);
+                          updateEditingNode(null);
+                        }}
                         onKeyDown={(e) => {
                           e.stopPropagation();
-                          if (e.key === "Escape") setManagerEditId(null);
+                          if (e.key === "Escape") {
+                            setManagerEditId(null);
+                            updateEditingNode(null);
+                          }
                         }}
                         onChange={(e) => {
                           setManager(row.id, e.target.value || undefined);
                           setManagerEditId(null);
+                          updateEditingNode(null);
                         }}
                         className={`w-full rounded border px-1 py-0.5 text-xs focus:outline-none focus:ring-2 focus:ring-primary-500/20 focus:border-primary-500 ${
                           dark
@@ -394,6 +446,7 @@ export function Directory({ themeMode, onClose }: DirectoryProps) {
                         onDoubleClick={(e) => {
                           e.stopPropagation();
                           setManagerEditId(row.id);
+                          updateEditingNode(row.id);
                         }}
                         title="Double-clic pour changer de responsable"
                         className={`w-full cursor-text truncate rounded px-1 py-0.5 text-left transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${

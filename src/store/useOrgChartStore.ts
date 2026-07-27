@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   ORG_CHART_VERSION,
   isHierarchyEdge,
+  normalizeFrameIds,
   resolveDisplay,
   type ChromeElement,
   type ChromeKey,
@@ -290,67 +291,76 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
     }),
 
   loadFile: (file, handle) =>
-    set({
-      meta: file.meta,
-      templateId: file.templateId,
-      theme: file.theme,
-      nodes: file.nodes,
-      edges: file.edges,
-      layout: file.layout,
-      frames: file.frames ?? [],
-      fileHandle: handle,
-      isDirty: false,
-      selectedNodeIds: [],
-      selectedFrameId: file.frames?.[0]?.id ?? null,
-      collapsedNodeIds: [],
-      past: [],
-      future: [],
+    set(() => {
+      const normalized = normalizeFrameIds(file);
+      return {
+        meta: normalized.meta,
+        templateId: normalized.templateId,
+        theme: normalized.theme,
+        nodes: normalized.nodes,
+        edges: normalized.edges,
+        layout: normalized.layout,
+        frames: normalized.frames ?? [],
+        fileHandle: handle,
+        isDirty: false,
+        selectedNodeIds: [],
+        selectedFrameId: normalized.frames?.[0]?.id ?? null,
+        collapsedNodeIds: [],
+        past: [],
+        future: [],
+      };
     }),
 
   loadImportedFile: (file) =>
-    set((s) => ({
-      ...pushHistory(s),
-      meta: file.meta,
-      templateId: file.templateId,
-      theme: file.theme,
-      nodes: file.nodes,
-      edges: file.edges,
-      layout: file.layout,
-      frames: file.frames ?? [],
-      // Un CSV produit un nouveau document : ne jamais réutiliser
-      // silencieusement le chemin du fichier .orgchart précédent.
-      fileHandle: undefined,
-      isDirty: true,
-      selectedNodeIds: [],
-      selectedFrameId: file.frames?.[0]?.id ?? null,
-      collapsedNodeIds: [],
-    })),
+    set((s) => {
+      const normalized = normalizeFrameIds(file);
+      return {
+        ...pushHistory(s),
+        meta: normalized.meta,
+        templateId: normalized.templateId,
+        theme: normalized.theme,
+        nodes: normalized.nodes,
+        edges: normalized.edges,
+        layout: normalized.layout,
+        frames: normalized.frames ?? [],
+        // Un CSV produit un nouveau document : ne jamais réutiliser
+        // silencieusement le chemin du fichier .orgchart précédent.
+        fileHandle: undefined,
+        isDirty: true,
+        selectedNodeIds: [],
+        selectedFrameId: normalized.frames?.[0]?.id ?? null,
+        collapsedNodeIds: [],
+      };
+    }),
 
   applyCollaborativeFile: (file, resetFileHandle = false) =>
-    set((s) => ({
-      meta: file.meta,
-      templateId: file.templateId,
-      theme: file.theme,
-      nodes: file.nodes,
-      edges: file.edges,
-      layout: file.layout,
-      frames: file.frames ?? [],
-      fileHandle: resetFileHandle ? undefined : s.fileHandle,
-      isDirty: true,
-      selectedNodeIds: s.selectedNodeIds.filter((id) =>
-        file.nodes.some((node) => node.id === id),
-      ),
-      selectedFrameId:
-        s.selectedFrameId && file.frames?.some((frame) => frame.id === s.selectedFrameId)
-          ? s.selectedFrameId
-          : null,
-      collapsedNodeIds: s.collapsedNodeIds.filter((id) =>
-        file.nodes.some((node) => node.id === id),
-      ),
-      pageGuide: s.pageGuide,
-      past: [],
-      future: [],
-    })),
+    set((s) => {
+      const normalized = normalizeFrameIds(file);
+      return {
+        meta: normalized.meta,
+        templateId: normalized.templateId,
+        theme: normalized.theme,
+        nodes: normalized.nodes,
+        edges: normalized.edges,
+        layout: normalized.layout,
+        frames: normalized.frames ?? [],
+        fileHandle: resetFileHandle ? undefined : s.fileHandle,
+        isDirty: true,
+        selectedNodeIds: s.selectedNodeIds.filter((id) =>
+          normalized.nodes.some((node) => node.id === id),
+        ),
+        selectedFrameId:
+          s.selectedFrameId && normalized.frames?.some((frame) => frame.id === s.selectedFrameId)
+            ? s.selectedFrameId
+            : null,
+        collapsedNodeIds: s.collapsedNodeIds.filter((id) =>
+          normalized.nodes.some((node) => node.id === id),
+        ),
+        pageGuide: s.pageGuide,
+        past: [],
+        future: [],
+      };
+    }),
 
   toFile: () => {
     const s = get();

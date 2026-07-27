@@ -1553,7 +1553,9 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
                         className="absolute -top-6 left-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-bold text-white shadow-sm"
                         style={{ background: participant.color }}
                       >
-                        {participant.name}
+                        {participant.editingNodeId === nodeId
+                          ? `${participant.name} · modifie`
+                          : participant.name}
                       </span>
                     </div>
                   );
