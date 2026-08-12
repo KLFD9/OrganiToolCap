@@ -187,11 +187,24 @@ export function Toolbar({
   const handleOpen = async () => {
     setError(null);
     setNotice(null);
+    if (isDirty && !window.confirm("Le document actuel n’est pas enregistré. Enregistrez-le avant d’ouvrir un autre fichier pour ne pas perdre vos modifications.")) {
+      return;
+    }
     try {
       const result = await openOrgChartFile();
       if (result.kind === "orgchart") {
         loadFile(result.file, result.handle);
         await clearDraft();
+        return;
+      }
+
+      if (result.kind === "pdf") {
+        const { importOrgChartPdf } = await import("../lib/pdfRoundTrip");
+        const file = await importOrgChartPdf(result.data);
+        loadFile(file);
+        await clearDraft();
+        const pages = file.frames?.length ?? 1;
+        setNotice(`Organigramme restauré depuis le PDF · ${file.nodes.length} carte${file.nodes.length > 1 ? "s" : ""}, ${pages} page${pages > 1 ? "s" : ""}.`);
         return;
       }
 
@@ -221,8 +234,11 @@ export function Toolbar({
       if (imported.warnings.length > 0) setNotice(imported.warnings.join(" · "));
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") return;
-      const { PptxImportError } = await import("../lib/pptxImport");
-      if (err instanceof FileFormatError || err instanceof PptxImportError) {
+      const [{ PptxImportError }, { PdfImportError }] = await Promise.all([
+        import("../lib/pptxImport"),
+        import("../lib/pdfRoundTrip"),
+      ]);
+      if (err instanceof FileFormatError || err instanceof PptxImportError || err instanceof PdfImportError) {
         setError(err.message);
       } else {
         setError("Impossible d'ouvrir ce fichier.");

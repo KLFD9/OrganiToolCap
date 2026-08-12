@@ -9,7 +9,8 @@ declare global {
 
 export type OpenResult =
   | { kind: "orgchart"; file: OrgChartFile; handle?: FileSystemFileHandle }
-  | { kind: "pptx"; data: ArrayBuffer; fileName: string };
+  | { kind: "pptx"; data: ArrayBuffer; fileName: string }
+  | { kind: "pdf"; data: ArrayBuffer; fileName: string };
 
 const OPEN_FILE_TYPES = [
   {
@@ -21,6 +22,10 @@ const OPEN_FILE_TYPES = [
     accept: {
       "application/vnd.openxmlformats-officedocument.presentationml.presentation": [".pptx"],
     },
+  },
+  {
+    description: "PDF OrganiTool modifiable",
+    accept: { "application/pdf": [".pdf"] },
   },
 ];
 
@@ -110,7 +115,11 @@ function isPptx(name: string): boolean {
   return /\.pptx$/i.test(name);
 }
 
-/** Ouvre un fichier .orgchart.json ou .pptx via le dialogue natif si dispo, sinon via un input file. */
+function isPdf(name: string): boolean {
+  return /\.pdf$/i.test(name);
+}
+
+/** Ouvre un fichier .orgchart.json, .pptx ou PDF OrganiTool via le dialogue natif si dispo, sinon via un input file. */
 export async function openOrgChartFile(): Promise<OpenResult> {
   if (window.showOpenFilePicker) {
     const [handle] = await window.showOpenFilePicker({
@@ -121,6 +130,9 @@ export async function openOrgChartFile(): Promise<OpenResult> {
     if (isPptx(file.name)) {
       return { kind: "pptx", data: await file.arrayBuffer(), fileName: file.name };
     }
+    if (isPdf(file.name)) {
+      return { kind: "pdf", data: await file.arrayBuffer(), fileName: file.name };
+    }
     const text = await file.text();
     return { kind: "orgchart", file: parseOrgChartFile(text), handle };
   }
@@ -128,7 +140,7 @@ export async function openOrgChartFile(): Promise<OpenResult> {
   return new Promise((resolve, reject) => {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = ".json,.orgchart.json,.pptx,application/json";
+    input.accept = ".json,.orgchart.json,.pptx,.pdf,application/json,application/pdf";
     input.onchange = async () => {
       const f = input.files?.[0];
       if (!f) {
@@ -138,6 +150,8 @@ export async function openOrgChartFile(): Promise<OpenResult> {
       try {
         if (isPptx(f.name)) {
           resolve({ kind: "pptx", data: await f.arrayBuffer(), fileName: f.name });
+        } else if (isPdf(f.name)) {
+          resolve({ kind: "pdf", data: await f.arrayBuffer(), fileName: f.name });
         } else {
           resolve({ kind: "orgchart", file: parseOrgChartFile(await f.text()) });
         }

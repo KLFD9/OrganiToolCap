@@ -84,6 +84,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   // Un frame supprimé pendant que le dialogue est fermé : repli sur « toutes »
   if (scope !== "all" && !frames.some((f) => f.id === scope)) setScope("all");
   const [pdfVector, setPdfVector] = useState(true);
+  const [includeEditableSource, setIncludeEditableSource] = useState(true);
   const [transparentBg, setTransparentBg] = useState(false);
   const [webResolution, setWebResolution] = useState<"standard" | "high">("high");
   
@@ -110,7 +111,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
   const [exportProgress, setExportProgress] = useState<{ current: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const [pdfPreview, setPdfPreview] = useState<{ url: string; filename: string } | null>(null);
+  const [pdfPreview, setPdfPreview] = useState<{ url: string; filename: string; editable: boolean } | null>(null);
   const [webPreviewUrl, setWebPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
@@ -415,16 +416,33 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
             pdfDocument = await buildFlowPdfVector(visibleNodes, visibleEdges, theme, pdfOptions);
             filename = safeFileName(meta.title, "-vectoriel");
           } else {
-            pdfDocument = await buildFlowPdfImage(el, nodes, pdfOptions);
+            pdfDocument = await buildFlowPdfImage(el, nodes, pdfOptions, {
+              nodes: visibleNodes,
+              edges: visibleEdges,
+              theme,
+            });
             filename = safeFileName(meta.title, multiPage ? "-multipages" : "");
           }
         }
         if (!pdfDocument) throw new Error("Le PDF n'a pas pu être construit.");
+        let pdfBlob = pdfDocument.output("blob");
+        if (includeEditableSource) {
+          const { attachOrgChartSource } = await import("../lib/pdfRoundTrip");
+          pdfBlob = await attachOrgChartSource(pdfBlob, useOrgChartStore.getState().toFile());
+          filename = filename.replace(/\.pdf$/i, "-modifiable.pdf");
+        }
         if (kind === "preview") {
-          const url = URL.createObjectURL(pdfDocument.output("blob"));
-          setPdfPreview({ url, filename });
+          const url = URL.createObjectURL(pdfBlob);
+          setPdfPreview({ url, filename, editable: includeEditableSource });
         } else {
-          pdfDocument.save(filename);
+          const url = URL.createObjectURL(pdfBlob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = filename;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
         }
       } else if (kind === "clipboard") {
         await copyFlowToClipboard(el, nodes);
@@ -678,6 +696,18 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
                   <span>Répartir sur plusieurs feuilles</span>
                 </label>
                 )}
+                <label className={`mt-1 flex cursor-pointer items-start gap-2 rounded-xl border p-3 text-[11px] transition-colors ${includeEditableSource ? "border-primary-300 bg-primary-50/70 text-primary-900 dark:border-primary-700 dark:bg-primary-950/30 dark:text-primary-100" : "border-zinc-200 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400"}`}>
+                  <input
+                    type="checkbox"
+                    checked={includeEditableSource}
+                    onChange={(e) => setIncludeEditableSource(e.target.checked)}
+                    className={checkboxClass}
+                  />
+                  <span>
+                    <span className="flex items-center gap-1.5"><b>PDF modifiable dans OrganiTool</b>{includeEditableSource && <span className="rounded-full bg-primary-200 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-primary-800 dark:bg-primary-800 dark:text-primary-100">Source intégrée</span>}</span>
+                    <span className="mt-1 block leading-relaxed">À conserver pour continuer les modifications : le PDF réouvrira ce document exactement. Désactivez-le uniquement pour une diffusion externe.</span>
+                  </span>
+                </label>
               </div>
               )}
 
@@ -1013,6 +1043,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
           <div>
             <h3 className="text-sm font-bold">Aperçu exact du PDF</h3>
             <p className="mt-0.5 text-[11px] text-zinc-400">Ce document est celui qui sera téléchargé.</p>
+            {pdfPreview.editable && <p className="mt-1 inline-flex rounded-full bg-primary-500/20 px-2 py-0.5 text-[10px] font-semibold text-primary-200">Source OrganiTool intégrée · réouvrable</p>}
           </div>
           <div className="flex items-center gap-2">
             <a
@@ -1021,7 +1052,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
               className="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-3.5 py-2 text-xs font-bold text-white hover:bg-primary-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-400"
             >
               <Download className="h-4 w-4" />
-              Télécharger ce PDF
+              {pdfPreview.editable ? "Télécharger le PDF modifiable" : "Télécharger ce PDF"}
             </a>
             <button
               type="button"

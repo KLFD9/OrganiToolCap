@@ -1,7 +1,7 @@
 import type { jsPDF } from "jspdf";
 import { getNodesBounds, getViewportForBounds, type Node } from "@xyflow/react";
 import { chromeFontStyle, resolveChromeElement, resolveChromeTextStyle, textHeightMm } from "./chromeLayout";
-import type { ChromeElement, ChromeLayout } from "../types/orgchart";
+import type { ChromeElement, ChromeLayout, OrgEdge, OrgNode, OrgTheme } from "../types/orgchart";
 import type { PageSetup } from "./readability";
 
 // html-to-image et jspdf ne servent qu'à l'export : chargés à la demande
@@ -159,6 +159,44 @@ function cropToDataUrl(img: HTMLImageElement, tile: PdfTile): string {
 
 const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
+interface EdgeLayerStyleSnapshot {
+  element: SVGElement;
+  width: string;
+  height: string;
+  overflow: string;
+}
+
+/**
+ * React Flow mesure ses SVG d'arêtes contre le conteneur visible. Pendant une
+ * capture, le viewport est volontairement redimensionné ; sans cette mise à
+ * jour, les cartes suivent le nouveau cadrage mais les raccordements restent
+ * mesurés dans l'ancienne surface (lignes décalées ou tronquées dans le PDF).
+ */
+function resizeEdgeLayersForCapture(viewportEl: HTMLElement, width: number, height: number): EdgeLayerStyleSnapshot[] {
+  return Array.from(viewportEl.querySelectorAll<SVGElement>(".react-flow__edges, .react-flow__connection")).map((element) => {
+    const snapshot = {
+      element,
+      width: element.style.width,
+      height: element.style.height,
+      overflow: element.style.overflow,
+    };
+    element.style.width = `${width}px`;
+    element.style.height = `${height}px`;
+    // Des couloirs manuels peuvent temporairement dépasser la boîte SVG : le
+    // PDF doit conserver leur géométrie, comme le canvas à l'écran.
+    element.style.overflow = "visible";
+    return snapshot;
+  });
+}
+
+function restoreEdgeLayers(snapshots: EdgeLayerStyleSnapshot[]): void {
+  for (const { element, width, height, overflow } of snapshots) {
+    element.style.width = width;
+    element.style.height = height;
+    element.style.overflow = overflow;
+  }
+}
+
 // L'analyse des @font-face et leur conversion en data-URI est l'une des
 // opérations les plus coûteuses de html-to-image. Les polices de l'éditeur
 // sont bundlées et immuables pendant la session : un seul résultat suffit
@@ -182,6 +220,14 @@ export interface CaptureResult {
   /** Dimensions réelles de l'image rasterisée en px. */
   pixelWidth: number;
   pixelHeight: number;
+  /** Projection appliquée au viewport React Flow pendant la capture. */
+  viewport: { x: number; y: number; zoom: number };
+}
+
+export interface PdfConnectorOverlay {
+  nodes: OrgNode[];
+  edges: OrgEdge[];
+  theme: OrgTheme;
 }
 
 /**
@@ -193,7 +239,7 @@ export async function captureFlow(
   nodes: Node[],
   type: "svg" | "png" | "jpeg",
   desiredRatio: number,
-  capture?: { transparent?: boolean }
+  capture?: { transparent?: boolean; hideEdges?: boolean }
 ): Promise<CaptureResult> {
   const bounds = getNodesBounds(nodes);
   const width = Math.max(1, Math.ceil(bounds.width * (1 + CONTENT_PADDING_RATIO * 2)));
@@ -215,6 +261,11 @@ export async function captureFlow(
   const prevTransform = viewportEl.style.transform;
   const prevWidth = viewportEl.style.width;
   const prevHeight = viewportEl.style.height;
+  const edgeLayers = resizeEdgeLayersForCapture(viewportEl, width, height);
+  const hiddenEdgeLayers = capture?.hideEdges
+    ? edgeLayers.map(({ element }) => ({ element, display: element.style.display }))
+    : [];
+  for (const { element } of hiddenEdgeLayers) element.style.display = "none";
 
   viewportEl.style.width = `${width}px`;
   viewportEl.style.height = `${height}px`;
@@ -254,8 +305,11 @@ export async function captureFlow(
       height,
       pixelWidth: Math.round(width * pixelRatio),
       pixelHeight: Math.round(height * pixelRatio),
+      viewport,
     };
   } finally {
+    for (const { element, display } of hiddenEdgeLayers) element.style.display = display;
+    restoreEdgeLayers(edgeLayers);
     viewportEl.style.transform = prevTransform;
     viewportEl.style.width = prevWidth;
     viewportEl.style.height = prevHeight;
@@ -287,6 +341,7 @@ export async function captureFlowRegion(
   const prevTransform = viewportEl.style.transform;
   const prevWidth = viewportEl.style.width;
   const prevHeight = viewportEl.style.height;
+  const edgeLayers = resizeEdgeLayersForCapture(viewportEl, width, height);
 
   viewportEl.style.width = `${width}px`;
   viewportEl.style.height = `${height}px`;
@@ -311,8 +366,10 @@ export async function captureFlowRegion(
       height,
       pixelWidth: Math.round(width * pixelRatio),
       pixelHeight: Math.round(height * pixelRatio),
+      viewport: { x: -region.x, y: -region.y, zoom: 1 },
     };
   } finally {
+    restoreEdgeLayers(edgeLayers);
     viewportEl.style.transform = prevTransform;
     viewportEl.style.width = prevWidth;
     viewportEl.style.height = prevHeight;
@@ -541,8 +598,17 @@ export function applyPdfMetadata(pdf: jsPDF, options: Pick<PdfExportOptions, "ti
 }
 
 /** Construit le PDF image sans déclencher de téléchargement (aperçu et export partagent ce moteur). */
-export async function buildFlowPdfImage(viewportEl: HTMLElement, nodes: Node[], options: PdfExportOptions): Promise<jsPDF> {
-  const capture = await captureFlow(viewportEl, nodes, "jpeg", PDF_DPI_SCALE);
+export async function buildFlowPdfImage(
+  viewportEl: HTMLElement,
+  nodes: Node[],
+  options: PdfExportOptions,
+  connectorOverlay?: PdfConnectorOverlay
+): Promise<jsPDF> {
+  const capture = await captureFlow(viewportEl, nodes, "jpeg", PDF_DPI_SCALE, {
+    // Les raccordements sont redessinés ci-dessous depuis la géométrie métier
+    // (commune au PDF vectoriel et au PPTX), jamais depuis le SVG temporaire.
+    hideEdges: Boolean(connectorOverlay),
+  });
 
   const { jsPDF } = await loadJsPdf();
   const pdf = new jsPDF({
@@ -567,7 +633,7 @@ export async function buildFlowPdfImage(viewportEl: HTMLElement, nodes: Node[], 
 
     // Une seule page suffit : on bascule sur l'ajustement dynamique (pas de découpage inutile).
     if (grid.cols === 1 && grid.rows === 1) {
-      await drawSinglePage(pdf, options, capture.dataUrl, capture.pixelWidth, capture.pixelHeight, pageWidth, pageHeight, margin);
+      await drawSinglePage(pdf, options, capture, pageWidth, pageHeight, margin, connectorOverlay);
       return pdf;
     }
 
@@ -591,7 +657,7 @@ export async function buildFlowPdfImage(viewportEl: HTMLElement, nodes: Node[], 
     return pdf;
   }
 
-  await drawSinglePage(pdf, options, capture.dataUrl, capture.pixelWidth, capture.pixelHeight, pageWidth, pageHeight, margin);
+  await drawSinglePage(pdf, options, capture, pageWidth, pageHeight, margin, connectorOverlay);
   return pdf;
 }
 
@@ -605,18 +671,57 @@ export async function exportFlowToPdf(viewportEl: HTMLElement, nodes: Node[], op
 async function drawSinglePage(
   pdf: jsPDF,
   options: PdfExportOptions,
-  dataUrl: string,
-  imageWidth: number,
-  imageHeight: number,
+  capture: CaptureResult,
   pageWidth: number,
   pageHeight: number,
-  margin: number
+  margin: number,
+  connectorOverlay?: PdfConnectorOverlay
 ): Promise<void> {
   const { topOffset, bottomOffset } = await drawPageChrome(pdf, options, pageWidth, pageHeight, margin);
   const availableWidth = pageWidth - margin * 2;
   const availableHeight = pageHeight - topOffset - bottomOffset;
-  const placement = fitContain(imageWidth, imageHeight, margin, topOffset, availableWidth, availableHeight);
-  pdf.addImage(dataUrl, "JPEG", placement.x, placement.y, placement.width, placement.height);
+  const placement = fitContain(capture.pixelWidth, capture.pixelHeight, margin, topOffset, availableWidth, availableHeight);
+  pdf.addImage(capture.dataUrl, "JPEG", placement.x, placement.y, placement.width, placement.height);
+  if (connectorOverlay) await drawRasterConnectorOverlay(pdf, capture, placement, connectorOverlay);
+}
+
+/**
+ * Les cartes avec portraits sont une capture raster, mais les connecteurs sont
+ * redessinés à partir des positions métier. On évite ainsi les divergences
+ * introduites par le SVG React Flow pendant le recadrage temporaire du DOM.
+ */
+async function drawRasterConnectorOverlay(
+  pdf: jsPDF,
+  capture: CaptureResult,
+  placement: { x: number; y: number; width: number; height: number },
+  overlay: PdfConnectorOverlay
+): Promise<void> {
+  const { buildEditableSpec } = await import("./pptxEditable");
+  const { viewport } = capture;
+  const spec = buildEditableSpec(
+    overlay.nodes,
+    overlay.edges,
+    overlay.theme,
+    { x: 0, y: 0, width: 1, height: 1 },
+    {
+      originX: -viewport.x / viewport.zoom,
+      originY: -viewport.y / viewport.zoom,
+      inchesPerPx: viewport.zoom / 96,
+    }
+  );
+  const x = (value: number) => placement.x + (value * 96 / capture.width) * placement.width;
+  const y = (value: number) => placement.y + (value * 96 / capture.height) * placement.height;
+  pdf.setDrawColor("#DBDBDF");
+  pdf.setLineWidth(Math.max(0.18, placement.width / capture.width));
+  for (const connector of spec.connectors) {
+    pdf.setLineDashPattern(connector.dashed ? [1.1, 0.9] : [], 0);
+    for (let index = 0; index < connector.points.length - 1; index++) {
+      const from = connector.points[index];
+      const to = connector.points[index + 1];
+      pdf.line(x(from.x), y(from.y), x(to.x), y(to.y));
+    }
+  }
+  pdf.setLineDashPattern([], 0);
 }
 
 /** Page d'un export PDF image multi-pages : chrome + nœuds React Flow à capturer. */
