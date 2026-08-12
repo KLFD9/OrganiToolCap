@@ -7,7 +7,11 @@ async function blankPdf(): Promise<Blob> {
   const pdf = await PDFDocument.create();
   pdf.addPage();
   const bytes = await pdf.save();
-  return new Blob([bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)], { type: "application/pdf" });
+  return new Blob([new Uint8Array(bytes).buffer], { type: "application/pdf" });
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return new Uint8Array(bytes).buffer;
 }
 
 describe("PDF OrganiTool modifiable", () => {
@@ -35,7 +39,7 @@ describe("PDF OrganiTool modifiable", () => {
     })), "organitool-source.manifest.json", { mimeType: "application/json" });
     const bytes = await pdf.save();
 
-    await expect(importOrgChartPdf(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))).rejects.toThrow(
+    await expect(importOrgChartPdf(toArrayBuffer(bytes))).rejects.toThrow(
       "contrôle d’intégrité"
     );
   });

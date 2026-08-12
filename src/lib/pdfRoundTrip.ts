@@ -18,14 +18,16 @@ interface PdfSourceManifest {
 }
 
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
-  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  // Copie explicite : TypeScript 6 distingue ArrayBuffer et SharedArrayBuffer.
+  // Les API Blob/Web Crypto et pdf-lib exigent ici un ArrayBuffer classique.
+  return new Uint8Array(bytes).buffer;
 }
 
 async function sha256(bytes: Uint8Array): Promise<string> {
   if (!globalThis.crypto?.subtle) {
     throw new PdfImportError("Votre navigateur ne permet pas de vérifier la source intégrée au PDF. Utilisez une version récente du navigateur.");
   }
-  const digest = await globalThis.crypto.subtle.digest("SHA-256", bytes);
+  const digest = await globalThis.crypto.subtle.digest("SHA-256", toArrayBuffer(bytes));
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
@@ -56,12 +58,12 @@ export async function attachOrgChartSource(pdfBlob: Blob, chart: OrgChartFile): 
     throw new PdfImportError("La source de l’organigramme est trop volumineuse pour être intégrée au PDF.");
   }
 
-  const { PDFDocument } = await import("pdf-lib");
+  const { AFRelationship, PDFDocument } = await import("pdf-lib");
   const pdf = await PDFDocument.load(await pdfBlob.arrayBuffer(), { updateMetadata: false });
   await pdf.attach(source, EMBEDDED_PDF_CHART_FILE, {
     mimeType: "application/json",
     description: "Source modifiable dans OrganiTool CAP",
-    afRelationship: "Source",
+    afRelationship: AFRelationship.Source,
     creationDate: new Date(),
     modificationDate: new Date(),
   });
@@ -74,7 +76,7 @@ export async function attachOrgChartSource(pdfBlob: Blob, chart: OrgChartFile): 
   await pdf.attach(new TextEncoder().encode(JSON.stringify(manifest)), EMBEDDED_PDF_MANIFEST_FILE, {
     mimeType: "application/json",
     description: "Contrôle d’intégrité de la source OrganiTool CAP",
-    afRelationship: "Supplement",
+    afRelationship: AFRelationship.Supplement,
   });
   return new Blob([toArrayBuffer(await pdf.save())], { type: "application/pdf" });
 }
@@ -103,7 +105,7 @@ export async function importOrgChartPdf(data: ArrayBuffer): Promise<OrgChartFile
       if (attachments.has(filename)) throw new PdfImportError("Ce PDF contient plusieurs sources OrganiTool ambiguës.");
       const fileSpec = entries.lookupMaybe(index + 1, PDFDict);
       const fileStreams = fileSpec?.lookupMaybe(PDFName.of("EF"), PDFDict);
-      const stream = fileStreams?.lookup(PDFName.of("F")) as InstanceType<typeof PDFRawStream> | undefined;
+      const stream = fileStreams?.lookup(PDFName.of("F"));
       if (stream instanceof PDFRawStream) attachments.set(filename, decodePDFRawStream(stream).decode());
     }
     const source = attachments.get(EMBEDDED_PDF_CHART_FILE);
