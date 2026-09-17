@@ -1,8 +1,8 @@
 import type { jsPDF } from "jspdf";
 import { getNodesBounds, getViewportForBounds, type Node } from "@xyflow/react";
 import { chromeFontStyle, resolveChromeElement, resolveChromeTextStyle, textHeightMm } from "./chromeLayout";
-import type { ChromeElement, ChromeLayout, OrgEdge, OrgNode, OrgTheme } from "../types/orgchart";
-import type { PageSetup } from "./readability";
+import type { ChromeElement, ChromeLayout, OrgEdge, OrgNode, OrgTheme, PageElement } from "../types/orgchart";
+import { PT_PER_MM, type PageSetup } from "./readability";
 
 // html-to-image et jspdf ne servent qu'à l'export : chargés à la demande
 // pour alléger le bundle initial.
@@ -27,6 +27,8 @@ export interface PdfExportOptions {
   multiPage?: boolean;
   /** Positions/tailles personnalisées de l'en-tête et du pied de page (WYSIWYG canvas ↔ export). */
   chromeLayout?: ChromeLayout;
+  /** Éléments libres propres à une page explicite. */
+  pageElements?: PageElement[];
 }
 
 const PNG_DPI_SCALE = 2.5;
@@ -439,6 +441,33 @@ export function loadLogoForExport(url: string): Promise<ExportLogo> {
   return pending;
 }
 
+/**
+ * Équivalent export de `object-fit: cover` : recadre localement l'image afin
+ * qu'elle remplisse exactement le cadre dessiné dans le canvas, sans bandes
+ * blanches ni déformation.
+ */
+export async function coverLogoForExport(image: ExportLogo, targetWidth: number, targetHeight: number): Promise<ExportLogo> {
+  const targetRatio = Math.max(0.01, targetWidth) / Math.max(0.01, targetHeight);
+  const imageRatio = image.width / image.height;
+  const crop = imageRatio > targetRatio
+    ? { x: (image.width - image.height * targetRatio) / 2, y: 0, width: image.height * targetRatio, height: image.height }
+    : { x: 0, y: (image.height - image.width / targetRatio) / 2, width: image.width, height: image.width / targetRatio };
+  const fitted = fitExportLogoDimensions(crop.width, crop.height, true);
+  const canvas = document.createElement("canvas");
+  canvas.width = fitted.width;
+  canvas.height = fitted.height;
+  const context = canvas.getContext("2d");
+  if (!context) return image;
+  let source: HTMLImageElement;
+  try {
+    source = await loadImage(image.dataUrl);
+  } catch {
+    return image;
+  }
+  context.drawImage(source, crop.x, crop.y, crop.width, crop.height, 0, 0, canvas.width, canvas.height);
+  return { dataUrl: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height };
+}
+
 const HEADER_HEIGHT_MM = 16;
 
 /** Calcule les marges hautes/basses occupées par l'en-tête et le pied de page, sans dessiner. */
@@ -577,6 +606,29 @@ export async function drawPageChrome(
   }
 
   return { topOffset, bottomOffset };
+}
+
+/** Rendu papier des éléments libres d'une frame (textes, logos et photos). */
+export async function drawPageElements(pdf: jsPDF, elements: PageElement[] | undefined): Promise<void> {
+  for (const element of elements ?? []) {
+    if (element.type === "text") {
+      const fontSize = element.fontSize ?? 12;
+      pdf.setFont("helvetica", element.bold ? (element.italic ? "bolditalic" : "bold") : element.italic ? "italic" : "normal");
+      pdf.setFontSize(fontSize);
+      pdf.setTextColor(element.color ?? "#27272A");
+      const lineHeight = (fontSize / PT_PER_MM) * 1.2;
+      element.value.split("\n").forEach((line, index) => pdf.text(line, element.x, element.y + lineHeight * (index + 1)));
+      continue;
+    }
+    try {
+      const image = await coverLogoForExport(await loadLogoForExport(element.value), element.width, element.height);
+      pdf.addImage(image.dataUrl, "PNG", element.x, element.y, element.width, element.height, undefined, "FAST");
+    } catch {
+      // Image locale invalide : conserver les autres éléments et le PDF.
+    }
+  }
+  pdf.setFont("helvetica", "normal");
+  pdf.setTextColor(0);
 }
 
 export function safeFileName(title: string | undefined, suffix = ""): string {
@@ -735,6 +787,7 @@ export interface FrameImagePage {
   logoUrl?: string;
   secondaryLogoUrl?: string;
   chromeLayout?: ChromeLayout;
+  pageElements?: PageElement[];
   /** Absence = cadrage historique ajusté/centré. */
   placement?: PageSetup["placement"];
   /** Rectangle de la feuille dans le canvas, requis pour le placement exact. */
@@ -776,17 +829,24 @@ export async function buildFramesPdfImage(
       logoUrl: page.logoUrl ?? common.logoUrl,
       secondaryLogoUrl: page.secondaryLogoUrl ?? common.secondaryLogoUrl,
       chromeLayout: page.chromeLayout,
+      pageElements: page.pageElements,
     };
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
     const label = pages.length > 1 ? `${page.name} · ${i + 1}/${pages.length}` : undefined;
     const { topOffset, bottomOffset } = await drawPageChrome(pdf, options, pageWidth, pageHeight, page.margin, label);
 
-    if (page.rfNodes.length === 0) continue; // page vide : chrome seul
+    if (page.rfNodes.length === 0) {
+      await drawPageElements(pdf, page.pageElements);
+      continue;
+    }
 
     if (page.placement === "exact" && page.frameRect) {
       const capture = await captureFlowRegion(viewportEl, page.frameRect, PDF_DPI_SCALE);
       pdf.addImage(capture.dataUrl, "PNG", 0, 0, pageWidth, pageHeight);
+      // Le dialogue d'export masque temporairement le cadre de page ; les
+      // éléments libres doivent donc être posés ici, comme le chrome PDF.
+      await drawPageElements(pdf, page.pageElements);
       continue;
     }
 
@@ -802,6 +862,7 @@ export async function buildFramesPdfImage(
       availableHeight
     );
     pdf.addImage(capture.dataUrl, "JPEG", placement.x, placement.y, placement.width, placement.height);
+    await drawPageElements(pdf, page.pageElements);
   }
 
   return pdf;

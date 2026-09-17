@@ -385,6 +385,7 @@ export function ExportDialog({ open, onClose, getViewportElement, themeMode = "l
               logoUrl: p.logoUrl,
               secondaryLogoUrl: p.secondaryLogoUrl,
               chromeLayout: p.chromeLayout,
+              pageElements: p.frame.elements,
               placement: p.frame.page.placement,
               frameRect: frameRectPx(p.frame),
               rfNodes: p.nodes

@@ -66,6 +66,7 @@ import { OrgEdge } from "./OrgEdge";
 import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 import { PageGuide, type PageGuideData } from "./PageGuide";
 import { ChromeElementNode, type ChromeElementData } from "./ChromeElement";
+import { PageElementNode, type PageElementData } from "./PageElement";
 import { PageFormatSelect } from "./PageFormatSelect";
 import { SelectionToolbar } from "./SelectionToolbar";
 import {
@@ -93,6 +94,7 @@ const nodeTypes = {
   groupBg: GroupBackground,
   pageGuide: PageGuide,
   chromeElement: ChromeElementNode,
+  pageElement: PageElementNode,
 };
 const edgeTypes = { org: OrgEdge };
 
@@ -118,6 +120,7 @@ const pxToMm = (px: number) => px * COMFORT_MM_PER_PX;
  * - feuille d'une page explicite : `frame:<frameId>` (helpers dans lib/frames).
  */
 const CHROME_ID_PREFIX = "chrome:";
+const PAGE_ELEMENT_ID_PREFIX = "page-element:";
 const chromeNodeId = (key: ChromeKey, frameId?: string) =>
   `${CHROME_ID_PREFIX}${frameId ? `${frameId}:` : ""}${key}`;
 const parseChromeNodeId = (id: string): { key: ChromeKey; frameId?: string } | undefined => {
@@ -126,6 +129,12 @@ const parseChromeNodeId = (id: string): { key: ChromeKey; frameId?: string } | u
   const sep = rest.lastIndexOf(":");
   if (sep === -1) return { key: rest as ChromeKey };
   return { key: rest.slice(sep + 1) as ChromeKey, frameId: rest.slice(0, sep) };
+};
+const parsePageElementNodeId = (id: string): { frameId: string; elementId: string } | undefined => {
+  if (!id.startsWith(PAGE_ELEMENT_ID_PREFIX)) return undefined;
+  const rest = id.slice(PAGE_ELEMENT_ID_PREFIX.length);
+  const separator = rest.indexOf(":");
+  return separator > 0 ? { frameId: rest.slice(0, separator), elementId: rest.slice(separator + 1) } : undefined;
 };
 
 // Mesure de la largeur d'un libellé (mm) pour centrer les défauts de chrome —
@@ -219,6 +228,9 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const applyAutoLayout = useOrgChartStore((s) => s.applyAutoLayout);
   const setChromeElement = useOrgChartStore((s) => s.setChromeElement);
   const setFrameChromeElement = useOrgChartStore((s) => s.setFrameChromeElement);
+  const addFrameElement = useOrgChartStore((s) => s.addFrameElement);
+  const updateFrameElement = useOrgChartStore((s) => s.updateFrameElement);
+  const deleteFrameElement = useOrgChartStore((s) => s.deleteFrameElement);
   const setPageSetup = useOrgChartStore((s) => s.setPageSetup);
   const frames = useOrgChartStore((s) => s.frames);
   const selectedFrameId = useOrgChartStore((s) => s.selectedFrameId);
@@ -233,6 +245,8 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
 
   const { screenToFlowPosition, fitView, fitBounds, getZoom } = useReactFlow();
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const pageImageInputRef = useRef<HTMLInputElement>(null);
+  const [pendingPageImageFrameId, setPendingPageImageFrameId] = useState<string | null>(null);
   const previousSelectedFrameRef = useRef<string | null>(selectedFrameId);
 
   // Si la page actuellement cadrée disparaît (suppression ou annulation de sa
@@ -657,6 +671,32 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     setFrameChromeElement,
   ]);
 
+  const pageElementNodes = useMemo<Node<PageElementData>[]>(() => {
+    if (!pageGuideEnabled || !hasFrames) return [];
+    return frames.flatMap((frame) => (frame.elements ?? []).map((element) => ({
+      id: `page-element:${frame.id}:${element.id}`,
+      type: "pageElement" as const,
+      parentId: frameNodeId(frame.id),
+      extent: "parent" as const,
+      position: { x: mmToPx(element.x), y: mmToPx(element.y) },
+      draggable: true,
+      selectable: true,
+      zIndex: 6,
+      style: { width: mmToPx(element.width), height: mmToPx(element.height) },
+      data: {
+        element: { ...element, fontSize: element.fontSize ? mmToPx(element.fontSize * 0.352778) : undefined },
+        dark: themeMode === "dark",
+        onChange: (patch) => updateFrameElement(frame.id, element.id, {
+          ...patch,
+          ...(patch.width !== undefined ? { width: pxToMm(patch.width) } : {}),
+          ...(patch.height !== undefined ? { height: pxToMm(patch.height) } : {}),
+          ...(patch.fontSize !== undefined ? { fontSize: pxToMm(patch.fontSize) / 0.352778 } : {}),
+        }),
+        onDelete: () => deleteFrameElement(frame.id, element.id),
+      },
+    })));
+  }, [pageGuideEnabled, hasFrames, frames, themeMode, updateFrameElement, deleteFrameElement]);
+
   // Zones de regroupement visuel par pôle / département (nœuds visibles uniquement)
   const groupNodes = useMemo<Node<GroupBackgroundData>[]>(() => {
     if (!showGroups) return [];
@@ -720,8 +760,8 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   );
 
   const initialRfNodes = useMemo<Node[]>(
-    () => [...pageGuideNodes, ...frameGuideNodes, ...chromeElementNodes, ...groupNodes, ...memberRfNodes],
-    [pageGuideNodes, frameGuideNodes, chromeElementNodes, groupNodes, memberRfNodes]
+    () => [...pageGuideNodes, ...frameGuideNodes, ...chromeElementNodes, ...pageElementNodes, ...groupNodes, ...memberRfNodes],
+    [pageGuideNodes, frameGuideNodes, chromeElementNodes, pageElementNodes, groupNodes, memberRfNodes]
   );
 
   // Rectangles des cartes (espace px du canvas) pour le snap géométrique des
@@ -893,6 +933,45 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   }, [initialRfNodes, setRfNodes]);
   useEffect(() => setRfEdges(initialRfEdges), [initialRfEdges, setRfEdges]);
 
+  /**
+   * Retire un connecteur dans les deux sources d'état qui participent au
+   * rendu. `rfEdges` est une copie de travail React Flow (notamment pendant
+   * le déplacement d'une carte), tandis que le store est la source de vérité
+   * du fichier. Attendre l'effet de synchronisation entre les deux laisse une
+   * fenêtre où React Flow peut conserver un ancien SVG après des suppressions
+   * rapprochées. La mise à jour optimiste ferme cette fenêtre ; l'effet
+   * ci-dessus reste le garde-fou de réconciliation avec le document.
+   */
+  const removeEdge = useCallback(
+    (edgeId: string) => {
+      setRfEdges((current) => current.filter((edge) => edge.id !== edgeId));
+      setSelectedEdgeId((current) => (current === edgeId ? null : current));
+      setMenu((current) => (current?.edgeId === edgeId ? null : current));
+      deleteEdge(edgeId);
+    },
+    [deleteEdge, setRfEdges]
+  );
+
+  // Suppr./Retour arrière suivent le même chemin que le menu contextuel. Le
+  // raccourci est volontairement borné à la zone du canvas : jamais dans une
+  // saisie ou après avoir focalisé la toolbar/une autre vue de l'éditeur.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      const target = event.target as HTMLElement | null;
+      const isEditable =
+        target instanceof HTMLElement &&
+        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      const active = document.activeElement as HTMLElement | null;
+      if (isEditable || !active?.closest(".canvas-focus-scope") || !selectedEdgeId) return;
+
+      event.preventDefault();
+      removeEdge(selectedEdgeId);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [removeEdge, selectedEdgeId]);
+
   // Sélection programmatique (annuaire, recherche, menus, ajout de membre) :
   // seule une sélection qui ne PROVIENT PAS du canvas est appliquée côté
   // React Flow. Les mises à jour miroir (onSelectionChange → store) sont
@@ -938,7 +1017,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
       const positionChanges = changes.filter((c) => c.type === "position" && c.position);
       if (positionChanges.length === 1) {
         const change = positionChanges[0] as { position: { x: number; y: number }; dragging?: boolean; id: string };
-        if (!parseChromeNodeId(change.id) && !frameIdFromNodeId(change.id)) {
+        if (!parseChromeNodeId(change.id) && !parsePageElementNodeId(change.id) && !frameIdFromNodeId(change.id)) {
           const node = storeNodes.find((n) => n.id === change.id);
           const nodeW = node ? computeNodeWidth(node, theme.display?.showPhotos ?? true) : CARD_WIDTH;
           const nodeH = node ? computeNodeHeight(node, resolveDisplay(theme)) : CARD_HEIGHT;
@@ -1034,6 +1113,12 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
               if (chromeRef.frameId) setFrameChromeElement(chromeRef.frameId, chromeRef.key, element);
               else setChromeElement(chromeRef.key, element);
             }
+          } else if (parsePageElementNodeId(change.id)) {
+            const pageElementRef = parsePageElementNodeId(change.id)!;
+            updateFrameElement(pageElementRef.frameId, pageElementRef.elementId, {
+              x: pxToMm(change.position.x),
+              y: pxToMm(change.position.y),
+            });
           } else if (frameIdFromNodeId(change.id)) {
             // Feuille de page : commit géré par onNodeDragStop (déplacement
             // solidaire avec les cartes membres), rien à faire ici.
@@ -1050,6 +1135,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
       resolvedChrome,
       setChromeElement,
       setFrameChromeElement,
+      updateFrameElement,
       getZoom,
       storeNodes,
       theme,
@@ -1083,7 +1169,6 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         frameDragRef.current = { frameId, startPos: { ...node.position }, memberStarts };
         return;
       }
-
       // Carte membre : prépare les rectangles voisins (écarts, toujours) et
       // les cibles d'aimantation (cartes voisines + marges / bords / axes
       // centraux des pages visibles, seulement si le cadre de page est actif).
@@ -1183,6 +1268,11 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         setMenu({ x: event.clientX, y: event.clientY, frameId });
         return;
       }
+      const chromeRef = parseChromeNodeId(node.id);
+      if (chromeRef?.frameId) {
+        setMenu({ x: event.clientX, y: event.clientY, frameId: chromeRef.frameId });
+        return;
+      }
       if (node.type !== "orgNode") {
         // Éléments d'en-tête/pied, cadre implicite ou fond de groupe : pas un
         // membre — on retombe sur le menu de fond (ajouter un membre ici…),
@@ -1217,13 +1307,27 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     (event: React.MouseEvent | MouseEvent) => {
       event.preventDefault();
       const { clientX, clientY } = event;
+      const flowPos = screenToFlowPosition({ x: clientX, y: clientY });
+      // Le fond de la feuille est transparent aux événements pour préserver
+      // le lasso. On requalifie donc ici explicitement sa bande d'en-tête :
+      // clic droit dans l'identité d'une page = menu de composition de page.
+      const headerFrame = frames.find((frame) => {
+        const rect = frameRectPx(frame);
+        const headerBottom = frame.position.y + mmToPx(frame.page.margin + 24);
+        return flowPos.x >= rect.x && flowPos.x <= rect.x + rect.width && flowPos.y >= rect.y && flowPos.y <= headerBottom;
+      });
+      if (headerFrame) {
+        selectFrame(headerFrame.id);
+        setMenu({ x: clientX, y: clientY, frameId: headerFrame.id, flowPos });
+        return;
+      }
       setMenu({
         x: clientX,
         y: clientY,
-        flowPos: screenToFlowPosition({ x: clientX, y: clientY }),
+        flowPos,
       });
     },
-    [screenToFlowPosition]
+    [screenToFlowPosition, frames, selectFrame]
   );
 
   // Centre une carte sur sa page : la feuille explicite (frame) qui contient
@@ -1295,9 +1399,10 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         },
         {
           label: "Supprimer le lien",
+          hint: "Suppr.",
           danger: true,
           separator: true,
-          onClick: () => deleteEdge(edge.id),
+          onClick: () => removeEdge(edge.id),
         },
       ];
     }
@@ -1309,7 +1414,25 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
       const memberCount = membership.byFrame.get(frameId)?.length ?? 0;
       return [
         {
+          label: "Ajouter un texte dans l’en-tête",
+          onClick: () => addFrameElement(frameId, {
+            type: "text",
+            value: "Double-cliquez pour modifier",
+            x: Math.max(frame.page.margin, pxToMm((menu.flowPos?.x ?? frame.position.x) - frame.position.x)),
+            y: Math.max(frame.page.margin, pxToMm((menu.flowPos?.y ?? frame.position.y) - frame.position.y)),
+            width: 80, height: 14, fontSize: 12, color: "#27272A",
+          }),
+        },
+        {
+          label: "Ajouter un logo ou une image",
+          onClick: () => {
+            setPendingPageImageFrameId(frameId);
+            requestAnimationFrame(() => pageImageInputRef.current?.click());
+          },
+        },
+        {
           label: "Recadrer sur la page",
+          separator: true,
           onClick: () => fitBounds(frameRectPx(frame), { duration: motionMs(300), padding: 0.1 }),
         },
         {
@@ -1377,7 +1500,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         items.push({
           label: "Détacher du responsable",
           separator: childCount === 0,
-          onClick: () => deleteEdge(parentEdge.id),
+          onClick: () => removeEdge(parentEdge.id),
         });
       }
       items.push({
@@ -1434,7 +1557,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     addNodeAt,
     duplicateNode,
     deleteNode,
-    deleteEdge,
+    removeEdge,
     toggleCollapsed,
     expandAll,
     applyAutoLayout,
@@ -1447,6 +1570,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
     arrangeFrame,
     duplicateFrame,
     deleteFrame,
+    addFrameElement,
     pageGuideEnabled,
     page,
     centerNodeOnPage,
@@ -1454,9 +1578,12 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
 
   const onSelectionChange: OnSelectionChangeFunc = useCallback(
     ({ nodes }) => {
-      const ids = nodes.map((n) => n.id);
-      lastCanvasSelectionRef.current = ids;
-      selectNodes(ids);
+      // Les éléments libres ont leur propre sélection React Flow. Ils ne sont
+      // pas des membres : ne jamais écrire leurs ids dans selectedNodeIds,
+      // sinon l'inspecteur et les raccourcis de l'organigramme les désélectionnent.
+      const memberIds = nodes.filter((node) => node.type === "orgNode").map((node) => node.id);
+      lastCanvasSelectionRef.current = memberIds;
+      selectNodes(memberIds);
       // Sélectionner des cartes (clic, lasso) désélectionne le lien actif.
       // Les arêtes émises par React Flow ne sont PAS reflétées ici : ce ne
       // sont que l'écho de nos propres flags (cf. selectedEdgeId).
@@ -1489,7 +1616,20 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   );
 
   return (
-    <div ref={ref} className="h-full w-full">
+    <div
+      ref={ref}
+      className="canvas-focus-scope h-full w-full"
+      tabIndex={-1}
+      onPointerDownCapture={(event) => {
+        const target = event.target as Element;
+        // Les contrôles internes gardent leur comportement natif (saisie de
+        // texte, boutons de l'outil de lien…), mais un clic sur le graphe ou
+        // son fond établit explicitement le périmètre des raccourcis canvas.
+        if (!target.closest("input, textarea, button, a, [contenteditable='true']")) {
+          event.currentTarget.focus({ preventScroll: true });
+        }
+      }}
+    >
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -1770,6 +1910,24 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
           themeMode={themeMode}
         />
       )}
+      <input
+        ref={pageImageInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          const frameId = pendingPageImageFrameId;
+          if (!file || !frameId) return;
+          const reader = new FileReader();
+          reader.onload = () => {
+            addFrameElement(frameId, { type: "image", value: reader.result as string, x: 8, y: 8, width: 36, height: 22 });
+            setPendingPageImageFrameId(null);
+          };
+          reader.readAsDataURL(file);
+          event.target.value = "";
+        }}
+      />
     </div>
   );
 });

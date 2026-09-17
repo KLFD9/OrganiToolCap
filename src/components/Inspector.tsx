@@ -248,6 +248,8 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
   const setSubtitle = useOrgChartStore((s) => s.setSubtitle);
   const setFooter = useOrgChartStore((s) => s.setFooter);
   const resetChromeLayout = useOrgChartStore((s) => s.resetChromeLayout);
+  const addFrameElement = useOrgChartStore((s) => s.addFrameElement);
+  const pageElementInputRef = useRef<HTMLInputElement>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -388,6 +390,22 @@ export function Inspector({ themeMode = "light" }: InspectorProps) {
           <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
             Ce nom sert au navigateur de pages et n’est pas imprimé.
           </p>
+        </div>
+
+        <div className={`rounded-xl border p-4.5 space-y-3 ${cardBg}`}>
+          <div className={headerBorder}>
+            <Plus className="h-4 w-4 text-primary-500" />
+            <h3 className={headerTitle}>Éléments libres</h3>
+          </div>
+          <p className="text-[10px] leading-relaxed text-zinc-400 dark:text-zinc-500">
+            Ajoutez autant de logos, photos ou annotations que nécessaire à cette page uniquement. Ils suivent la feuille et partent dans les exports.
+          </p>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => addFrameElement(frame.id, { type: "text", value: "Double-cliquez pour modifier", x: frame.page.margin, y: frame.page.margin + 24, width: 80, height: 14, fontSize: 12, color: "#27272A" })} className="flex-1 cursor-pointer rounded-lg border border-primary-200 px-2 py-2 text-xs font-semibold text-primary-700 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:border-primary-800 dark:text-primary-200 dark:hover:bg-primary-950/30">+ Texte</button>
+            <button type="button" onClick={() => pageElementInputRef.current?.click()} className="flex-1 cursor-pointer rounded-lg border border-primary-200 px-2 py-2 text-xs font-semibold text-primary-700 hover:bg-primary-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 dark:border-primary-800 dark:text-primary-200 dark:hover:bg-primary-950/30">+ Logo / image</button>
+            <input ref={pageElementInputRef} type="file" accept="image/*" className="hidden" onChange={async (event) => { const file = event.target.files?.[0]; if (!file) return; addFrameElement(frame.id, { type: "image", value: await fileToDataUrl(file), x: frame.page.margin, y: frame.page.margin + 24, width: 36, height: 22 }); event.target.value = ""; }} />
+          </div>
+          {frame.elements?.length ? <p className="text-[10px] text-zinc-400">{frame.elements.length} élément{frame.elements.length > 1 ? "s" : ""} sur cette page.</p> : null}
         </div>
 
         <div className={`rounded-xl border p-4.5 space-y-4 ${cardBg}`}>

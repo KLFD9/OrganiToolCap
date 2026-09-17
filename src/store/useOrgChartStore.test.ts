@@ -109,6 +109,29 @@ describe("useOrgChartStore", () => {
     expect(edgesToA[0].source).toBe(bId);
   });
 
+  it("deleteEdge retire immédiatement le bon lien, sans perdre la possibilité d’annuler", () => {
+    const { addNode, deleteEdge, undo } = useOrgChartStore.getState();
+    const rootId = useOrgChartStore.getState().nodes[0].id;
+    addNode(rootId);
+    const edge = useOrgChartStore.getState().edges[0];
+
+    deleteEdge(edge.id);
+    expect(useOrgChartStore.getState().edges).toEqual([]);
+
+    undo();
+    expect(useOrgChartStore.getState().edges).toContainEqual(edge);
+  });
+
+  it("deleteEdge ignore un identifiant absent sans créer d’historique fantôme", () => {
+    const before = useOrgChartStore.getState();
+
+    useOrgChartStore.getState().deleteEdge("edge-inconnu");
+
+    const after = useOrgChartStore.getState();
+    expect(after.edges).toBe(before.edges);
+    expect(after.past).toBe(before.past);
+  });
+
   it("addDottedEdge autorise plusieurs rattachements fonctionnels sans toucher au parent", () => {
     const { addNode, addDottedEdge } = useOrgChartStore.getState();
     const rootId = useOrgChartStore.getState().nodes[0].id;
@@ -595,6 +618,50 @@ describe("useOrgChartStore — frames multi-pages", () => {
 
     useOrgChartStore.getState().undo();
     expect(useOrgChartStore.getState().frames[0].chromeLayout?.title).toBeUndefined();
+  });
+
+  it("conserve les éléments libres propres à une page, y compris après duplication", () => {
+    const frameId = useOrgChartStore.getState().addFrame();
+    const elementId = useOrgChartStore.getState().addFrameElement(frameId, {
+      type: "text",
+      value: "Direction France",
+      x: 12,
+      y: 20,
+      width: 80,
+      height: 14,
+      fontSize: 12,
+    });
+    expect(elementId).toBeDefined();
+    useOrgChartStore.getState().updateFrameElement(frameId, elementId!, { value: "Direction Europe" });
+    expect(useOrgChartStore.getState().toFile().frames?.[0].elements?.[0]).toMatchObject({
+      type: "text",
+      value: "Direction Europe",
+    });
+
+    const copyId = useOrgChartStore.getState().duplicateFrame(frameId)!;
+    const copy = useOrgChartStore.getState().frames.find((frame) => frame.id === copyId)!;
+    expect(copy.elements?.[0]).toMatchObject({ value: "Direction Europe" });
+    expect(copy.elements?.[0].id).not.toBe(elementId);
+
+    useOrgChartStore.getState().deleteFrameElement(frameId, elementId!);
+    expect(useOrgChartStore.getState().frames.find((frame) => frame.id === frameId)?.elements).toEqual([]);
+  });
+
+  it("déplace et redimensionne un élément libre sans toucher aux cartes de la page", () => {
+    const frameId = useOrgChartStore.getState().addFrame();
+    const elementId = useOrgChartStore.getState().addFrameElement(frameId, {
+      type: "text", value: "Note", x: 8, y: 10, width: 40, height: 12, fontSize: 10,
+    })!;
+    const beforeNodes = useOrgChartStore.getState().nodes.map((node) => ({ id: node.id, position: node.position }));
+
+    useOrgChartStore.getState().updateFrameElement(frameId, elementId, {
+      x: 44, y: 18, width: 72, height: 20, fontSize: 16,
+    });
+
+    expect(useOrgChartStore.getState().frames[0].elements?.[0]).toMatchObject({
+      x: 44, y: 18, width: 72, height: 20, fontSize: 16,
+    });
+    expect(useOrgChartStore.getState().nodes.map((node) => ({ id: node.id, position: node.position }))).toEqual(beforeNodes);
   });
 
   it("addFrameForBranch copie le sous-arbre dans une nouvelle page rangée", async () => {

@@ -1,7 +1,8 @@
 import type { Node } from "@xyflow/react";
-import { captureFlow, fitContain, loadLogoForExport } from "./pdfExport";
+import { captureFlow, coverLogoForExport, fitContain, loadLogoForExport } from "./pdfExport";
 import { CHROME_HEADER_MM, resolveChromeTextStyle } from "./chromeLayout";
-import type { ChromeLayout } from "../types/orgchart";
+import type { ChromeLayout, PageElement } from "../types/orgchart";
+import { pageSizeMm, type PageSetup } from "./readability";
 
 /**
  * Export PowerPoint (.pptx) : une diapositive 16:9 contenant l'organigramme
@@ -161,6 +162,37 @@ export async function addSlideChrome(slide: Slide, options: PptxExportOptions): 
       italic: style.italic,
       color: pptxColor(style.color, "888888"),
     });
+  }
+}
+
+/**
+ * Ajoute les éléments libres d'une feuille à la diapositive. La projection est
+ * proportionnelle à la page : le fichier .orgchart.json embarqué reste la
+ * source exacte pour le round-trip, tandis que la diapositive reste éditable.
+ */
+export async function addSlidePageElements(slide: Slide, elements: PageElement[] | undefined, page: PageSetup): Promise<void> {
+  const paper = pageSizeMm(page.format, page.orientation);
+  const x = (mm: number) => (mm / paper.width) * SLIDE_WIDTH_IN;
+  const y = (mm: number) => (mm / paper.height) * SLIDE_HEIGHT_IN;
+  for (const element of elements ?? []) {
+    if (element.type === "text") {
+      slide.addText(element.value, {
+        x: x(element.x), y: y(element.y), w: x(element.width), h: y(element.height),
+        fontSize: (element.fontSize ?? 12) * 0.75,
+        bold: element.bold ?? false, italic: element.italic ?? false,
+        color: pptxColor(element.color, "27272A"), margin: 0,
+        breakLine: false,
+      });
+      continue;
+    }
+    try {
+      const width = x(element.width);
+      const height = y(element.height);
+      const image = await coverLogoForExport(await loadLogoForExport(element.value), width, height);
+      slide.addImage({ data: image.dataUrl, x: x(element.x), y: y(element.y), w: width, h: height });
+    } catch {
+      // Même tolérance que les logos du chrome.
+    }
   }
 }
 

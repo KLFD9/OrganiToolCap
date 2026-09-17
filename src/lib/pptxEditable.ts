@@ -14,6 +14,7 @@ import { blendHex } from "./colorBlend";
 import type { FramePageContent } from "./frames";
 import {
   addSlideChrome,
+  addSlidePageElements,
   computeSlideContentArea,
   pptxColor,
   safePptxFileName,
@@ -446,6 +447,7 @@ export async function exportFramesToPptxEditable(
 
     const area = computeSlideContentArea(hasHeader, hasFooter);
     renderEditableSpec(pptx, slide, buildEditableSpec(page.nodes, page.edges, theme, area));
+    await addSlidePageElements(slide, page.frame.elements, page.frame.page);
   }
 
   await savePptxWithChart(pptx, chartJson, safePptxFileName(options.title));

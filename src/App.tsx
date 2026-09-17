@@ -147,8 +147,11 @@ function App() {
         target instanceof HTMLElement &&
         (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
       const active = document.activeElement as HTMLElement | null;
-      const focusInCanvas =
-        !active || active === document.body || Boolean(active.closest(".react-flow"));
+      // Les raccourcis de composition doivent rester strictement dans le
+      // canvas. Le conteneur prend le focus au clic sur le graphe, ce qui
+      // évite qu'une touche Suppr. frappe une sélection encore visible après
+      // le passage dans la toolbar ou l'annuaire.
+      const focusInCanvas = Boolean(active?.closest(".canvas-focus-scope"));
 
       if (e.key === "Escape" && presentationMode) {
         e.preventDefault();
@@ -200,7 +203,7 @@ function App() {
         return;
       }
 
-      if (!isEditable && (e.key === "Delete" || e.key === "Backspace") && selectedNodeIds.length > 0) {
+      if (!isEditable && focusInCanvas && (e.key === "Delete" || e.key === "Backspace") && selectedNodeIds.length > 0) {
         e.preventDefault();
         deleteNodes(selectedNodeIds);
         return;

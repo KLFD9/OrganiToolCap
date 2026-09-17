@@ -13,6 +13,7 @@ import {
   type OrgNodeData,
   type OrgNodeStyle,
   type OrgTheme,
+  type PageElement,
 } from "../types/orgchart";
 import { createEmptyChart } from "../templates/blank";
 import { computeNodeHeight } from "../lib/nodeStyle";
@@ -181,6 +182,10 @@ interface OrgChartState {
   duplicateFrame: (id: string) => string | undefined;
   /** Position/taille d'un élément d'en-tête propre à une page. */
   setFrameChromeElement: (frameId: string, key: ChromeKey, element: ChromeElement) => void;
+  /** Ajoute un élément libre, propre à une page (texte, logo, photo). */
+  addFrameElement: (frameId: string, element: Omit<PageElement, "id">) => string | undefined;
+  updateFrameElement: (frameId: string, elementId: string, patch: Partial<Omit<PageElement, "id" | "type">>) => void;
+  deleteFrameElement: (frameId: string, elementId: string) => void;
   /**
    * « Créer une page pour cette branche » : nouvelle page contenant une copie
    * du sous-arbre du responsable, rangée automatiquement dans la zone utile.
@@ -740,11 +745,15 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
     }),
 
   deleteEdge: (id) =>
-    set((s) => ({
-      ...pushHistory(s),
-      edges: s.edges.filter((e) => e.id !== id),
-      isDirty: true,
-    })),
+    set((s) => {
+      if (!s.edges.some((edge) => edge.id === id)) return s;
+      return {
+        ...pushHistory(s),
+        edges: s.edges.filter((edge) => edge.id !== id),
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+      };
+    }),
 
   setLayoutDirection: (direction) =>
     set((s) => ({ ...pushHistory(s), layout: { ...s.layout, direction }, isDirty: true })),
@@ -1006,6 +1015,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       position,
       meta: source.meta ? { ...source.meta } : undefined,
       chromeLayout: source.chromeLayout ? { ...source.chromeLayout } : undefined,
+      elements: source.elements?.map((element) => ({ ...element, id: generateId("page-element") })),
     };
 
     set({
@@ -1028,6 +1038,52 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
         ...pushHistory(s),
         frames: s.frames.map((f) =>
           f.id === frameId ? { ...f, chromeLayout: { ...f.chromeLayout, [key]: element } } : f
+        ),
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+      };
+    }),
+
+  addFrameElement: (frameId, element) => {
+    const id = generateId("page-element");
+    set((s) => {
+      if (!s.frames.some((frame) => frame.id === frameId)) return s;
+      return {
+        ...pushHistory(s),
+        frames: s.frames.map((frame) =>
+          frame.id === frameId ? { ...frame, elements: [...(frame.elements ?? []), { ...element, id }] } : frame
+        ),
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+      };
+    });
+    return id;
+  },
+
+  updateFrameElement: (frameId, elementId, patch) =>
+    set((s) => {
+      const frame = s.frames.find((candidate) => candidate.id === frameId);
+      if (!frame?.elements?.some((element) => element.id === elementId)) return s;
+      return {
+        ...pushHistory(s),
+        frames: s.frames.map((candidate) =>
+          candidate.id === frameId
+            ? { ...candidate, elements: candidate.elements!.map((element) => element.id === elementId ? { ...element, ...patch } : element) }
+            : candidate
+        ),
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+      };
+    }),
+
+  deleteFrameElement: (frameId, elementId) =>
+    set((s) => {
+      const frame = s.frames.find((candidate) => candidate.id === frameId);
+      if (!frame?.elements?.some((element) => element.id === elementId)) return s;
+      return {
+        ...pushHistory(s),
+        frames: s.frames.map((candidate) =>
+          candidate.id === frameId ? { ...candidate, elements: candidate.elements!.filter((element) => element.id !== elementId) } : candidate
         ),
         isDirty: true,
         meta: { ...s.meta, updatedAt: new Date().toISOString() },

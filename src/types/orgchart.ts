@@ -139,6 +139,27 @@ export const ChromeLayoutSchema = z.object({
 export type ChromeLayout = z.infer<typeof ChromeLayoutSchema>;
 export type ChromeKey = keyof ChromeLayout;
 
+/**
+ * Élément libre posé sur une page explicite. Les coordonnées sont relatives à
+ * la feuille, en mm : un logo, une photo ou une note reste donc avec sa page
+ * quand celle-ci est déplacée sur le canvas. C'est volontairement distinct
+ * des cartes et des liens, qui conservent leur appartenance géométrique.
+ */
+export const PageElementSchema = z.object({
+  id: z.string(),
+  type: z.enum(["text", "image"]),
+  value: z.string(),
+  x: z.number(),
+  y: z.number(),
+  width: z.number(),
+  height: z.number(),
+  fontSize: z.number().optional(),
+  bold: z.boolean().optional(),
+  italic: z.boolean().optional(),
+  color: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
+});
+export type PageElement = z.infer<typeof PageElementSchema>;
+
 /** Format de page cible (cadre de page, frames, export). A2 = grande équipe / affiche. */
 export const PageSetupSchema = z.object({
   format: z.enum(["a4", "a3", "a2"]),
@@ -176,6 +197,10 @@ export const OrgFrameSchema = z.object({
     .optional(),
   // Disposition d'en-tête propre à la page ; absente = celle du document.
   chromeLayout: ChromeLayoutSchema.optional(),
+  // Éléments de composition propres à cette feuille (logos additionnels,
+  // photos, légendes…). Optionnel additif : les fichiers existants restent
+  // inchangés et les éléments ne sont jamais assimilés à des cartes.
+  elements: z.array(PageElementSchema).optional(),
 });
 export type OrgFrame = z.infer<typeof OrgFrameSchema>;
 

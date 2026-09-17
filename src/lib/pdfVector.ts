@@ -8,6 +8,7 @@ import { COMFORT_MM_PER_PX } from "./readability";
 import {
   applyPdfMetadata,
   drawPageChrome,
+  drawPageElements,
   safeFileName,
   type ExportProgressCallback,
   type PdfExportOptions,
@@ -184,6 +185,7 @@ async function drawVectorPage(
       : undefined
   );
   if (spec.cards.length > 0) drawEditableSpec(pdf, spec, theme);
+  await drawPageElements(pdf, options.pageElements);
 }
 
 /** Dessine cartes et connecteurs d'une spec éditable (réplique de NodeCard). */
@@ -424,6 +426,7 @@ export async function buildFramesPdfVector(
       logoUrl: page.logoUrl ?? common.logoUrl,
       secondaryLogoUrl: page.secondaryLogoUrl ?? common.secondaryLogoUrl,
       chromeLayout: page.chromeLayout,
+      pageElements: page.frame.elements,
     };
     const label = pages.length > 1 ? `${page.frame.name} · ${i + 1}/${pages.length}` : undefined;
     await drawVectorPage(
