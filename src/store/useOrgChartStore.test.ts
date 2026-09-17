@@ -620,6 +620,16 @@ describe("useOrgChartStore — frames multi-pages", () => {
     expect(useOrgChartStore.getState().frames[0].chromeLayout?.title).toBeUndefined();
   });
 
+  it("conserve le repère couleur facultatif d'une page dans le fichier et sa copie", () => {
+    const frameId = useOrgChartStore.getState().addFrame();
+
+    useOrgChartStore.getState().updateFrame(frameId, { color: "#2563EB" });
+    expect(useOrgChartStore.getState().toFile().frames?.[0].color).toBe("#2563EB");
+
+    const copyId = useOrgChartStore.getState().duplicateFrame(frameId)!;
+    expect(useOrgChartStore.getState().frames.find((frame) => frame.id === copyId)?.color).toBe("#2563EB");
+  });
+
   it("conserve les éléments libres propres à une page, y compris après duplication", () => {
     const frameId = useOrgChartStore.getState().addFrame();
     const elementId = useOrgChartStore.getState().addFrameElement(frameId, {

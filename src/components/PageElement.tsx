@@ -19,7 +19,7 @@ function PageElementImpl({ data, selected }: NodeProps & { data: PageElementData
   const textColor = element.color ?? (dark ? "#F4F4F5" : "#27272A");
 
   return (
-    <div className="group/page-element h-full w-full" title={isText ? "Double-cliquer pour modifier" : "Image ou logo de page"}>
+    <div className="group/page-element h-full w-full" title={isText ? "Double-cliquer pour modifier" : "Image ou logo de page — proportions conservées"}>
       <NodeResizer
         isVisible={Boolean(selected)}
         keepAspectRatio={!isText}
@@ -60,7 +60,7 @@ function PageElementImpl({ data, selected }: NodeProps & { data: PageElementData
                 <span>px</span>
               </label>
               <label className="relative h-6 w-6 rounded-full ring-1 ring-black/10" style={{ backgroundColor: textColor }} title="Couleur du texte"><span className="sr-only">Couleur du texte</span><input type="color" aria-label="Couleur du texte" value={textColor} onChange={(event) => onChange({ color: event.target.value.toUpperCase() })} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" /></label>
-            </> : <span className="px-2 text-[10px] font-semibold text-zinc-500 dark:text-zinc-300">Image · couvre le cadre</span>}
+            </> : <span className="px-2 text-[10px] font-semibold text-zinc-500 dark:text-zinc-300">Image · proportions conservées</span>}
             <button type="button" aria-label="Supprimer l’élément" title="Supprimer" onClick={onDelete} className="rounded-full p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30"><Trash2 className="h-3.5 w-3.5" /></button>
           </div>
         </NodeToolbar>
@@ -70,7 +70,7 @@ function PageElementImpl({ data, selected }: NodeProps & { data: PageElementData
       ) : (
         <div onDoubleClick={() => { setDraft(element.value); setEditing(true); }} className="h-full w-full overflow-hidden whitespace-pre-wrap break-words p-1" style={{ color: textColor, fontSize: element.fontSize ?? 12, fontWeight: element.bold ? 700 : 400, fontStyle: element.italic ? "italic" : "normal", lineHeight: 1.2 }}>{element.value}</div>
       ) : (
-        <img src={element.value} alt="Élément de page" draggable={false} className="h-full w-full object-cover" />
+        <img src={element.value} alt="Élément de page" draggable={false} className="h-full w-full object-contain" />
       )}
     </div>
   );

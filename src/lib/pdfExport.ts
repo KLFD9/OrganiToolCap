@@ -441,33 +441,6 @@ export function loadLogoForExport(url: string): Promise<ExportLogo> {
   return pending;
 }
 
-/**
- * Équivalent export de `object-fit: cover` : recadre localement l'image afin
- * qu'elle remplisse exactement le cadre dessiné dans le canvas, sans bandes
- * blanches ni déformation.
- */
-export async function coverLogoForExport(image: ExportLogo, targetWidth: number, targetHeight: number): Promise<ExportLogo> {
-  const targetRatio = Math.max(0.01, targetWidth) / Math.max(0.01, targetHeight);
-  const imageRatio = image.width / image.height;
-  const crop = imageRatio > targetRatio
-    ? { x: (image.width - image.height * targetRatio) / 2, y: 0, width: image.height * targetRatio, height: image.height }
-    : { x: 0, y: (image.height - image.width / targetRatio) / 2, width: image.width, height: image.width / targetRatio };
-  const fitted = fitExportLogoDimensions(crop.width, crop.height, true);
-  const canvas = document.createElement("canvas");
-  canvas.width = fitted.width;
-  canvas.height = fitted.height;
-  const context = canvas.getContext("2d");
-  if (!context) return image;
-  let source: HTMLImageElement;
-  try {
-    source = await loadImage(image.dataUrl);
-  } catch {
-    return image;
-  }
-  context.drawImage(source, crop.x, crop.y, crop.width, crop.height, 0, 0, canvas.width, canvas.height);
-  return { dataUrl: canvas.toDataURL("image/png"), width: canvas.width, height: canvas.height };
-}
-
 const HEADER_HEIGHT_MM = 16;
 
 /** Calcule les marges hautes/basses occupées par l'en-tête et le pied de page, sans dessiner. */
@@ -621,8 +594,9 @@ export async function drawPageElements(pdf: jsPDF, elements: PageElement[] | und
       continue;
     }
     try {
-      const image = await coverLogoForExport(await loadLogoForExport(element.value), element.width, element.height);
-      pdf.addImage(image.dataUrl, "PNG", element.x, element.y, element.width, element.height, undefined, "FAST");
+      const image = await loadLogoForExport(element.value);
+      const placement = fitContain(image.width, image.height, element.x, element.y, element.width, element.height);
+      pdf.addImage(image.dataUrl, "PNG", placement.x, placement.y, placement.width, placement.height, undefined, "FAST");
     } catch {
       // Image locale invalide : conserver les autres éléments et le PDF.
     }

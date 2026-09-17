@@ -31,6 +31,8 @@ export interface PageGuideData extends Record<string, unknown> {
    * frame-drag-handle, cf. dragHandle du nœud React Flow).
    */
   frameName?: string;
+  /** Couleur de repérage de l'entité, uniquement dans l'interface. */
+  frameColor?: string;
   /** Nombre de cartes appartenant à la page (mode multi-pages). */
   memberCount?: number;
   /**
@@ -71,6 +73,7 @@ function PageGuideImpl({ data }: NodeProps & { data: PageGuideData }) {
     rating,
     dark,
     frameName,
+    frameColor,
     memberCount,
     isSelected,
     onSelect,
@@ -108,6 +111,7 @@ function PageGuideImpl({ data }: NodeProps & { data: PageGuideData }) {
                   : "0 2px 8px rgba(24,24,27,0.08)",
             }}
           >
+            {frameColor && <span className="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={{ backgroundColor: frameColor }} aria-hidden="true" />}
             {frameName}
             {memberCount !== undefined && memberCount > 0 ? ` · ${memberCount}` : ""}
           </button>

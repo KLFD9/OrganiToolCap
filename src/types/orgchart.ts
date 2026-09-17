@@ -181,6 +181,9 @@ export const PageSetupSchema = z.object({
 export const OrgFrameSchema = z.object({
   id: z.string(),
   name: z.string(),
+  // Repère de navigation facultatif : aide à retrouver une entité dans le
+  // rail et sur l'étiquette du canvas, sans modifier le contenu imprimé.
+  color: z.string().regex(/^#[0-9A-Fa-f]{6}$/).optional(),
   position: z.object({ x: z.number(), y: z.number() }),
   page: PageSetupSchema,
   // Titre / sous-titre propres à la page ; absents = hérités du document.

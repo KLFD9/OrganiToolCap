@@ -323,7 +323,11 @@ function App() {
               }`}
             >
               <div className="w-64 h-full">
-                <PageRail themeMode={themeMode} onClose={() => setPageRailOpen(false)} />
+                <PageRail
+                  themeMode={themeMode}
+                  onClose={() => setPageRailOpen(false)}
+                  onConfigure={() => setInspectorOpen(true)}
+                />
               </div>
             </aside>
           )}

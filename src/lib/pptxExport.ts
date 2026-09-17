@@ -1,5 +1,5 @@
 import type { Node } from "@xyflow/react";
-import { captureFlow, coverLogoForExport, fitContain, loadLogoForExport } from "./pdfExport";
+import { captureFlow, fitContain, loadLogoForExport } from "./pdfExport";
 import { CHROME_HEADER_MM, resolveChromeTextStyle } from "./chromeLayout";
 import type { ChromeLayout, PageElement } from "../types/orgchart";
 import { pageSizeMm, type PageSetup } from "./readability";
@@ -186,10 +186,9 @@ export async function addSlidePageElements(slide: Slide, elements: PageElement[]
       continue;
     }
     try {
-      const width = x(element.width);
-      const height = y(element.height);
-      const image = await coverLogoForExport(await loadLogoForExport(element.value), width, height);
-      slide.addImage({ data: image.dataUrl, x: x(element.x), y: y(element.y), w: width, h: height });
+      const image = await loadLogoForExport(element.value);
+      const placement = fitContain(image.width, image.height, x(element.x), y(element.y), x(element.width), y(element.height));
+      slide.addImage({ data: image.dataUrl, x: placement.x, y: placement.y, w: placement.width, h: placement.height });
     } catch {
       // Même tolérance que les logos du chrome.
     }

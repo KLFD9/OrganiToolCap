@@ -67,7 +67,6 @@ import { ContextMenu, type ContextMenuItem } from "./ContextMenu";
 import { PageGuide, type PageGuideData } from "./PageGuide";
 import { ChromeElementNode, type ChromeElementData } from "./ChromeElement";
 import { PageElementNode, type PageElementData } from "./PageElement";
-import { PageFormatSelect } from "./PageFormatSelect";
 import { SelectionToolbar } from "./SelectionToolbar";
 import {
   arrangeSelection,
@@ -231,13 +230,11 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const addFrameElement = useOrgChartStore((s) => s.addFrameElement);
   const updateFrameElement = useOrgChartStore((s) => s.updateFrameElement);
   const deleteFrameElement = useOrgChartStore((s) => s.deleteFrameElement);
-  const setPageSetup = useOrgChartStore((s) => s.setPageSetup);
   const frames = useOrgChartStore((s) => s.frames);
   const selectedFrameId = useOrgChartStore((s) => s.selectedFrameId);
   const selectFrame = useOrgChartStore((s) => s.selectFrame);
   const addFrame = useOrgChartStore((s) => s.addFrame);
   const deleteFrame = useOrgChartStore((s) => s.deleteFrame);
-  const updateFrame = useOrgChartStore((s) => s.updateFrame);
   const duplicateFrame = useOrgChartStore((s) => s.duplicateFrame);
   const moveFrameWithContent = useOrgChartStore((s) => s.moveFrameWithContent);
   const addFrameForBranch = useOrgChartStore((s) => s.addFrameForBranch);
@@ -464,6 +461,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
           rating: estimate.rating,
           dark: themeMode === "dark",
           frameName: frame.name,
+          frameColor: frame.color,
           memberCount: members.length,
           isSelected: frame.id === selectedFrameId,
           onSelect: () => selectFrame(frame.id),
@@ -1764,48 +1762,6 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
             pointerEvents: showMiniMap ? "auto" : "none",
           }}
         />
-
-        {/* Surface de sortie rapide : change layout.page (ou celle de la frame
-            sélectionnée) sans passer par la boîte d'export — même source de
-            vérité (invariant n° 9), donc le cadre de page et « Centrer sur la
-            page » suivent immédiatement. */}
-        {pageGuideEnabled && (
-          <Panel position="top-center" className="pointer-events-auto">
-            <div
-              className={`flex items-center gap-1 rounded-lg border px-1.5 py-1 shadow-sm ${
-                themeMode === "dark" ? "bg-zinc-900 border-zinc-800" : "bg-white border-zinc-200"
-              }`}
-            >
-              <PageFormatSelect
-                value={(selectedFrameId ? frames.find((f) => f.id === selectedFrameId)?.page.format : undefined) ?? page.format}
-                onChange={(format) => {
-                  const target = selectedFrameId ? frames.find((f) => f.id === selectedFrameId) : undefined;
-                  if (target) updateFrame(target.id, { page: { ...target.page, format } });
-                  else setPageSetup({ ...page, format });
-                }}
-                themeMode={themeMode}
-                compact
-                ariaLabel="Surface de sortie rapide"
-                className="w-44"
-              />
-              <span className={`mx-0.5 h-4 w-px ${themeMode === "dark" ? "bg-zinc-800" : "bg-zinc-200"}`} />
-              <button
-                onClick={() => {
-                  const target = selectedFrameId ? frames.find((f) => f.id === selectedFrameId) : undefined;
-                  const nextOrientation = (target?.page.orientation ?? page.orientation) === "portrait" ? "landscape" : "portrait";
-                  if (target) updateFrame(target.id, { page: { ...target.page, orientation: nextOrientation } });
-                  else setPageSetup({ ...page, orientation: nextOrientation });
-                }}
-                className={`cursor-pointer rounded-md px-2 py-1 text-xs font-medium transition-colors ${
-                  themeMode === "dark" ? "text-zinc-400 hover:bg-zinc-800" : "text-zinc-600 hover:bg-zinc-100"
-                }`}
-                title="Changer l'orientation"
-              >
-                {ORIENTATION_LABEL[(selectedFrameId ? frames.find((f) => f.id === selectedFrameId)?.page.orientation : undefined) ?? page.orientation]}
-              </button>
-            </div>
-          </Panel>
-        )}
 
         <Panel
           position="bottom-right"
