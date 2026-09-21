@@ -203,7 +203,9 @@ export function buildEditableSpec(
     // snap géométrique partagé (computeSmartRoute) — attache haut/bas ou
     // latérale selon la position relative des cartes.
     const dashed = e.kind === "dotted";
-    const stacked = !dashed && stackedIds.has(e.target);
+    // Dès qu'une accroche ou un corridor est réglé manuellement, le canvas
+    // abandonne l'épine compacte : l'export doit suivre la même règle.
+    const stacked = !dashed && stackedIds.has(e.target) && !e.routing && !e.anchors;
     const sourceRect: NodeRect = {
       x: source.position.x,
       y: source.position.y,
@@ -235,7 +237,7 @@ export function buildEditableSpec(
           width: computeNodeWidth(node, display.showPhotos),
           height: computeNodeHeight(node, display),
         }));
-      routePx = computeSmartRoute(sourceRect, targetRect, obstacles, e.routing).points;
+      routePx = computeSmartRoute(sourceRect, targetRect, obstacles, e.routing, e.anchors).points;
     }
 
     connectors.push({

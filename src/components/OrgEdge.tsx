@@ -5,10 +5,15 @@ import {
   computeCorridorRoute,
   computeElbowRoute,
   computeElbowRouteHorizontal,
+  edgeAnchorAtPoint,
+  edgeAnchorPoint,
   computeSpineRoute,
   isSpineDirection,
+  type EdgeAnchor,
+  type EdgeAnchors,
   type EdgeRoutePoint,
   type EdgeRoutingOverride,
+  type NodeRect,
 } from "../lib/edgeRouting";
 
 function pointsToPath(points: EdgeRoutePoint[]): string {
@@ -26,6 +31,10 @@ export interface OrgEdgeData extends Record<string, unknown> {
   /** Un corridor manuel est stocké, même si son axe n'est plus compatible avec la géométrie courante. */
   hasManualRouting?: boolean;
   onRoutingChange?: (routing: EdgeRoutingOverride) => void;
+  sourceRect?: NodeRect;
+  targetRect?: NodeRect;
+  anchors?: EdgeAnchors;
+  onAnchorsChange?: (anchors: EdgeAnchors) => void;
   /** Conversion fonctionnel → hiérarchique interdite par la garde anti-cycle. */
   hierarchyConversionBlocked?: boolean;
   /** La conversion hiérarchique remplacera le responsable principal actuel. */
@@ -108,6 +117,10 @@ export function OrgEdge({
     routing,
     hasManualRouting = Boolean(routing),
     onRoutingChange,
+    sourceRect,
+    targetRect,
+    anchors,
+    onAnchorsChange,
     hierarchyConversionBlocked = false,
     hierarchyConversionReplacesManager = false,
     onKindChange,
@@ -116,6 +129,7 @@ export function OrgEdge({
   } =
     (data as OrgEdgeData | undefined) ?? {};
   const [dragValue, setDragValue] = useState<number | null>(null);
+  const [dragAnchor, setDragAnchor] = useState<{ end: "source" | "target"; value: EdgeAnchor } | null>(null);
 
   const activeRouting =
     routeAxis && dragValue !== null ? { axis: routeAxis, value: dragValue } : routing;
@@ -256,6 +270,49 @@ export function OrgEdge({
               onRoutingChange({ axis, value });
             }}
           />
+        )}
+        {selected && sourceRect && targetRect && onAnchorsChange && (
+          <>
+            {(["source", "target"] as const).map((end) => {
+              const rect = end === "source" ? sourceRect : targetRect;
+              const stored = end === "source" ? anchors?.source : anchors?.target;
+              const point = dragAnchor?.end === end
+                ? edgeAnchorPoint(rect, dragAnchor.value)
+                : points[end === "source" ? 0 : points.length - 1];
+              return (
+                <circle
+                  key={end}
+                  cx={point.x}
+                  cy={point.y}
+                  r={7.5}
+                  fill="var(--color-primary-50)"
+                  stroke="var(--color-primary-600)"
+                  strokeWidth={2.5}
+                  vectorEffect="non-scaling-stroke"
+                  style={{ cursor: "move", pointerEvents: "all" }}
+                  aria-label={end === "source" ? "Déplacer le point de départ du lien" : "Déplacer le point d’arrivée du lien"}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    setDragAnchor({ end, value: stored ?? edgeAnchorAtPoint(rect, point) });
+                  }}
+                  onPointerMove={(event) => {
+                    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+                    const flowPoint = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+                    setDragAnchor({ end, value: edgeAnchorAtPoint(rect, flowPoint) });
+                  }}
+                  onPointerUp={(event) => {
+                    if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+                    event.currentTarget.releasePointerCapture(event.pointerId);
+                    const flowPoint = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+                    const value = edgeAnchorAtPoint(rect, flowPoint);
+                    setDragAnchor(null);
+                    onAnchorsChange({ ...anchors, [end]: value });
+                  }}
+                />
+              );
+            })}
+          </>
         )}
       </>
     );

@@ -5,6 +5,8 @@ import {
   computeElbowRouteHorizontal,
   computeSmartRoute,
   computeObstacleAwareRoute,
+  edgeAnchorAtPoint,
+  edgeAnchorPoint,
   sideAnchor,
   type NodeRect,
 } from "./edgeRouting";
@@ -63,6 +65,26 @@ describe("sideAnchor", () => {
     expect(sideAnchor(r, "bottom")).toEqual({ x: 220, y: 310 });
     expect(sideAnchor(r, "left")).toEqual({ x: 100, y: 255 });
     expect(sideAnchor(r, "right")).toEqual({ x: 340, y: 255 });
+  });
+});
+
+describe("accroches manuelles", () => {
+  it("place une accroche à une position précise du bord", () => {
+    expect(edgeAnchorPoint(rect(100, 200, 240, 110), { side: "bottom", offset: 0.5 })).toEqual({ x: 220, y: 310 });
+    expect(edgeAnchorPoint(rect(100, 200, 240, 110), { side: "right", offset: 0.25 })).toEqual({ x: 340, y: 227.5 });
+  });
+
+  it("ramène un glisser-déposer au côté le plus proche", () => {
+    expect(edgeAnchorAtPoint(rect(100, 200, 240, 110), { x: 220, y: 355 })).toEqual({ side: "bottom", offset: 0.5 });
+  });
+
+  it("réplique ces accroches dans le routage partagé", () => {
+    const { points } = computeSmartRoute(rect(0, 0), rect(300, 200), [], undefined, {
+      source: { side: "bottom", offset: 0.25 },
+      target: { side: "top", offset: 0.75 },
+    });
+    expect(points[0]).toEqual({ x: 60, y: 110 });
+    expect(points.at(-1)).toEqual({ x: 480, y: 200 });
   });
 });
 

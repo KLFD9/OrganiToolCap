@@ -222,6 +222,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
   const deleteEdge = useOrgChartStore((s) => s.deleteEdge);
   const setEdgeKind = useOrgChartStore((s) => s.setEdgeKind);
   const setEdgeRouting = useOrgChartStore((s) => s.setEdgeRouting);
+  const setEdgeAnchors = useOrgChartStore((s) => s.setEdgeAnchors);
   const toggleCollapsed = useOrgChartStore((s) => s.toggleCollapsed);
   const expandAll = useOrgChartStore((s) => s.expandAll);
   const applyAutoLayout = useOrgChartStore((s) => s.applyAutoLayout);
@@ -859,7 +860,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
         // tracé « en épine » historique : bas du parent → côté gauche.
         // Un corridor manuel prend la main même sur une arête issue de la
         // disposition compacte ; « Réinitialiser » restaure alors l'épine.
-        const spine = !isDotted && stackedIds.has(e.target) && !e.routing;
+        const spine = !isDotted && stackedIds.has(e.target) && !e.routing && !e.anchors;
         const sourceRect = nodeRects.get(e.source);
         const targetRect = nodeRects.get(e.target);
         const obstacles = [...nodeRects.entries()]
@@ -867,7 +868,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
           .map(([, rect]) => rect);
         const smartRoute =
           !spine && sourceRect && targetRect
-            ? computeSmartRoute(sourceRect, targetRect, obstacles, e.routing)
+            ? computeSmartRoute(sourceRect, targetRect, obstacles, e.routing, e.anchors)
             : undefined;
         const sides =
           smartRoute
@@ -895,6 +896,10 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
             routing: e.routing?.axis === routeAxis ? e.routing : undefined,
             hasManualRouting: Boolean(e.routing),
             onRoutingChange: (routing: NonNullable<typeof e.routing>) => setEdgeRouting(e.id, routing),
+            sourceRect,
+            targetRect,
+            anchors: e.anchors,
+            onAnchorsChange: (anchors: NonNullable<typeof e.anchors>) => setEdgeAnchors(e.id, anchors),
             hierarchyConversionBlocked,
             hierarchyConversionReplacesManager,
             onKindChange: (kind: "hierarchy" | "dotted") => setEdgeKind(e.id, kind),
@@ -913,7 +918,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
           },
         };
       }),
-    [storeEdges, theme.accent, selectedNodeIds, selectedEdgeId, themeMode, stackedIds, hiddenIds, nodeRects, setEdgeKind, setEdgeRouting]
+    [storeEdges, theme.accent, selectedNodeIds, selectedEdgeId, themeMode, stackedIds, hiddenIds, nodeRects, setEdgeKind, setEdgeRouting, setEdgeAnchors]
   );
 
   const [rfNodes, setRfNodes, onNodesChangeBase] = useNodesState(initialRfNodes);
@@ -1070,7 +1075,7 @@ export const Canvas = forwardRef<HTMLDivElement, CanvasProps>(({ themeMode = "li
                 const obstacles = [...liveRects.entries()]
                   .filter(([id]) => id !== ed.source && id !== ed.target)
                   .map(([, rect]) => rect);
-                const route = computeSmartRoute(sourceRect, targetRect, obstacles, stored?.routing);
+                const route = computeSmartRoute(sourceRect, targetRect, obstacles, stored?.routing, stored?.anchors);
                 const sides = route;
                 const sourceHandle = `s-${sides.sourceSide}`;
                 const targetHandle = `t-${sides.targetSide}`;

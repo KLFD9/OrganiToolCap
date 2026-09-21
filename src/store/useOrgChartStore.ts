@@ -128,6 +128,8 @@ interface OrgChartState {
   setEdgeKind: (id: string, kind: "hierarchy" | "dotted") => void;
   /** Fixe ou réinitialise le corridor manuel d'un connecteur. */
   setEdgeRouting: (id: string, routing?: OrgEdge["routing"]) => void;
+  /** Fixe les accroches manuelles d'un lien sur le contour de ses cartes. */
+  setEdgeAnchors: (id: string, anchors?: OrgEdge["anchors"]) => void;
   /**
    * Change (ou retire, si undefined) le responsable hiérarchique d'un membre
    * en une seule entrée d'historique. Refuse les cycles.
@@ -696,7 +698,7 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
         if (wouldCreateHierarchyCycle(others, edge.source, edge.target)) return s;
         const edges = [
           ...others,
-          { id: edge.id, source: edge.source, target: edge.target },
+          { ...edge, kind: undefined },
         ];
         return {
           ...pushHistory(s),
@@ -719,6 +721,17 @@ export const useOrgChartStore = create<OrgChartState>((set, get) => ({
       return {
         ...pushHistory(s),
         edges: s.edges.map((edge) => (edge.id === id ? { ...edge, routing } : edge)),
+        isDirty: true,
+        meta: { ...s.meta, updatedAt: new Date().toISOString() },
+      };
+    }),
+
+  setEdgeAnchors: (id, anchors) =>
+    set((s) => {
+      if (!s.edges.some((edge) => edge.id === id)) return s;
+      return {
+        ...pushHistory(s),
+        edges: s.edges.map((edge) => (edge.id === id ? { ...edge, anchors } : edge)),
         isDirty: true,
         meta: { ...s.meta, updatedAt: new Date().toISOString() },
       };

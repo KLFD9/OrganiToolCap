@@ -223,6 +223,21 @@ describe("useOrgChartStore", () => {
     expect(useOrgChartStore.getState().edges[0].routing).toEqual({ axis: "y", value: 180 });
   });
 
+  it("mémorise les accroches manuelles d'un lien avec undo", () => {
+    const edgeId = useOrgChartStore.getState().edges[0]?.id;
+    if (!edgeId) {
+      useOrgChartStore.getState().addNode(useOrgChartStore.getState().nodes[0].id);
+    }
+    const id = useOrgChartStore.getState().edges[0].id;
+    useOrgChartStore.getState().setEdgeAnchors(id, {
+      source: { side: "bottom", offset: 0.5 },
+      target: { side: "top", offset: 0.2 },
+    });
+    expect(useOrgChartStore.getState().edges[0].anchors?.source).toEqual({ side: "bottom", offset: 0.5 });
+    useOrgChartStore.getState().undo();
+    expect(useOrgChartStore.getState().edges[0].anchors).toBeUndefined();
+  });
+
   it("setManager remplace le responsable, le retire, et refuse les cycles", () => {
     const { addNode, setManager } = useOrgChartStore.getState();
     const rootId = useOrgChartStore.getState().nodes[0].id;

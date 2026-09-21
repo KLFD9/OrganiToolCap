@@ -108,6 +108,15 @@ export interface NodeRect {
 }
 
 export type AttachSide = "top" | "bottom" | "left" | "right";
+export interface EdgeAnchor {
+  side: AttachSide;
+  /** Position normalisée le long du côté : 0 = début, 1 = fin. */
+  offset: number;
+}
+export interface EdgeAnchors {
+  source?: EdgeAnchor;
+  target?: EdgeAnchor;
+}
 export interface EdgeRoutingOverride {
   axis: "x" | "y";
   value: number;
@@ -147,6 +156,32 @@ export function sideAnchor(rect: NodeRect, side: AttachSide): EdgeRoutePoint {
     case "right":
       return { x: rect.x + rect.width, y: rect.y + rect.height / 2 };
   }
+}
+
+/** Point du contour correspondant à une accroche; protège aussi les fichiers édités à la main. */
+export function edgeAnchorPoint(rect: NodeRect, anchor: EdgeAnchor): EdgeRoutePoint {
+  const offset = Math.max(0, Math.min(1, anchor.offset));
+  switch (anchor.side) {
+    case "top": return { x: rect.x + rect.width * offset, y: rect.y };
+    case "bottom": return { x: rect.x + rect.width * offset, y: rect.y + rect.height };
+    case "left": return { x: rect.x, y: rect.y + rect.height * offset };
+    case "right": return { x: rect.x + rect.width, y: rect.y + rect.height * offset };
+  }
+}
+
+/** Convertit une position libre en accroche sur le côté le plus proche de la carte. */
+export function edgeAnchorAtPoint(rect: NodeRect, point: EdgeRoutePoint): EdgeAnchor {
+  const x = Math.max(rect.x, Math.min(rect.x + rect.width, point.x));
+  const y = Math.max(rect.y, Math.min(rect.y + rect.height, point.y));
+  const distances: Array<[AttachSide, number]> = [
+    ["top", Math.abs(point.y - rect.y)], ["bottom", Math.abs(point.y - (rect.y + rect.height))],
+    ["left", Math.abs(point.x - rect.x)], ["right", Math.abs(point.x - (rect.x + rect.width))],
+  ];
+  const side = distances.reduce((closest, candidate) => candidate[1] < closest[1] ? candidate : closest)[0];
+  return {
+    side,
+    offset: side === "top" || side === "bottom" ? (x - rect.x) / rect.width : (y - rect.y) / rect.height,
+  };
 }
 
 /** Supprime les points consécutifs identiques et ceux alignés au milieu d'un segment. */
@@ -243,11 +278,14 @@ export function computeSmartRoute(
   source: NodeRect,
   target: NodeRect,
   obstacles: NodeRect[] = [],
-  routing?: EdgeRoutingOverride
+  routing?: EdgeRoutingOverride,
+  anchors?: EdgeAnchors
 ): { sourceSide: AttachSide; targetSide: AttachSide; points: EdgeRoutePoint[] } {
-  const { sourceSide, targetSide } = chooseEdgeSides(source, target);
-  const s = sideAnchor(source, sourceSide);
-  const t = sideAnchor(target, targetSide);
+  const automaticSides = chooseEdgeSides(source, target);
+  const sourceSide = anchors?.source?.side ?? automaticSides.sourceSide;
+  const targetSide = anchors?.target?.side ?? automaticSides.targetSide;
+  const s = anchors?.source ? edgeAnchorPoint(source, anchors.source) : sideAnchor(source, sourceSide);
+  const t = anchors?.target ? edgeAnchorPoint(target, anchors.target) : sideAnchor(target, targetSide);
   const axis = sourceSide === "left" || sourceSide === "right" ? "x" : "y";
   const compatibleRouting = routing?.axis === axis ? routing : undefined;
   const points = computeObstacleAwareRoute(s, t, axis, obstacles, compatibleRouting);

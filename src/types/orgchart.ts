@@ -75,6 +75,13 @@ export type OrgNode = z.infer<typeof OrgNodeSchema>;
 export const OrgEdgeKindSchema = z.enum(["hierarchy", "dotted"]);
 export type OrgEdgeKind = z.infer<typeof OrgEdgeKindSchema>;
 
+/** Position d'accroche manuelle sur le contour d'une carte (0 = début du côté, 1 = fin). */
+export const OrgEdgeAnchorSchema = z.object({
+  side: z.enum(["top", "bottom", "left", "right"]),
+  offset: z.number().min(0).max(1),
+});
+export type OrgEdgeAnchor = z.infer<typeof OrgEdgeAnchorSchema>;
+
 export const OrgEdgeSchema = z.object({
   id: z.string(),
   source: z.string(),
@@ -86,6 +93,14 @@ export const OrgEdgeSchema = z.object({
     .object({
       axis: z.enum(["x", "y"]),
       value: z.number(),
+    })
+    .optional(),
+  // Positions d'accroche optionnelles. L'absence conserve le snap automatique
+  // au centre des côtés, pour rester compatible avec les fichiers existants.
+  anchors: z
+    .object({
+      source: OrgEdgeAnchorSchema.optional(),
+      target: OrgEdgeAnchorSchema.optional(),
     })
     .optional(),
 });

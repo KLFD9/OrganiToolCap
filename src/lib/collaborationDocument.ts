@@ -85,6 +85,7 @@ function serializeEdge(edge: OrgEdge): Record<string, unknown> {
     target: edge.target,
     kind: edge.kind,
     routing: edge.routing,
+    anchors: edge.anchors,
   };
 }
 

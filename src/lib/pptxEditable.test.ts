@@ -67,6 +67,21 @@ describe("buildEditableSpec", () => {
     expect(last.y).toBeCloseTo(cardB.y + cardB.h / 2, 6);
   });
 
+  it("respecte les accroches manuelles dans la géométrie exportée", () => {
+    const nodes: OrgNode[] = [
+      { id: "a", position: { x: 0, y: 0 }, data: { name: "Claire" } },
+      { id: "b", position: { x: 300, y: 200 }, data: { name: "Marc" } },
+    ];
+    const edges: OrgEdge[] = [{
+      id: "e1", source: "a", target: "b",
+      anchors: { source: { side: "bottom", offset: 0.25 }, target: { side: "top", offset: 0.75 } },
+    }];
+    const [connector] = buildEditableSpec(nodes, edges, glassCapTheme, AREA).connectors;
+    const [source, target] = buildEditableSpec(nodes, edges, glassCapTheme, AREA).cards;
+    expect(connector.points[0].x).toBeCloseTo(source.x + source.w * 0.25, 6);
+    expect(connector.points.at(-1)?.x).toBeCloseTo(target.x + target.w * 0.75, 6);
+  });
+
   it("thème glass : fond blanc, bordure accent ; thème flat : fond palette + texte contrasté", () => {
     const { nodes, edges } = org();
     const glass = buildEditableSpec(nodes, edges, glassCapTheme, AREA);

@@ -73,6 +73,17 @@ describe("migration v1 → v2", () => {
     expect(parseOrgChartFile(JSON.stringify(parsed))).toEqual(parsed);
   });
 
+  it("les accroches manuelles optionnelles d'un lien font le round-trip", () => {
+    const file = v2File();
+    file.edges[0] = {
+      ...file.edges[0],
+      anchors: { source: { side: "bottom", offset: 0.5 }, target: { side: "top", offset: 0.25 } },
+    };
+    const parsed = parseOrgChartFile(JSON.stringify(file));
+    expect(parsed.edges[0].anchors?.source).toEqual({ side: "bottom", offset: 0.5 });
+    expect(parseOrgChartFile(JSON.stringify(parsed))).toEqual(parsed);
+  });
+
   it("rejette une version future avec un message explicite", () => {
     expect(() => parseOrgChartFile(JSON.stringify({ ...v1File(), version: 3 }))).toThrow(FileFormatError);
   });
